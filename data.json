@@ -1,0 +1,31 @@
+{
+  "ui": {
+    "indentSize": 30,
+    "showBullets": true,
+    "showCollapseIndicators": true,
+    "animationsEnabled": true,
+    "theme": "classic-white"
+  },
+  "editor": {
+    "autoSave": true,
+    "autoSaveDelay": 1000,
+    "placeholder": "输入内容...",
+    "renderMode": "live-preview"
+  },
+  "search": {
+    "mode": "filter",
+    "caseSensitive": false,
+    "autoExpandMatches": true
+  },
+  "dragDrop": {
+    "enabled": true,
+    "showDropIndicators": true,
+    "allowNestedDrop": true
+  },
+  "isolation": {
+    "strictMode": false,
+    "enableAssertions": true,
+    "debugMode": false,
+    "healthCheckInterval": 30000
+  }
+}
