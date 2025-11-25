@@ -477,7 +477,7 @@ var BlockEditor = class {
     this.redoStack = [];
   }
   undo() {
-    if (this.undoStack.length === 0) {
+    if (this.undoStack.length <= 1) {
       return false;
     }
     this.redoStack.push(this.cloneState(this.state));
@@ -578,24 +578,28 @@ var BlockEditor = class {
     const block = findBlockById(this.state.blocks, blockId);
     if (!block)
       return false;
-    const allBlocks = getAllBlocks(this.state.blocks);
-    const currentIndex = allBlocks.findIndex((b) => b.id === blockId);
+    const parent = findParentBlock(this.state.blocks, blockId);
+    const siblings = parent ? parent.children : this.state.blocks;
+    const currentIndex = siblings.findIndex((b) => b.id === blockId);
     if (currentIndex <= 0)
       return false;
-    const prevBlock = allBlocks[currentIndex - 1];
+    const prevSibling = siblings[currentIndex - 1];
     let newBlocks = this.parser.deleteBlock(this.state.blocks, blockId);
-    const updatedBlock = { ...block, level: prevBlock.level + 1 };
-    function addAsChild(blocks) {
-      return blocks.map((b) => {
-        if (b.id === prevBlock.id) {
-          return { ...b, children: [...b.children, updatedBlock] };
-        }
-        return { ...b, children: addAsChild(b.children) };
-      });
-    }
-    newBlocks = addAsChild(newBlocks);
+    const updatedBlock = this.updateBlockLevel(block, prevSibling.level + 1);
+    newBlocks = this.addAsLastChild(newBlocks, prevSibling.id, updatedBlock);
     this.setState({ blocks: newBlocks });
     return true;
+  }
+  /**
+   * 将块添加为指定父块的最后一个子块
+   */
+  addAsLastChild(blocks, parentId, childBlock) {
+    return blocks.map((block) => {
+      if (block.id === parentId) {
+        return { ...block, children: [...block.children, childBlock] };
+      }
+      return { ...block, children: this.addAsLastChild(block.children, parentId, childBlock) };
+    });
   }
   outdentBlock(blockId) {
     const block = findBlockById(this.state.blocks, blockId);
@@ -603,15 +607,34 @@ var BlockEditor = class {
     if (!block || !parent || block.level === 0)
       return false;
     let newBlocks = this.parser.deleteBlock(this.state.blocks, blockId);
-    const updatedBlock = { ...block, level: parent.level };
-    const grandParent = findParentBlock(this.state.blocks, parent.id);
-    if (grandParent) {
-      newBlocks = this.parser.insertBlock(newBlocks, updatedBlock, parent.id);
-    } else {
-      newBlocks.push(updatedBlock);
-    }
+    const updatedBlock = this.updateBlockLevel(block, parent.level);
+    newBlocks = this.insertAfterBlock(newBlocks, parent.id, updatedBlock);
     this.setState({ blocks: newBlocks });
     return true;
+  }
+  /**
+   * 在指定块的后面插入新块
+   */
+  insertAfterBlock(blocks, afterBlockId, blockToInsert) {
+    const parent = findParentBlock(blocks, afterBlockId);
+    const siblings = parent ? parent.children : blocks;
+    const afterIndex = siblings.findIndex((b) => b.id === afterBlockId);
+    if (afterIndex === -1)
+      return blocks;
+    const newSiblings = [
+      ...siblings.slice(0, afterIndex + 1),
+      blockToInsert,
+      ...siblings.slice(afterIndex + 1)
+    ];
+    if (!parent) {
+      return newSiblings;
+    }
+    return blocks.map((block) => {
+      if (block.id === parent.id) {
+        return { ...block, children: newSiblings };
+      }
+      return { ...block, children: this.insertAfterBlock(block.children, afterBlockId, blockToInsert) };
+    });
   }
   // 移动操作（在同一父级的兄弟节点间上/下移动）
   replaceChildren(blocks, parentId, newChildren) {
@@ -813,7 +836,16 @@ var BlockEditor = class {
       focusedBlockId: null,
       collapsedBlocks: /* @__PURE__ */ new Set(),
       selectedBlocks: /* @__PURE__ */ new Set()
-    });
+    }, false);
+    this.saveInitialState();
+  }
+  /**
+   * 保存初始状态作为撤销底线
+   * 从 Markdown 加载后调用，确保撤销不会超过这个状态
+   */
+  saveInitialState() {
+    this.undoStack = [this.cloneState(this.state)];
+    this.redoStack = [];
   }
   /**
    * 移动块到指定位置
@@ -1538,6 +1570,8 @@ var _OutlineItem = class {
     this.livePreviewEditor = null;
     this.isDragging = false;
     this.draggedBlock = null;
+    // 事件监听器管理 - 用于清理
+    this.eventHandlers = [];
     var _a;
     this.block = block;
     this.editor = editor;
@@ -1618,10 +1652,11 @@ var _OutlineItem = class {
       }
       contentLine.appendChild(this.checkboxElement);
     }
-    this.bulletElement.addEventListener("click", (e) => {
+    this.addEventListener(this.bulletElement, "click", (e) => {
+      const mouseEvent = e;
       if (!this.isDragging && this.onBulletClick) {
-        e.preventDefault();
-        e.stopPropagation();
+        mouseEvent.preventDefault();
+        mouseEvent.stopPropagation();
         this.onBulletClick(this.block.id);
       }
     });
@@ -1671,6 +1706,13 @@ var _OutlineItem = class {
     this.contentElement = this.editorElement;
   }
   /**
+   * 添加事件监听器并记录以便清理
+   */
+  addEventListener(element, event, handler, options) {
+    element.addEventListener(event, handler, options);
+    this.eventHandlers.push({ element, event, handler, options });
+  }
+  /**
    * 绑定事件监听器（保留原有的错误处理）
    * 注意：此方法只应该在列表项上调用，非列表项使用 Obsidian 渲染器不需要这些事件
    */
@@ -1680,42 +1722,42 @@ var _OutlineItem = class {
       return;
     }
     if (this.collapseIndicator) {
-      this.collapseIndicator.addEventListener("click", (e) => {
+      this.addEventListener(this.collapseIndicator, "click", (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.toggleCollapse();
       });
     }
     if (this.checkboxElement) {
-      this.checkboxElement.addEventListener("click", (e) => {
+      this.addEventListener(this.checkboxElement, "click", (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.handleCheckboxClick();
       });
     }
-    this.contentElement.addEventListener("input", () => {
+    this.addEventListener(this.contentElement, "input", () => {
       this.handleContentChange();
     });
-    this.contentElement.addEventListener("focus", () => {
+    this.addEventListener(this.contentElement, "focus", () => {
       this.handleFocus();
     });
-    this.contentElement.addEventListener("blur", () => {
+    this.addEventListener(this.contentElement, "blur", () => {
       this.handleBlur();
     });
-    this.element.addEventListener("mouseenter", () => {
+    this.addEventListener(this.element, "mouseenter", () => {
       this.element.classList.add("hovered");
     });
-    this.element.addEventListener("mouseleave", () => {
+    this.addEventListener(this.element, "mouseleave", () => {
       this.element.classList.remove("hovered");
     });
     this.bulletElement.setAttribute("draggable", "true");
-    this.bulletElement.addEventListener("dragstart", (e) => {
+    this.addEventListener(this.bulletElement, "dragstart", (e) => {
       this.handleDragStart(e);
     });
-    this.element.addEventListener("dragover", (e) => this.handleDragOver(e), { capture: true });
-    this.element.addEventListener("drop", (e) => this.handleDrop(e), { capture: true });
-    this.element.addEventListener("dragend", (e) => this.handleDragEnd(e), { capture: true });
-    this.element.addEventListener("dragleave", (e) => this.handleDragLeave(e), { capture: true });
+    this.addEventListener(this.element, "dragover", (e) => this.handleDragOver(e), { capture: true });
+    this.addEventListener(this.element, "drop", (e) => this.handleDrop(e), { capture: true });
+    this.addEventListener(this.element, "dragend", (e) => this.handleDragEnd(e), { capture: true });
+    this.addEventListener(this.element, "dragleave", (e) => this.handleDragLeave(e), { capture: true });
   }
   /**
    * 键盘事件处理 - 使用 WORKFLOWY_SHORTCUTS 映射
@@ -2676,7 +2718,33 @@ var _OutlineItem = class {
     }
   }
   destroy() {
-    this.element.remove();
+    this.eventHandlers.forEach(({ element, event, handler, options }) => {
+      element.removeEventListener(event, handler, options);
+    });
+    this.eventHandlers = [];
+    if (this.obsidianRenderer) {
+      this.obsidianRenderer.onunload();
+      this.obsidianRenderer = null;
+    }
+    if (this.livePreviewEditor) {
+      this.livePreviewEditor = null;
+    }
+    this.block = null;
+    this.editor = null;
+    this.contentElement = null;
+    this.bulletElement = null;
+    this.collapseIndicator = null;
+    this.checkboxElement = null;
+    this.displayElement = null;
+    this.editorElement = null;
+    this.contentWrapper = null;
+    this.app = null;
+    this.onUpdate = null;
+    this.onFocus = null;
+    this.onRender = void 0;
+    this.getMultiSelectionManager = void 0;
+    this.onBulletClick = void 0;
+    this.getZoomedBlockId = void 0;
   }
   updateContent(newContent) {
     if (this.contentElement.textContent !== newContent) {
@@ -3729,6 +3797,8 @@ var VerticalLinesManager = class {
     this.pendingUpdate = false;
     // 方案C：缓存机制 - 缓存 DOM 查询结果
     this.blockElementCache = /* @__PURE__ */ new Map();
+    this.cacheTimeouts = /* @__PURE__ */ new Map();
+    // 保存 timeout 引用以便清理
     this.cacheTimeout = 200;
     /**
      * 处理点击事件 - 复用 obsidian-outliner 的点击逻辑
@@ -3866,9 +3936,15 @@ var VerticalLinesManager = class {
     );
     if (element) {
       this.blockElementCache.set(blockId, element);
-      setTimeout(() => {
+      const oldTimeout = this.cacheTimeouts.get(blockId);
+      if (oldTimeout) {
+        clearTimeout(oldTimeout);
+      }
+      const timeoutId = window.setTimeout(() => {
         this.blockElementCache.delete(blockId);
+        this.cacheTimeouts.delete(blockId);
       }, this.cacheTimeout);
+      this.cacheTimeouts.set(blockId, timeoutId);
     }
     return element;
   }
@@ -3974,6 +4050,10 @@ var VerticalLinesManager = class {
       clearTimeout(this.updateTimer);
       this.updateTimer = null;
     }
+    this.cacheTimeouts.forEach((timeoutId) => {
+      clearTimeout(timeoutId);
+    });
+    this.cacheTimeouts.clear();
     this.blockElementCache.clear();
     this.lineElements.forEach((element) => element.remove());
     this.lineElements = [];
@@ -3981,6 +4061,10 @@ var VerticalLinesManager = class {
     if (this.scroller.parentElement) {
       this.scroller.remove();
     }
+    this.contentContainer = null;
+    this.scroller = null;
+    this.editor = null;
+    this.onToggleCollapse = null;
   }
 };
 
@@ -4057,12 +4141,16 @@ var MultiSelectionManager = class {
    * 绑定事件监听器
    */
   bindEvents() {
-    this.container.addEventListener("mousedown", this.handleMouseDown.bind(this), true);
-    document.addEventListener("mousemove", this.handleMouseMove.bind(this));
-    document.addEventListener("mouseup", this.handleMouseUp.bind(this));
+    this.boundMouseDownHandler = this.handleMouseDown.bind(this);
+    this.boundMouseMoveHandler = this.handleMouseMove.bind(this);
+    this.boundMouseUpHandler = this.handleMouseUp.bind(this);
     this.boundKeyDownHandler = this.handleKeyDown.bind(this);
+    this.boundContainerClickHandler = this.handleContainerClick.bind(this);
+    this.container.addEventListener("mousedown", this.boundMouseDownHandler, true);
+    document.addEventListener("mousemove", this.boundMouseMoveHandler);
+    document.addEventListener("mouseup", this.boundMouseUpHandler);
     document.addEventListener("keydown", this.boundKeyDownHandler, true);
-    this.container.addEventListener("click", this.handleContainerClick.bind(this));
+    this.container.addEventListener("click", this.boundContainerClickHandler);
   }
   /**
    * 处理鼠标按下事件
@@ -4075,7 +4163,10 @@ var MultiSelectionManager = class {
     if (bulletElement) {
       return;
     }
-    const contentElement = target.closest(".workflowy-content, .workflowy-content-display, .workflowy-content-editor");
+    if (target.classList.contains("workflowy-content-editor") || target.tagName === "TEXTAREA") {
+      return;
+    }
+    const contentElement = target.closest(".workflowy-content, .workflowy-content-display");
     if (!contentElement) {
       return;
     }
@@ -4116,6 +4207,9 @@ var MultiSelectionManager = class {
     if (!this.isSelecting || !this.selectionStart) {
       return;
     }
+    if (!this.container) {
+      return;
+    }
     const deltaY = e.clientY - this.selectionStart.y;
     const minDragDistance = 8;
     if (Math.abs(deltaY) < minDragDistance) {
@@ -4143,6 +4237,11 @@ var MultiSelectionManager = class {
    */
   handleMouseUp(e) {
     if (this.isSelecting) {
+      if (!this.container) {
+        this.isSelecting = false;
+        this.selectionStart = null;
+        return;
+      }
       this.container.classList.remove("selecting");
       if (this.selectionBox) {
         this.selectionBox.style.display = "none";
@@ -4166,6 +4265,9 @@ var MultiSelectionManager = class {
   updateSelectionFromVerticalDrag(currentY) {
     if (!this.selectionStart)
       return;
+    if (!this.container) {
+      return;
+    }
     const startBlockId = this.selectionStart.startBlockId;
     const startElement = this.selectionStart.startElement;
     if (!startBlockId || !startElement)
@@ -4247,6 +4349,9 @@ var MultiSelectionManager = class {
    * 更新选择状态的视觉显示
    */
   updateSelectionDisplay() {
+    if (!this.container) {
+      return;
+    }
     const allElements = this.container.querySelectorAll(".workflowy-item");
     allElements.forEach((element) => {
       element.classList.remove("workflowy-selected");
@@ -4344,7 +4449,8 @@ var MultiSelectionManager = class {
       return aIndex - bIndex;
     });
     const firstBlockId = (_a = selectedBlocksData[0]) == null ? void 0 : _a.id;
-    selectedBlocksData.forEach((block) => {
+    const topLevelSelectedBlocks = this.filterTopLevelBlocks(selectedBlocksData);
+    topLevelSelectedBlocks.forEach((block) => {
       this.editor.indentBlock(block.id);
     });
     this.onRender();
@@ -4370,7 +4476,8 @@ var MultiSelectionManager = class {
       return aIndex - bIndex;
     });
     const firstBlockId = (_a = selectedBlocksData[0]) == null ? void 0 : _a.id;
-    selectedBlocksData.forEach((block) => {
+    const topLevelSelectedBlocks = this.filterTopLevelBlocks(selectedBlocksData);
+    topLevelSelectedBlocks.forEach((block) => {
       this.editor.outdentBlock(block.id);
     });
     this.onRender();
@@ -4381,9 +4488,53 @@ var MultiSelectionManager = class {
     }
   }
   /**
+   * 过滤出顶层选中节点（排除已选中节点的子孙节点）
+   * 
+   * 例如：选中了 [2, 2.1, 2.2, 3]
+   * 应该只返回 [2, 3]，因为 2.1 和 2.2 是 2 的子节点
+   */
+  filterTopLevelBlocks(selectedBlocks) {
+    const topLevelBlocks = [];
+    for (const block of selectedBlocks) {
+      let isDescendant = false;
+      for (const otherBlock of selectedBlocks) {
+        if (otherBlock.id === block.id)
+          continue;
+        if (this.isDescendantOf(block, otherBlock)) {
+          isDescendant = true;
+          break;
+        }
+      }
+      if (!isDescendant) {
+        topLevelBlocks.push(block);
+      }
+    }
+    return topLevelBlocks;
+  }
+  /**
+   * 检查 block 是否是 ancestor 的子孙节点
+   */
+  isDescendantOf(block, ancestor) {
+    const checkChildren = (children) => {
+      for (const child of children) {
+        if (child.id === block.id) {
+          return true;
+        }
+        if (checkChildren(child.children)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    return checkChildren(ancestor.children);
+  }
+  /**
    * 聚焦块（支持源码模式和 Live Preview 模式）
    */
   focusBlock(blockId) {
+    if (!this.container) {
+      return;
+    }
     const blockElement = this.container.querySelector(`[data-block-id="${blockId}"]`);
     if (!blockElement)
       return;
@@ -4540,8 +4691,20 @@ var MultiSelectionManager = class {
       window.clearTimeout(this.updateThrottleTimer);
       this.updateThrottleTimer = null;
     }
+    if (this.boundMouseDownHandler) {
+      this.container.removeEventListener("mousedown", this.boundMouseDownHandler, true);
+    }
+    if (this.boundMouseMoveHandler) {
+      document.removeEventListener("mousemove", this.boundMouseMoveHandler);
+    }
+    if (this.boundMouseUpHandler) {
+      document.removeEventListener("mouseup", this.boundMouseUpHandler);
+    }
     if (this.boundKeyDownHandler) {
       document.removeEventListener("keydown", this.boundKeyDownHandler, true);
+    }
+    if (this.boundContainerClickHandler) {
+      this.container.removeEventListener("click", this.boundContainerClickHandler);
     }
     if (this.selectionBox) {
       document.body.removeChild(this.selectionBox);
@@ -4552,6 +4715,11 @@ var MultiSelectionManager = class {
       this.selectionCounter = null;
     }
     this.clearSelection();
+    this.container = null;
+    this.editor = null;
+    this.selectedBlocks.clear();
+    this.onSelectionChange = null;
+    this.onRender = null;
   }
 };
 
@@ -4867,6 +5035,15 @@ var NavigationHeader = class {
     this.breadcrumbsContainer = null;
     this.themeButton = null;
     this.themeMenu = null;
+    // 事件监听器管理 - 用于清理
+    this.eventHandlers = [];
+  }
+  /**
+   * 添加事件监听器并记录以便清理
+   */
+  addEventListener(element, event, handler) {
+    element.addEventListener(event, handler);
+    this.eventHandlers.push({ element, event, handler });
   }
   /**
    * 创建导航头部DOM
@@ -4900,12 +5077,12 @@ var NavigationHeader = class {
         this.onSearch(query);
       }
     };
-    this.searchInput.addEventListener("focus", () => {
+    this.addEventListener(this.searchInput, "focus", () => {
       document.querySelectorAll(".workflowy-item.focused").forEach((el) => {
         el.classList.remove("focused");
       });
     });
-    this.searchClearButton.addEventListener("click", () => {
+    this.addEventListener(this.searchClearButton, "click", () => {
       if (this.searchInput) {
         this.searchInput.value = "";
         this.searchClearButton.style.display = "none";
@@ -4937,11 +5114,11 @@ var NavigationHeader = class {
     this.themeMenu = this.headerElement.createDiv("workflowy-theme-menu");
     this.themeMenu.style.display = "none";
     this.renderThemeOptions();
-    this.themeButton.addEventListener("click", (e) => {
+    this.addEventListener(this.themeButton, "click", (e) => {
       e.stopPropagation();
       this.toggleThemeMenu();
     });
-    document.addEventListener("click", (e) => {
+    this.addEventListener(document, "click", (e) => {
       var _a;
       if (this.themeMenu && this.themeMenu.style.display !== "none" && !this.themeMenu.contains(e.target) && !((_a = this.themeButton) == null ? void 0 : _a.contains(e.target))) {
         this.hideThemeMenu();
@@ -4974,7 +5151,7 @@ var NavigationHeader = class {
       if (this.themeManager && this.themeManager.getCurrentTheme() === theme.id) {
         option.classList.add("active");
       }
-      option.addEventListener("click", () => {
+      this.addEventListener(option, "click", () => {
         this.selectTheme(theme.id);
       });
     });
@@ -5057,7 +5234,7 @@ var NavigationHeader = class {
         }
       });
       item.textContent = breadcrumb.title;
-      item.addEventListener("click", (e) => {
+      this.addEventListener(item, "click", (e) => {
         e.preventDefault();
         if (this.onBreadcrumbClick) {
           this.onBreadcrumbClick(breadcrumb.blockId);
@@ -5151,12 +5328,23 @@ var NavigationHeader = class {
    * 销毁头部
    */
   destroy() {
+    this.eventHandlers.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler);
+    });
+    this.eventHandlers = [];
     if (this.headerElement) {
       this.headerElement.remove();
       this.headerElement = null;
     }
     this.searchInput = null;
+    this.searchClearButton = null;
+    this.searchContainer = null;
     this.breadcrumbsContainer = null;
+    this.themeButton = null;
+    this.themeMenu = null;
+    this.themeManager = void 0;
+    this.onBreadcrumbClick = void 0;
+    this.onSearch = void 0;
   }
 };
 
@@ -5441,6 +5629,11 @@ var WorkflowyView = class extends import_obsidian4.FileView {
       console.error("[WorkflowyView] Editor container not found!");
       return;
     }
+    const scrollContainer = editorContainer.parentElement || this.container;
+    const savedScrollTop = scrollContainer.scrollTop;
+    this.blockElements.forEach((item) => {
+      item.destroy();
+    });
     editorContainer.empty();
     this.blockElements.clear();
     const state = this.editor.getState();
@@ -5467,9 +5660,13 @@ var WorkflowyView = class extends import_obsidian4.FileView {
       renderPromises.push(...promises);
     }
     await Promise.all(renderPromises);
+    requestAnimationFrame(() => {
+      if (scrollContainer && savedScrollTop > 0) {
+        scrollContainer.scrollTop = savedScrollTop;
+      }
+    });
     if (state.blocks.length === 0 && !((_a = this.zoomManager) == null ? void 0 : _a.isZoomed())) {
-      this.editor.createNewBlock();
-      this.renderBlocks();
+      console.warn("[WorkflowyView] No blocks found, this should not happen with undo baseline");
       return;
     }
     if ((_b = this.zoomManager) == null ? void 0 : _b.isZoomed()) {
@@ -6119,7 +6316,7 @@ var WorkflowyView = class extends import_obsidian4.FileView {
         }
       }
       if (state.blocks.length === 0 && !((_b = this.zoomManager) == null ? void 0 : _b.isZoomed())) {
-        this.editor.createNewBlock();
+        console.warn("[WorkflowyView] Undo resulted in empty blocks, this should not happen");
       }
       this.renderBlocks();
       return true;
@@ -6142,7 +6339,7 @@ var WorkflowyView = class extends import_obsidian4.FileView {
         }
       }
       if (state.blocks.length === 0 && !((_b = this.zoomManager) == null ? void 0 : _b.isZoomed())) {
-        this.editor.createNewBlock();
+        console.warn("[WorkflowyView] Redo resulted in empty blocks, this should not happen");
       }
       this.renderBlocks();
       return true;
