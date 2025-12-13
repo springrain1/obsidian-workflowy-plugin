@@ -18,8 +18,9 @@
 - ctrl+enter 进入任务，再按一次就完成，完成后节点下方的节点会变灰色
 - ctrl+shift+方向键上/下，移动节点
 - 按alt+方向键上/下聚焦模式
-- shift+tab节点内换行
+- shift+enter节点内换行
 - ctrl+backspace 清空节点内容
+- Ctrl+Shift+Backspace 删除当前节点
 
 ## v1.1：
 1、非`- `开头的数据处理，目前是调用obsidian API markdownrenderer直接渲染出来显示，内容仅可读，不可编辑
