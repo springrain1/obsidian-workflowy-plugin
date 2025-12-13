@@ -24,8 +24,12 @@
   },
   "isolation": {
     "strictMode": false,
-    "enableAssertions": true,
+    "enableAssertions": false,
     "debugMode": false,
     "healthCheckInterval": 30000
+  },
+  "collapseState": {
+    "enabled": true,
+    "marker": "c"
   }
 }
