@@ -2649,7 +2649,6 @@
     color: var(--link-color);
     cursor: pointer;
     pointer-events: auto !important;
-}
     text-decoration: var(--link-decoration);
 }
 
@@ -3706,83 +3705,227 @@
 
 /* 移动端内容项优化 */
 .is-mobile .workflowy-item {
-    margin: 2px 0;
+    margin: 0 !important;  /* 减少节点间距 */
+    position: relative;
 }
 
 .is-mobile .workflowy-content,
 .is-mobile .workflowy-content-display,
 .is-mobile .workflowy-content-editor {
     font-size: 15px !important;
-    line-height: 1.5 !important;
-    padding: 6px 8px !important;
-    min-height: 36px !important;
+    line-height: 1.4 !important;  /* 稍微减小行高 */
+    padding: 4px 8px !important;  /* 减少内边距 */
+    min-height: 28px !important;  /* 减小最小高度 */
 }
 
-/* 移动端内容行优化 */
+/* 移动端内容行优化 - 参考幕布布局 */
 .is-mobile .workflowy-content-line {
-    min-height: 36px;
-    display: flex;
-    align-items: center;
+    min-height: 24px !important;  /* 减小最小高度 */
+    display: flex !important;
+    align-items: center !important;
+    position: relative;
+    padding-right: 24px !important;  /* 为右侧折叠指示器区域留出空间 */
 }
 
-/* 移动端圆点和折叠指示器优化 */
-.is-mobile .workflowy-bullet {
-    width: 8px;
-    height: 8px;
-    margin-right: 8px;
-    /* 触摸区域通过 padding 扩展 */
-    padding: 18px;
-    margin: -18px 8px -18px -18px;
+/* 右侧折叠指示器背景区域 - 仅对有子节点的项显示（参考幕布） */
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 2px;      /* 上下留出间隔 */
+    bottom: 2px;   /* 上下留出间隔 */
+    width: 20px;
+    background: rgba(245, 245, 245, 0.95);  /* 浅灰色背景 */
+    border-radius: 4px;  /* 圆角 */
+    pointer-events: none;
+    z-index: 4;
+}
+
+/* 暗色模式下的右侧背景 */
+.theme-dark .is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse)::after {
+    background: rgba(50, 50, 50, 0.95);
+}
+
+/* ==================== 移动端 Bullet 圆点样式 ==================== */
+/* 使用 ::after 伪元素显示圆点，与桌面端视觉效果一致 */
+
+.is-mobile .workflowy-container .workflowy-item .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item:hover .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item.focused .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse) .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
+    /* 触摸区域 */
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    /* 重置样式 */
+    padding: 0 !important;
+    margin: 0 4px 0 0 !important;  /* 减少右边距 */
+    /* 背景透明 */
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    /* Flexbox 居中 */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    /* 圆点放在最前面（order 默认为 0） */
+    order: 0 !important;
 }
 
-.is-mobile .workflowy-collapse {
-    width: 16px;
-    height: 16px;
-    font-size: 12px;
-    /* 触摸区域通过 padding 扩展 */
-    padding: 14px;
-    margin: -14px 4px -14px -14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* 移动端圆点 - 使用 ::after 伪元素，与桌面端 6px 圆点一致 */
+.is-mobile .workflowy-container .workflowy-item .workflowy-bullet::after {
+    content: '' !important;
+    display: block !important;
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+    background: var(--text-muted) !important;
+    box-shadow: none !important;
+    transform: none !important;
+    position: absolute !important;
 }
 
-/* 移动端复选框优化 */
-.is-mobile .workflowy-checkbox {
-    width: 16px;
-    height: 16px;
-    /* 触摸区域通过 padding 扩展 */
-    padding: 14px;
-    margin: -14px 4px -14px 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* 移动端圆点聚焦状态 */
+.is-mobile .workflowy-container .workflowy-item.focused .workflowy-bullet::after {
+    background: var(--text-accent) !important;
 }
 
-/* 移动端缩进优化 - 减小缩进以节省空间 */
+/* 移动端折叠状态的圆点 - 添加外圈，与桌面端一致 */
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet::after {
+    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.15) !important;
+}
+
+/* ==================== 移动端折叠指示器 - 放置在右侧（参考幕布） ==================== */
+
+.is-mobile .workflowy-container .workflowy-collapse {
+    /* 绝对定位到右侧背景块中心 */
+    position: absolute !important;
+    right: 0 !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    /* 尺寸和样式 - 适配 20px 背景块 */
+    width: 20px !important;
+    height: 24px !important;
+    min-width: 20px !important;
+    min-height: 24px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: var(--text-muted) !important;
+    z-index: 6;  /* 高于背景层 */
+}
+
+/* 移动端折叠指示器 - 折叠状态三角指向左侧 ◀ */
+.is-mobile .workflowy-container .workflowy-collapse.collapsed {
+    /* 使用 CSS 旋转，让 ▶ 变成 ◀ */
+    transform: translateY(-50%) rotate(180deg) !important;
+}
+
+/* 移动端折叠指示器悬停状态 */
+.is-mobile .workflowy-container .workflowy-collapse:hover {
+    color: var(--text-normal) !important;
+    background: var(--background-modifier-hover) !important;
+    border-radius: 4px !important;
+}
+
+/* 移动端折叠占位符 - 不再需要，隐藏 */
+.is-mobile .workflowy-container .workflowy-collapse-placeholder {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* ==================== 移动端复选框 ==================== */
+
+.is-mobile .workflowy-container .workflowy-checkbox {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    padding: 0 !important;
+    margin: 0 4px 0 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    flex-shrink: 0;
+    border: none !important;
+    background: transparent !important;
+    position: relative;
+    /* 复选框保持在圆点后面，不使用绝对定位 */
+    order: 0 !important;
+}
+
+/* 移动端复选框内部方框 - 与桌面端 18px 一致 */
+.is-mobile .workflowy-container .workflowy-checkbox::before {
+    content: '' !important;
+    display: block !important;
+    width: 16px !important;
+    height: 16px !important;
+    border: 2px solid var(--text-muted) !important;
+    border-radius: 4px !important;
+    background: var(--background-primary) !important;
+}
+
+/* 移动端复选框已完成状态 */
+.is-mobile .workflowy-container .workflowy-checkbox.completed::before {
+    background: var(--text-accent) !important;
+    border-color: var(--text-accent) !important;
+}
+
+/* 移动端复选框内部图标 */
+.is-mobile .workflowy-container .workflowy-checkbox svg {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    color: var(--text-on-accent);
+}
+
+/* ==================== 移动端缩进和垂直线 ==================== */
+
+/* 移动端缩进优化 - 使用 20px 缩进（折叠指示器已移到右侧，左侧更紧凑） */
+.is-mobile .workflowy-item[data-level="0"] {
+    padding-left: 0 !important;
+}
+
 .is-mobile .workflowy-item[data-level="1"] {
-    padding-left: 24px !important;
+    padding-left: 20px !important;
 }
 
 .is-mobile .workflowy-item[data-level="2"] {
-    padding-left: 48px !important;
+    padding-left: 40px !important;
 }
 
 .is-mobile .workflowy-item[data-level="3"] {
-    padding-left: 72px !important;
+    padding-left: 60px !important;
 }
 
 .is-mobile .workflowy-item[data-level="4"] {
-    padding-left: 96px !important;
+    padding-left: 80px !important;
 }
 
 .is-mobile .workflowy-item[data-level="5"] {
-    padding-left: 120px !important;
+    padding-left: 100px !important;
 }
 
 .is-mobile .workflowy-item[data-level="6"] {
-    padding-left: 144px !important;
+    padding-left: 120px !important;
 }
 
 /* 移动端拖拽指示器优化 */
@@ -3807,12 +3950,6 @@
 
 .is-mobile .workflowy-breadcrumb-item {
     padding: 4px 8px;
-}
-
-/* 移动端折叠占位符优化 */
-.is-mobile .workflowy-collapse-placeholder {
-    width: 16px;
-    min-width: 16px;
 }
 
 /* 移动端垂直线优化 */
@@ -3870,5 +4007,112 @@
     .is-mobile .workflowy-btn {
         padding: 8px 12px;
         font-size: 13px;
+    }
+}
+
+/* ==================== 移动端底部工具栏 ==================== */
+
+/* 工具栏容器 */
+.is-mobile .workflowy-mobile-toolbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--background-secondary);
+    border-top: 1px solid var(--background-modifier-border);
+    padding: 4px 8px;
+    z-index: 1000;
+    gap: 0;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    user-select: none;
+}
+
+/* 工具栏按钮 */
+.is-mobile .workflowy-mobile-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+}
+
+.is-mobile .workflowy-mobile-btn:active {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.is-mobile .workflowy-mobile-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2;
+    pointer-events: none;
+}
+
+/* 收起键盘按钮特殊样式 */
+.is-mobile .workflowy-mobile-btn-keyboard {
+    margin-left: 4px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+}
+
+/* 为工具栏预留底部空间 */
+.is-mobile .workflowy-container {
+    padding-bottom: 50px !important;
+}
+
+/* 编辑器区域也需要预留空间 */
+.is-mobile .workflowy-editor {
+    padding-bottom: 10px;
+}
+
+/* 小屏手机工具栏优化 */
+@media (max-width: 375px) {
+    .is-mobile .workflowy-mobile-toolbar {
+        padding: 3px 4px;
+        gap: 1px;
+    }
+
+    .is-mobile .workflowy-mobile-btn {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+    }
+
+    .is-mobile .workflowy-mobile-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* 横屏模式优化 */
+@media (orientation: landscape) and (max-height: 500px) {
+    .is-mobile .workflowy-mobile-toolbar {
+        padding: 4px 16px;
+        padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .is-mobile .workflowy-mobile-btn {
+        height: 36px;
+        min-height: 36px;
+    }
+
+    .is-mobile .workflowy-container {
+        padding-bottom: calc(50px + env(safe-area-inset-bottom, 0px)) !important;
     }
 }

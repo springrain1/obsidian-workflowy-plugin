@@ -4,7 +4,7 @@
     "showBullets": true,
     "showCollapseIndicators": true,
     "animationsEnabled": true,
-    "theme": "warm-beige"
+    "theme": "default"
   },
   "editor": {
     "autoSave": true,
