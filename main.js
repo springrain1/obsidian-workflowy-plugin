@@ -205,11 +205,12 @@ var OutlineParser = class {
       const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
       if (listMatch) {
         flushNonListBlock();
-        const [, indent, , text] = listMatch;
+        const [, indent, marker, text] = listMatch;
         const tabCount = (indent.match(/\t/g) || []).length;
         const spaceCount = (indent.match(/ /g) || []).length;
         const level = tabCount > 0 ? tabCount : Math.floor(spaceCount / 2);
         maxLevel = Math.max(maxLevel, level);
+        const isOrderedList = /^\d+\.$/.test(marker);
         let isTodo = false;
         let todoCompleted = false;
         let content2 = text;
@@ -282,6 +283,10 @@ var OutlineParser = class {
           children: [],
           isTodo,
           todoCompleted,
+          listMarker: marker,
+          // 保存原始列表标记
+          isOrderedList,
+          // 是否有序列表
           editable: true,
           useObsidianRenderer: false
           // 列表项使用 WorkFlowy 风格渲染
@@ -343,8 +348,20 @@ var OutlineParser = class {
    */
   blocksToMarkdown(blocks, collapseOptions) {
     const lines = [];
-    const self = this;
-    function processBlock(block, parentLevel = 0) {
+    function processBlockList(blockList, parentLevel = 0) {
+      let orderedListCounter = 0;
+      for (const block of blockList) {
+        let currentOrderIndex = 1;
+        if (block.isOrderedList) {
+          orderedListCounter++;
+          currentOrderIndex = orderedListCounter;
+        } else {
+          orderedListCounter = 0;
+        }
+        processBlock(block, parentLevel, currentOrderIndex);
+      }
+    }
+    function processBlock(block, parentLevel = 0, orderIndex = 1) {
       switch (block.type) {
         case "heading":
           const hashes = "#".repeat(block.headingLevel || 1);
@@ -385,31 +402,33 @@ var OutlineParser = class {
               content = `${content} <!--${collapseOptions.marker}-->`;
             }
           }
+          let listMarker;
+          if (block.isOrderedList) {
+            listMarker = `${orderIndex}.`;
+          } else {
+            listMarker = block.listMarker || "-";
+          }
           if (content.includes("\n")) {
             const contentLines = content.split("\n");
-            const firstLine = `${indent}- ${contentLines[0]}`;
+            const firstLine = `${indent}${listMarker} ${contentLines[0]}`;
             const continuationLines = contentLines.slice(1).map(
               (line) => `${indent}  ${line}`
             );
             lines.push(firstLine);
             lines.push(...continuationLines);
           } else {
-            lines.push(`${indent}- ${content}`);
+            lines.push(`${indent}${listMarker} ${content}`);
           }
-          for (const child of block.children) {
-            processBlock(child, block.level);
+          if (block.children.length > 0) {
+            processBlockList(block.children, block.level);
           }
           break;
       }
       if (block.type !== "list") {
-        for (const child of block.children) {
-          processBlock(child, parentLevel);
-        }
+        processBlockList(block.children, parentLevel);
       }
     }
-    for (const block of blocks) {
-      processBlock(block);
-    }
+    processBlockList(blocks, 0);
     return lines.join("\n");
   }
   /**
@@ -514,7 +533,10 @@ var BlockEditor = class {
       isTodo: block.isTodo,
       todoCompleted: block.todoCompleted,
       children: this.deepCloneBlocks(block.children),
-      // 新增的属性
+      // 列表标记属性
+      listMarker: block.listMarker,
+      isOrderedList: block.isOrderedList,
+      // 其他属性
       headingLevel: block.headingLevel,
       codeLanguage: block.codeLanguage,
       quoteLevel: block.quoteLevel,
@@ -558,12 +580,21 @@ var BlockEditor = class {
       content: "",
       children: [],
       level: 0,
-      collapsed: false
+      collapsed: false,
+      listMarker: "-"
+      // 默认无序列表
     };
     if (afterBlockId) {
       const afterBlock = findBlockById(this.state.blocks, afterBlockId);
       if (afterBlock) {
         newBlock.level = afterBlock.level;
+        if (afterBlock.isOrderedList) {
+          newBlock.listMarker = afterBlock.listMarker || "1.";
+          newBlock.isOrderedList = true;
+        } else {
+          newBlock.listMarker = afterBlock.listMarker || "-";
+          newBlock.isOrderedList = false;
+        }
       }
     }
     const newBlocks = this.parser.insertBlock(this.state.blocks, newBlock, afterBlockId);
@@ -586,7 +617,10 @@ var BlockEditor = class {
       content: "",
       children: [],
       level: parentBlock.level + 1,
-      collapsed: false
+      collapsed: false,
+      // 继承父块的列表标记类型
+      listMarker: parentBlock.isOrderedList ? "1." : parentBlock.listMarker || "-",
+      isOrderedList: parentBlock.isOrderedList
     };
     const newBlocks = this.addChildBlock(this.state.blocks, parentBlockId, newBlock);
     this.setState({
@@ -610,7 +644,10 @@ var BlockEditor = class {
       content: "",
       children: [],
       level: beforeBlock.level,
-      collapsed: false
+      collapsed: false,
+      // 继承列表标记类型
+      listMarker: beforeBlock.isOrderedList ? "1." : beforeBlock.listMarker || "-",
+      isOrderedList: beforeBlock.isOrderedList
     };
     const newBlocks = this.insertBlockBefore(this.state.blocks, newBlock, beforeBlockId);
     this.setState({
@@ -2335,7 +2372,9 @@ var CrossDocumentDragUtils = class {
       level: block.level,
       children: block.children.map((child) => this.serializeBlock(child)),
       isTodo: block.isTodo,
-      todoCompleted: block.todoCompleted
+      todoCompleted: block.todoCompleted,
+      listMarker: block.listMarker,
+      isOrderedList: block.isOrderedList
     };
   }
   /**
@@ -2360,7 +2399,9 @@ var CrossDocumentDragUtils = class {
         (child) => this.deserializeBlock(child, newLevel + 1)
       ),
       isTodo: data.isTodo,
-      todoCompleted: data.todoCompleted
+      todoCompleted: data.todoCompleted,
+      listMarker: data.listMarker,
+      isOrderedList: data.isOrderedList
     };
   }
   /**
@@ -2458,7 +2499,7 @@ var CrossDocumentDragUtils = class {
 
 // src/ui/outline-item.ts
 var _OutlineItem = class {
-  constructor(block, editor, onUpdate, onFocus, onRender, getMultiSelectionManager, onBulletClick, getZoomedBlockId, app, sourcePath, settings, viewId) {
+  constructor(block, editor, onUpdate, onFocus, onRender, getMultiSelectionManager, onBulletClick, getZoomedBlockId, app, sourcePath, settings, viewId, orderIndex) {
     this.collapseIndicator = null;
     this.checkboxElement = null;
     // Obsidian 集成
@@ -2492,6 +2533,8 @@ var _OutlineItem = class {
     this.fileDragCursorPosition = 0;
     // 块引用 ID（Live Preview 模式下隐藏，保存时恢复）
     this._blockRefId = null;
+    // 有序列表的序号索引（从 1 开始）
+    this.orderIndex = 1;
     // 存储渲染用的 Component，用于生命周期管理
     this.renderComponent = null;
     var _a;
@@ -2507,6 +2550,7 @@ var _OutlineItem = class {
     this.sourcePath = sourcePath || "";
     this.settings = settings || null;
     this.viewId = viewId || "";
+    this.orderIndex = orderIndex || 1;
     this.ensureDropZoneElements();
     this.createElement();
     if ((this.block.type === "list" || !this.block.useObsidianRenderer) && ((_a = this.settings) == null ? void 0 : _a.editor.renderMode) !== "live-preview") {
@@ -2588,6 +2632,12 @@ var _OutlineItem = class {
     this.bulletElement.draggable = true;
     this.bulletElement.title = "Drag to move, Click to zoom";
     contentLine.appendChild(this.bulletElement);
+    if (this.block.isOrderedList) {
+      const orderNumber = document.createElement("span");
+      orderNumber.className = "workflowy-order-number";
+      orderNumber.textContent = `${this.orderIndex}.`;
+      contentLine.appendChild(orderNumber);
+    }
     if (this.block.isTodo) {
       this.checkboxElement = document.createElement("div");
       this.checkboxElement.className = "workflowy-checkbox";
@@ -4108,6 +4158,18 @@ var _OutlineItem = class {
       this.block.level = newLevel;
       this.element.setAttribute("data-level", newLevel.toString());
       this.element.style.paddingLeft = `${newLevel * UI_CONFIG.indentSize}px`;
+    }
+  }
+  /**
+   * 更新有序列表的序号（用于复用时更新显示）
+   */
+  updateOrderIndex(newIndex) {
+    if (this.orderIndex !== newIndex) {
+      this.orderIndex = newIndex;
+      const orderNumberEl = this.element.querySelector(".workflowy-order-number");
+      if (orderNumberEl) {
+        orderNumberEl.textContent = `${newIndex}.`;
+      }
     }
   }
   /**
@@ -8264,8 +8326,16 @@ var WorkflowyView = class extends import_obsidian7.FileView {
   renderBlockList(blocks, container, parentCompletedTodo = false, reusableItems) {
     var _a;
     const renderPromises = [];
+    let orderedListCounter = 0;
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
+      let orderIndex = 1;
+      if (block.isOrderedList) {
+        orderedListCounter++;
+        orderIndex = orderedListCounter;
+      } else {
+        orderedListCounter = 0;
+      }
       try {
         let blockItem;
         let element;
@@ -8274,6 +8344,9 @@ var WorkflowyView = class extends import_obsidian7.FileView {
           blockItem = reusable.item;
           element = reusable.element;
           blockItem.updateLevel(block.level);
+          if (block.isOrderedList) {
+            blockItem.updateOrderIndex(orderIndex);
+          }
           reusableItems.delete(block.id);
         } else {
           blockItem = new OutlineItem(
@@ -8298,8 +8371,10 @@ var WorkflowyView = class extends import_obsidian7.FileView {
             // 文件路径
             this.plugin.settings,
             // 插件设置
-            this.viewId
+            this.viewId,
             // 视图唯一ID（用于跨文档拖拽）
+            orderIndex
+            // 有序列表序号
           );
           const renderPromise = blockItem.waitForRender();
           if (renderPromise) {

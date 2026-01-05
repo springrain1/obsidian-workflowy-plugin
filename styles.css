@@ -225,6 +225,16 @@
     cursor: pointer; /* 可点击缩放 */
 }
 
+/* 有序列表序号样式 */
+.workflowy-container .workflowy-order-number {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 4px -6px 0 0;
+    flex-shrink: 0;
+    font-weight: normal;
+    min-width: 14px;
+}
+
 /* 折叠状态的节点 bullet 添加外圈阴影效果 */
 .workflowy-container .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
     box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.15);
