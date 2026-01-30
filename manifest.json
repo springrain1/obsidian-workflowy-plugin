@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-workflowy-plugin",
 	"name": "Workflowy Outline",
-	"version": "2.2.0",
+	"version": "2.4.0",
 	"minAppVersion": "0.15.0",
 	"description": "Transform your Obsidian notes into Workflowy-style outline editor with block-level editing capabilities.",
 	"author": "springrain | 公众号:及时春雨",

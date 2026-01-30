@@ -163,6 +163,13 @@ function getAllBlocks(blocks) {
 // src/outline-parser.ts
 var OutlineParser = class {
   /**
+   * Thino 格式预处理：保持原样，大纲视图原生支持 Tab 缩进
+   * Thino 使用 Tab 缩进列表和续行内容，无需转换
+   */
+  preprocessThinoFormat(content, thinoOptions) {
+    return content;
+  }
+  /**
    * 将 Markdown 文本解析为大纲块结构
    * 支持所有 Markdown 元素类型
    * 
@@ -172,9 +179,11 @@ var OutlineParser = class {
    * 
    * @param content Markdown 内容
    * @param collapseOptions 折叠状态选项（可选）
+   * @param thinoOptions Thino 兼容选项（可选）
    */
-  parseMarkdown(content, collapseOptions) {
-    const lines = content.split("\n");
+  parseMarkdown(content, collapseOptions, thinoOptions) {
+    const processedContent = this.preprocessThinoFormat(content, thinoOptions);
+    const lines = processedContent.split("\n");
     const flatBlocks = [];
     let totalBlocks = 0;
     let maxLevel = 0;
@@ -213,18 +222,34 @@ var OutlineParser = class {
         const isOrderedList = /^\d+\.$/.test(marker);
         let isTodo = false;
         let todoCompleted = false;
+        let todoStatus = void 0;
         let content2 = text;
         let collapsed = false;
-        const todoMatch = content2.match(/^\[([ xX])\]\s+(.*)$/);
+        const todoMatch = content2.match(/^\[([ xX\/\-])\]\s+(.*)$/);
         if (todoMatch) {
           isTodo = true;
-          todoCompleted = todoMatch[1].toLowerCase() === "x";
+          const marker2 = todoMatch[1].toLowerCase();
+          if (marker2 === "x") {
+            todoCompleted = true;
+            todoStatus = "done";
+          } else if (marker2 === "/") {
+            todoCompleted = false;
+            todoStatus = "in_progress";
+          } else if (marker2 === "-") {
+            todoCompleted = false;
+            todoStatus = "cancelled";
+          } else {
+            todoCompleted = false;
+            todoStatus = "todo";
+          }
           content2 = todoMatch[2];
         }
         const listMarkerMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+/);
         const baseIndent = listMarkerMatch ? listMarkerMatch[0].length : indent.length + 2;
         let j = i + 1;
         let inCodeBlock = false;
+        let pendingEmptyLines = 0;
+        let continuationIndentType = void 0;
         while (j < lines.length) {
           const nextLine = lines[j];
           const nextTrimmed = nextLine.trim();
@@ -237,22 +262,31 @@ var OutlineParser = class {
               j++;
               continue;
             }
+            pendingEmptyLines++;
             j++;
             continue;
           }
-          const continuationMatch = nextLine.match(/^(\s+)([^-*+\d].*)$/);
+          const continuationMatch = nextLine.match(/^(\s+)(?![-*+]\s|\d+\.\s)(.*)$/);
           if (continuationMatch) {
             const [, nextIndent, continuationText] = continuationMatch;
             const nextIndentLength = nextIndent.length;
             const currentIndentLength = indent.length;
             if (nextIndentLength > currentIndentLength) {
-              if (inCodeBlock) {
-                const relativeIndent = nextIndentLength - baseIndent;
-                const preservedIndent = relativeIndent > 0 ? " ".repeat(relativeIndent) : "";
-                content2 += "\n" + preservedIndent + continuationText;
-              } else {
-                content2 += "\n" + continuationText.trim();
+              if (pendingEmptyLines > 0) {
+                content2 += "\n".repeat(pendingEmptyLines);
+                pendingEmptyLines = 0;
               }
+              if (continuationIndentType === void 0) {
+                const additionalIndent = nextIndent.slice(currentIndentLength);
+                if (additionalIndent.includes("	")) {
+                  continuationIndentType = "tab";
+                } else {
+                  continuationIndentType = "space";
+                }
+              }
+              const relativeIndent = nextIndentLength - baseIndent;
+              const preservedIndent = relativeIndent > 0 ? " ".repeat(relativeIndent) : "";
+              content2 += "\n" + preservedIndent + continuationText;
               j++;
             } else {
               break;
@@ -283,10 +317,13 @@ var OutlineParser = class {
           children: [],
           isTodo,
           todoCompleted,
+          todoStatus,
           listMarker: marker,
           // 保存原始列表标记
           isOrderedList,
           // 是否有序列表
+          continuationIndentType,
+          // 保存续行的原始缩进类型
           editable: true,
           useObsidianRenderer: false
           // 列表项使用 WorkFlowy 风格渲染
@@ -345,8 +382,9 @@ var OutlineParser = class {
    * 
    * @param blocks 块列表
    * @param collapseOptions 折叠状态选项（可选）
+   * @param thinoOptions Thino 兼容选项（可选）
    */
-  blocksToMarkdown(blocks, collapseOptions) {
+  blocksToMarkdown(blocks, collapseOptions, thinoOptions) {
     const lines = [];
     function processBlockList(blockList, parentLevel = 0) {
       let orderedListCounter = 0;
@@ -389,7 +427,14 @@ var OutlineParser = class {
           const indent = "	".repeat(block.level);
           let content = block.content;
           if (block.isTodo) {
-            const checkbox = block.todoCompleted ? "[x]" : "[ ]";
+            let checkbox = "[ ]";
+            if (block.todoStatus === "done" || block.todoCompleted) {
+              checkbox = "[x]";
+            } else if (block.todoStatus === "in_progress") {
+              checkbox = "[/]";
+            } else if (block.todoStatus === "cancelled") {
+              checkbox = "[-]";
+            }
             content = `${checkbox} ${content}`;
           }
           if ((collapseOptions == null ? void 0 : collapseOptions.enabled) && block.collapsed && block.children.length > 0) {
@@ -411,8 +456,18 @@ var OutlineParser = class {
           if (content.includes("\n")) {
             const contentLines = content.split("\n");
             const firstLine = `${indent}${listMarker} ${contentLines[0]}`;
+            let continuationIndent;
+            if ((thinoOptions == null ? void 0 : thinoOptions.enabled) && block.level === 0) {
+              if (block.continuationIndentType === "tab") {
+                continuationIndent = `${indent}	`;
+              } else {
+                continuationIndent = `${indent}  `;
+              }
+            } else {
+              continuationIndent = `${indent}  `;
+            }
             const continuationLines = contentLines.slice(1).map(
-              (line) => `${indent}  ${line}`
+              (line) => `${continuationIndent}${line}`
             );
             lines.push(firstLine);
             lines.push(...continuationLines);
@@ -532,6 +587,7 @@ var BlockEditor = class {
       collapsed: block.collapsed,
       isTodo: block.isTodo,
       todoCompleted: block.todoCompleted,
+      todoStatus: block.todoStatus,
       children: this.deepCloneBlocks(block.children),
       // 列表标记属性
       listMarker: block.listMarker,
@@ -572,12 +628,12 @@ var BlockEditor = class {
     return true;
   }
   // 块操作
-  createNewBlock(afterBlockId) {
+  createNewBlock(afterBlockId, initialContent) {
     const newBlock = {
       id: generateId(),
       type: "list",
       // 新建块默认为列表项
-      content: "",
+      content: initialContent || "",
       children: [],
       level: 0,
       collapsed: false,
@@ -604,17 +660,17 @@ var BlockEditor = class {
     });
     return newBlock;
   }
-  createChildBlock(parentBlockId) {
+  createChildBlock(parentBlockId, initialContent) {
     const parentBlock = findBlockById(this.state.blocks, parentBlockId);
     if (!parentBlock) {
       console.error("[BlockEditor] Parent block not found:", parentBlockId);
-      return this.createNewBlock(parentBlockId);
+      return this.createNewBlock(parentBlockId, initialContent);
     }
     const newBlock = {
       id: generateId(),
       type: "list",
       // 子块默认为列表项
-      content: "",
+      content: initialContent || "",
       children: [],
       level: parentBlock.level + 1,
       collapsed: false,
@@ -885,9 +941,14 @@ var BlockEditor = class {
       return blocks.map((b) => {
         if (b.id === blockId) {
           if (b.isTodo) {
-            return { ...b, todoCompleted: !b.todoCompleted };
+            const newCompleted = !b.todoCompleted;
+            return {
+              ...b,
+              todoCompleted: newCompleted,
+              todoStatus: newCompleted ? "done" : "todo"
+            };
           } else {
-            return { ...b, isTodo: true, todoCompleted: false };
+            return { ...b, isTodo: true, todoCompleted: false, todoStatus: "todo" };
           }
         }
         return {
@@ -897,6 +958,44 @@ var BlockEditor = class {
       });
     };
     const newBlocks = updateTodoInBlocks(this.state.blocks);
+    this.setState({ blocks: newBlocks });
+    return true;
+  }
+  /**
+   * 设置块的待办状态
+   * @param blockId 块ID
+   * @param status 状态：'todo' | 'in_progress' | 'done' | 'cancelled' | 'normal'
+   */
+  setBlockStatus(blockId, status) {
+    const block = findBlockById(this.state.blocks, blockId);
+    if (!block)
+      return false;
+    const updateStatusInBlocks = (blocks) => {
+      return blocks.map((b) => {
+        if (b.id === blockId) {
+          if (status === "normal") {
+            return {
+              ...b,
+              isTodo: false,
+              todoCompleted: false,
+              todoStatus: void 0
+            };
+          } else {
+            return {
+              ...b,
+              isTodo: true,
+              todoCompleted: status === "done",
+              todoStatus: status
+            };
+          }
+        }
+        return {
+          ...b,
+          children: updateStatusInBlocks(b.children)
+        };
+      });
+    };
+    const newBlocks = updateStatusInBlocks(this.state.blocks);
     this.setState({ blocks: newBlocks });
     return true;
   }
@@ -956,11 +1055,11 @@ var BlockEditor = class {
     return false;
   }
   // 导出为 Markdown
-  toMarkdown(collapseOptions) {
+  toMarkdown(collapseOptions, thinoOptions) {
     if (collapseOptions == null ? void 0 : collapseOptions.enabled) {
       this.syncCollapsedStateToBlocks();
     }
-    const markdown = this.parser.blocksToMarkdown(this.state.blocks, collapseOptions);
+    const markdown = this.parser.blocksToMarkdown(this.state.blocks, collapseOptions, thinoOptions);
     return markdown;
   }
   /**
@@ -978,8 +1077,8 @@ var BlockEditor = class {
     syncCollapsed(this.state.blocks);
   }
   // 从 Markdown 加载
-  loadFromMarkdown(content, collapseOptions) {
-    const result = this.parser.parseMarkdown(content, collapseOptions);
+  loadFromMarkdown(content, collapseOptions, thinoOptions) {
+    const result = this.parser.parseMarkdown(content, collapseOptions, thinoOptions);
     const collapsedBlocks = /* @__PURE__ */ new Set();
     if (collapseOptions == null ? void 0 : collapseOptions.enabled) {
       const collectCollapsed = (blocks) => {
@@ -2208,16 +2307,24 @@ var LinkSuggestManager = class {
 // src/features/file-drop-handler.ts
 var import_obsidian4 = require("obsidian");
 var FileDropHandler = class {
-  constructor(app, sourcePath, insertCallback) {
+  constructor(app, sourcePath, insertCallback, settings) {
+    this.settings = null;
     this.app = app;
     this.sourcePath = sourcePath;
     this.insertCallback = insertCallback;
+    this.settings = settings || null;
   }
   /**
    * 更新源文件路径
    */
   setSourcePath(sourcePath) {
     this.sourcePath = sourcePath;
+  }
+  /**
+   * 更新设置
+   */
+  setSettings(settings) {
+    this.settings = settings;
   }
   /**
    * 处理粘贴事件
@@ -2324,14 +2431,47 @@ var FileDropHandler = class {
    * 保存文件并返回链接
    */
   async saveFileAndGetLink(file) {
-    const savePath = await this.app.fileManager.getAvailablePathForAttachment(
-      file.name,
-      this.sourcePath
-    );
+    var _a;
+    let savePath;
+    if (((_a = this.settings) == null ? void 0 : _a.editor.attachmentPath) === "custom" && this.settings.editor.customAttachmentPath) {
+      savePath = await this.getCustomAttachmentPath(file.name);
+    } else {
+      savePath = await this.app.fileManager.getAvailablePathForAttachment(
+        file.name,
+        this.sourcePath
+      );
+    }
     const arrayBuffer = await file.arrayBuffer();
     await this.app.vault.createBinary(savePath, arrayBuffer);
     const filename = this.getFilenameFromPath(savePath);
     return this.generateLinkByExtension(filename);
+  }
+  /**
+   * 获取自定义附件路径
+   * 确保目录存在，并返回可用的文件路径
+   */
+  async getCustomAttachmentPath(filename) {
+    var _a;
+    const customPath = ((_a = this.settings) == null ? void 0 : _a.editor.customAttachmentPath) || "attachments";
+    const normalizedPath = (0, import_obsidian4.normalizePath)(customPath);
+    const folder = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (!folder) {
+      await this.app.vault.createFolder(normalizedPath);
+    } else if (!(folder instanceof import_obsidian4.TFolder)) {
+      return await this.app.fileManager.getAvailablePathForAttachment(
+        filename,
+        this.sourcePath
+      );
+    }
+    let targetPath = (0, import_obsidian4.normalizePath)(`${normalizedPath}/${filename}`);
+    let counter = 1;
+    const ext = filename.includes(".") ? filename.substring(filename.lastIndexOf(".")) : "";
+    const baseName = filename.includes(".") ? filename.substring(0, filename.lastIndexOf(".")) : filename;
+    while (this.app.vault.getAbstractFileByPath(targetPath)) {
+      targetPath = (0, import_obsidian4.normalizePath)(`${normalizedPath}/${baseName} ${counter}${ext}`);
+      counter++;
+    }
+    return targetPath;
   }
   /**
    * 为 vault 内的文件生成链接
@@ -2357,6 +2497,15 @@ var FileDropHandler = class {
   getFilenameFromPath(path) {
     const parts = path.split("/");
     return parts[parts.length - 1];
+  }
+  /**
+   * 销毁 FileDropHandler，释放所有资源
+   */
+  destroy() {
+    this.app = null;
+    this.sourcePath = null;
+    this.insertCallback = null;
+    this.settings = null;
   }
 };
 
@@ -2497,9 +2646,270 @@ var CrossDocumentDragUtils = class {
   }
 };
 
+// src/ui/tag-suggest-menu.ts
+var TagSuggestMenu = class {
+  constructor(app) {
+    this.isVisible = false;
+    this.selectedIndex = 0;
+    this.onSelect = null;
+    this.suggestions = [];
+    this.cachedTags = [];
+    this.lastCacheUpdate = 0;
+    this.CACHE_DURATION = 3e4;
+    this.app = app;
+    this.container = document.body;
+    this.createMenuElement();
+    this.boundHandleClickOutside = this.handleClickOutside.bind(this);
+  }
+  createMenuElement() {
+    this.menuElement = document.createElement("div");
+    this.menuElement.addClass("workflowy-tag-suggest-menu");
+    this.menuElement.style.display = "none";
+    this.container.appendChild(this.menuElement);
+  }
+  show(position, query, onSelect) {
+    this.onSelect = onSelect;
+    this.isVisible = true;
+    this.selectedIndex = 0;
+    this.updateTagCache();
+    this.filterSuggestions(query);
+    if (this.suggestions.length === 0) {
+      return;
+    }
+    this.renderMenu();
+    this.menuElement.style.left = `${position.x}px`;
+    this.menuElement.style.top = `${position.y + 20}px`;
+    this.menuElement.style.display = "block";
+    this.adjustMenuPosition();
+    setTimeout(() => {
+      document.addEventListener("mousedown", this.boundHandleClickOutside);
+    }, 0);
+  }
+  adjustMenuPosition() {
+    const rect = this.menuElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    if (rect.right > viewportWidth) {
+      this.menuElement.style.left = `${viewportWidth - rect.width - 10}px`;
+    }
+    if (rect.bottom > viewportHeight) {
+      const currentTop = parseInt(this.menuElement.style.top);
+      this.menuElement.style.top = `${currentTop - rect.height - 40}px`;
+    }
+  }
+  hide() {
+    this.isVisible = false;
+    this.menuElement.style.display = "none";
+    this.onSelect = null;
+    document.removeEventListener("mousedown", this.boundHandleClickOutside);
+  }
+  handleClickOutside(e) {
+    const target = e.target;
+    if (!this.menuElement.contains(target)) {
+      this.hide();
+    }
+  }
+  filter(query) {
+    this.filterSuggestions(query);
+    this.selectedIndex = 0;
+    this.renderMenu();
+  }
+  filterSuggestions(query) {
+    const queryLower = query.toLowerCase();
+    const matchedTags = this.cachedTags.filter((tag) => {
+      const tagLower = tag.toLowerCase();
+      return tagLower.includes(queryLower);
+    });
+    matchedTags.sort((a, b) => {
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      if (aLower === queryLower)
+        return -1;
+      if (bLower === queryLower)
+        return 1;
+      const aStartsWith = aLower.startsWith(queryLower);
+      const bStartsWith = bLower.startsWith(queryLower);
+      if (aStartsWith && !bStartsWith)
+        return -1;
+      if (!aStartsWith && bStartsWith)
+        return 1;
+      return a.localeCompare(b);
+    });
+    this.suggestions = matchedTags.slice(0, 10);
+  }
+  navigate(direction) {
+    if (!this.isVisible || this.suggestions.length === 0)
+      return;
+    if (direction === "up") {
+      this.selectedIndex = (this.selectedIndex - 1 + this.suggestions.length) % this.suggestions.length;
+    } else {
+      this.selectedIndex = (this.selectedIndex + 1) % this.suggestions.length;
+    }
+    this.updateSelection();
+    this.scrollSelectedIntoView();
+  }
+  selectCurrent() {
+    if (!this.isVisible || this.suggestions.length === 0)
+      return;
+    const tag = this.suggestions[this.selectedIndex];
+    if (this.onSelect) {
+      this.onSelect(tag);
+    }
+    this.hide();
+  }
+  isOpen() {
+    return this.isVisible;
+  }
+  handleKeyDown(e) {
+    if (!this.isVisible)
+      return false;
+    switch (e.key) {
+      case "ArrowUp":
+        e.preventDefault();
+        e.stopPropagation();
+        this.navigate("up");
+        return true;
+      case "ArrowDown":
+        e.preventDefault();
+        e.stopPropagation();
+        this.navigate("down");
+        return true;
+      case "Enter":
+      case "Tab":
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectCurrent();
+        return true;
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        this.hide();
+        return true;
+    }
+    return false;
+  }
+  renderMenu() {
+    this.menuElement.empty();
+    if (this.suggestions.length === 0) {
+      const emptyEl = this.menuElement.createDiv("workflowy-tag-suggest-empty");
+      emptyEl.setText("No tags found");
+      return;
+    }
+    this.suggestions.forEach((tag, index) => {
+      const itemEl = this.menuElement.createDiv("workflowy-tag-suggest-item");
+      if (index === this.selectedIndex) {
+        itemEl.addClass("is-selected");
+      }
+      const iconEl = itemEl.createSpan("workflowy-tag-suggest-icon");
+      iconEl.setText("#");
+      const labelEl = itemEl.createSpan("workflowy-tag-suggest-label");
+      labelEl.setText(tag);
+      itemEl.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedIndex = index;
+        this.selectCurrent();
+      });
+      itemEl.addEventListener("mouseenter", () => {
+        this.selectedIndex = index;
+        this.updateSelection();
+      });
+    });
+  }
+  updateSelection() {
+    const items = this.menuElement.querySelectorAll(".workflowy-tag-suggest-item");
+    items.forEach((item, index) => {
+      if (index === this.selectedIndex) {
+        item.addClass("is-selected");
+      } else {
+        item.removeClass("is-selected");
+      }
+    });
+  }
+  scrollSelectedIntoView() {
+    const items = this.menuElement.querySelectorAll(".workflowy-tag-suggest-item");
+    const selectedEl = items[this.selectedIndex];
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: "nearest" });
+    }
+  }
+  /**
+   * 更新标签缓存
+   */
+  updateTagCache() {
+    const now = Date.now();
+    if (now - this.lastCacheUpdate < this.CACHE_DURATION) {
+      return;
+    }
+    this.cachedTags = this.getAllTags();
+    this.lastCacheUpdate = now;
+  }
+  /**
+   * 获取 vault 中的所有标签
+   */
+  getAllTags() {
+    var _a;
+    const tags = /* @__PURE__ */ new Set();
+    const metadataCache = this.app.metadataCache;
+    const allFiles = this.app.vault.getMarkdownFiles();
+    for (const file of allFiles) {
+      const metadata = metadataCache.getFileCache(file);
+      if (metadata == null ? void 0 : metadata.tags) {
+        for (const tagCache of metadata.tags) {
+          const tagName = tagCache.tag.startsWith("#") ? tagCache.tag.slice(1) : tagCache.tag;
+          if (tagName) {
+            tags.add(tagName);
+            const parts = tagName.split("/");
+            for (let i = 1; i < parts.length; i++) {
+              const parentTag = parts.slice(0, i).join("/");
+              tags.add(parentTag);
+            }
+          }
+        }
+      }
+      if ((_a = metadata == null ? void 0 : metadata.frontmatter) == null ? void 0 : _a.tags) {
+        const frontmatterTags = metadata.frontmatter.tags;
+        if (Array.isArray(frontmatterTags)) {
+          for (const tag of frontmatterTags) {
+            if (typeof tag === "string") {
+              tags.add(tag);
+            }
+          }
+        } else if (typeof frontmatterTags === "string") {
+          tags.add(frontmatterTags);
+        }
+      }
+    }
+    return Array.from(tags).sort();
+  }
+  /**
+   * 强制刷新标签缓存
+   */
+  refreshCache() {
+    this.lastCacheUpdate = 0;
+    this.updateTagCache();
+  }
+  /**
+   * 销毁 TagSuggestMenu，释放所有资源
+   */
+  destroy() {
+    document.removeEventListener("mousedown", this.boundHandleClickOutside);
+    if (this.menuElement && this.menuElement.parentNode) {
+      this.menuElement.parentNode.removeChild(this.menuElement);
+    }
+    this.menuElement = null;
+    this.container = null;
+    this.app = null;
+    this.onSelect = null;
+    this.suggestions = [];
+    this.cachedTags = [];
+    this.boundHandleClickOutside = null;
+  }
+};
+
 // src/ui/outline-item.ts
 var _OutlineItem = class {
-  constructor(block, editor, onUpdate, onFocus, onRender, getMultiSelectionManager, onBulletClick, getZoomedBlockId, app, sourcePath, settings, viewId, orderIndex) {
+  constructor(block, editor, onUpdate, onFocus, onRender, getMultiSelectionManager, onBulletClick, getZoomedBlockId, app, sourcePath, settings, viewId, orderIndex, slashCommandMenu) {
     this.collapseIndicator = null;
     this.checkboxElement = null;
     // Obsidian 集成
@@ -2533,6 +2943,10 @@ var _OutlineItem = class {
     this.fileDragCursorPosition = 0;
     // 块引用 ID（Live Preview 模式下隐藏，保存时恢复）
     this._blockRefId = null;
+    // Slash Command Menu
+    this.slashCommandMenu = null;
+    // Tag Suggest Menu
+    this.tagSuggestMenu = null;
     // 有序列表的序号索引（从 1 开始）
     this.orderIndex = 1;
     // 存储渲染用的 Component，用于生命周期管理
@@ -2551,6 +2965,10 @@ var _OutlineItem = class {
     this.settings = settings || null;
     this.viewId = viewId || "";
     this.orderIndex = orderIndex || 1;
+    this.slashCommandMenu = slashCommandMenu || null;
+    if (app) {
+      this.tagSuggestMenu = new TagSuggestMenu(app);
+    }
     this.ensureDropZoneElements();
     this.createElement();
     if ((this.block.type === "list" || !this.block.useObsidianRenderer) && ((_a = this.settings) == null ? void 0 : _a.editor.renderMode) !== "live-preview") {
@@ -2595,11 +3013,24 @@ var _OutlineItem = class {
     }
   }
   /**
+   * 清理所有静态资源
+   * 应在插件卸载时调用，确保不保留对已销毁 DOM 元素的引用
+   */
+  static cleanupStaticResources() {
+    _OutlineItem.currentDraggedId = null;
+    _OutlineItem.currentDragData = null;
+    if (_OutlineItem.dropZone) {
+      _OutlineItem.dropZone.remove();
+      _OutlineItem.dropZone = null;
+    }
+    _OutlineItem.dropZonePadding = null;
+  }
+  /**
    * 创建元素结构（借鉴 OutlineItemSimple 的直接创建方式）
    * 支持混合渲染：列表项使用 WorkFlowy 风格，其他使用 Obsidian 渲染器
    */
   createElement() {
-    var _a;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
     this.element = document.createElement("div");
     this.element.className = "workflowy-item";
     this.element.setAttribute("data-block-id", this.block.id);
@@ -2614,23 +3045,30 @@ var _OutlineItem = class {
     if (this.block.isTodo && this.block.todoCompleted) {
       this.element.classList.add("todo-completed");
     }
-    this.element.style.paddingLeft = `${this.block.level * UI_CONFIG.indentSize}px`;
+    const indentSize = ((_b = (_a = this.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.indentSize) || UI_CONFIG.indentSize;
+    this.element.style.paddingLeft = `${this.block.level * indentSize}px`;
     const contentLine = document.createElement("div");
     contentLine.className = "workflowy-content-line";
-    if (this.block.children.length > 0) {
+    const showCollapseIndicators = ((_d = (_c = this.settings) == null ? void 0 : _c.ui) == null ? void 0 : _d.showCollapseIndicators) !== false;
+    if (this.block.children.length > 0 && showCollapseIndicators) {
       this.collapseIndicator = document.createElement("div");
       this.collapseIndicator.className = `workflowy-collapse ${this.editor.isCollapsed(this.block.id) ? "collapsed" : ""}`;
-      this.collapseIndicator.innerHTML = this.editor.isCollapsed(this.block.id) ? "\u25B6" : "\u25BC";
+      this.collapseIndicator.innerHTML = this.getCollapseIndicatorSvg();
       contentLine.appendChild(this.collapseIndicator);
     } else {
       const placeholder = document.createElement("div");
       placeholder.className = "workflowy-collapse-placeholder";
       contentLine.appendChild(placeholder);
     }
+    const showBullets = ((_f = (_e = this.settings) == null ? void 0 : _e.ui) == null ? void 0 : _f.showBullets) !== false;
     this.bulletElement = document.createElement("div");
     this.bulletElement.className = "workflowy-bullet";
-    this.bulletElement.draggable = true;
-    this.bulletElement.title = "Drag to move, Click to zoom";
+    if (!showBullets) {
+      this.bulletElement.style.visibility = "hidden";
+    }
+    const dragEnabled = ((_h = (_g = this.settings) == null ? void 0 : _g.dragDrop) == null ? void 0 : _h.enabled) !== false;
+    this.bulletElement.draggable = dragEnabled;
+    this.bulletElement.title = dragEnabled ? "Drag to move, Click to zoom" : "Click to zoom";
     contentLine.appendChild(this.bulletElement);
     if (this.block.isOrderedList) {
       const orderNumber = document.createElement("span");
@@ -2641,10 +3079,19 @@ var _OutlineItem = class {
     if (this.block.isTodo) {
       this.checkboxElement = document.createElement("div");
       this.checkboxElement.className = "workflowy-checkbox";
-      if (this.block.todoCompleted) {
+      const status = this.block.todoStatus || (this.block.todoCompleted ? "done" : "todo");
+      if (status === "done") {
         this.checkboxElement.classList.add("completed");
+        this.checkboxElement.classList.add("status-done");
         this.checkboxElement.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M13.5 3L6 10.5L2.5 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      } else if (status === "in_progress") {
+        this.checkboxElement.classList.add("status-in-progress");
+        this.checkboxElement.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1zm0 2v10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      } else if (status === "cancelled") {
+        this.checkboxElement.classList.add("status-cancelled");
+        this.checkboxElement.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 8h8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       } else {
+        this.checkboxElement.classList.add("status-todo");
         this.checkboxElement.innerHTML = "";
       }
       contentLine.appendChild(this.checkboxElement);
@@ -2657,7 +3104,7 @@ var _OutlineItem = class {
         this.onBulletClick(this.block.id);
       }
     });
-    if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview") {
+    if (((_i = this.settings) == null ? void 0 : _i.editor.renderMode) === "live-preview") {
       this.createLivePreviewContent(contentLine);
     } else {
       this.createSourceContent(contentLine);
@@ -2668,13 +3115,15 @@ var _OutlineItem = class {
    * 创建源码模式内容（保留原有实现）
    */
   createSourceContent(contentLine) {
+    var _a, _b;
     this.contentElement = document.createElement("div");
     this.contentElement.className = "workflowy-content";
     this.contentElement.contentEditable = "true";
     this.contentElement.textContent = this.block.content;
     this.contentElement.setAttribute("data-block-id", this.block.id);
     if (!this.block.content) {
-      this.contentElement.setAttribute("data-placeholder", "\u8F93\u5165\u5185\u5BB9...");
+      const placeholder = ((_b = (_a = this.settings) == null ? void 0 : _a.editor) == null ? void 0 : _b.placeholder) || "\u8F93\u5165\u5185\u5BB9...";
+      this.contentElement.setAttribute("data-placeholder", placeholder);
     }
     contentLine.appendChild(this.contentElement);
   }
@@ -2716,6 +3165,7 @@ var _OutlineItem = class {
    * 注意：此方法只应该在列表项上调用，非列表项使用 Obsidian 渲染器不需要这些事件
    */
   bindEvents() {
+    var _a, _b;
     if (!this.contentElement) {
       console.warn("[OutlineItem] bindEvents called but contentElement is undefined. Block type:", this.block.type);
       return;
@@ -2743,20 +3193,26 @@ var _OutlineItem = class {
     this.addEventListener(this.contentElement, "blur", () => {
       this.handleBlur();
     });
+    this.addEventListener(this.contentElement, "input", (e) => {
+      this.handleInput(e);
+    });
     this.addEventListener(this.element, "mouseenter", () => {
       this.element.classList.add("hovered");
     });
     this.addEventListener(this.element, "mouseleave", () => {
       this.element.classList.remove("hovered");
     });
-    this.bulletElement.setAttribute("draggable", "true");
-    this.addEventListener(this.bulletElement, "dragstart", (e) => {
-      this.handleDragStart(e);
-    });
-    this.addEventListener(this.element, "dragover", (e) => this.handleDragOver(e), { capture: true });
-    this.addEventListener(this.element, "drop", (e) => this.handleDrop(e), { capture: true });
-    this.addEventListener(this.element, "dragend", (e) => this.handleDragEnd(e), { capture: true });
-    this.addEventListener(this.element, "dragleave", (e) => this.handleDragLeave(e), { capture: true });
+    const dragEnabled = ((_b = (_a = this.settings) == null ? void 0 : _a.dragDrop) == null ? void 0 : _b.enabled) !== false;
+    if (dragEnabled) {
+      this.bulletElement.setAttribute("draggable", "true");
+      this.addEventListener(this.bulletElement, "dragstart", (e) => {
+        this.handleDragStart(e);
+      });
+      this.addEventListener(this.element, "dragover", (e) => this.handleDragOver(e), { capture: true });
+      this.addEventListener(this.element, "drop", (e) => this.handleDrop(e), { capture: true });
+      this.addEventListener(this.element, "dragend", (e) => this.handleDragEnd(e), { capture: true });
+      this.addEventListener(this.element, "dragleave", (e) => this.handleDragLeave(e), { capture: true });
+    }
   }
   /**
    * 键盘事件处理 - 使用 WORKFLOWY_SHORTCUTS 映射
@@ -2764,6 +3220,16 @@ var _OutlineItem = class {
   handleKeyDown(e) {
     if (!IsolationGuard.isElementInWorkflowyContainer(e.target)) {
       return;
+    }
+    if (this.slashCommandMenu && this.slashCommandMenu.isOpen()) {
+      if (this.slashCommandMenu.handleKeyDown(e)) {
+        return;
+      }
+    }
+    if (this.tagSuggestMenu && this.tagSuggestMenu.isOpen()) {
+      if (this.tagSuggestMenu.handleKeyDown(e)) {
+        return;
+      }
     }
     const searchInput = document.querySelector(".workflowy-search");
     if (searchInput && document.activeElement === searchInput) {
@@ -3066,6 +3532,23 @@ var _OutlineItem = class {
     }
   }
   /**
+   * 生成 Thino 时间戳
+   */
+  generateThinoTimestamp() {
+    var _a, _b, _c, _d;
+    if (!((_b = (_a = this.settings) == null ? void 0 : _a.thino) == null ? void 0 : _b.enabled) || !((_d = (_c = this.settings) == null ? void 0 : _c.thino) == null ? void 0 : _d.autoTimestamp)) {
+      return "";
+    }
+    const now = new Date();
+    const hours = now.getHours().toString().padStart(2, "0");
+    const minutes = now.getMinutes().toString().padStart(2, "0");
+    const seconds = now.getSeconds().toString().padStart(2, "0");
+    if (this.settings.thino.timestampFormat === "HH:mm:ss") {
+      return `${hours}:${minutes}:${seconds} `;
+    }
+    return `${hours}:${minutes} `;
+  }
+  /**
    * Enter 键处理 - 创建新块或分割内容
    */
   handleEnter(_e) {
@@ -3079,13 +3562,14 @@ var _OutlineItem = class {
     beforeRange.setEnd(range.startContainer, range.startOffset);
     const beforeCursor = beforeRange.toString();
     const afterCursor = content.substring(beforeCursor.length);
+    const timestamp = this.generateThinoTimestamp();
     const isZoomedBlock = this.getZoomedBlockId && this.getZoomedBlockId() === this.block.id;
     if (afterCursor === "") {
       let newBlock;
       if (isZoomedBlock) {
-        newBlock = this.editor.createChildBlock(this.block.id);
+        newBlock = this.editor.createChildBlock(this.block.id, timestamp);
       } else {
-        newBlock = this.editor.createNewBlock(this.block.id);
+        newBlock = this.editor.createNewBlock(this.block.id, timestamp);
       }
       if (this.onRender) {
         this.onRender();
@@ -3332,7 +3816,7 @@ var _OutlineItem = class {
    * 处理块拖拽的 dragover 事件
    */
   handleBlockDragOver(e) {
-    var _a;
+    var _a, _b, _c;
     e.preventDefault();
     if (e.dataTransfer) {
       const isAltDrag = (_a = _OutlineItem.currentDragData) == null ? void 0 : _a.isAltDrag;
@@ -3346,12 +3830,13 @@ var _OutlineItem = class {
     const rect = this.element.getBoundingClientRect();
     const dropZoneHeight = rect.height / 3;
     let dropPosition;
+    const allowNestedDrop = ((_c = (_b = this.settings) == null ? void 0 : _b.dragDrop) == null ? void 0 : _c.allowNestedDrop) !== false;
     if (e.clientY < rect.top + dropZoneHeight) {
       dropPosition = "before";
     } else if (e.clientY > rect.bottom - dropZoneHeight) {
       dropPosition = "after";
     } else {
-      dropPosition = "child";
+      dropPosition = allowNestedDrop ? "child" : "after";
     }
     this.showDropZone(rect, dropPosition);
     this.element.classList.add("drag-over-active");
@@ -3455,6 +3940,10 @@ var _OutlineItem = class {
    * 显示拖拽指示区域 - 完全复用 obsidian-outliner 的实现
    */
   showDropZone(rect, position) {
+    var _a, _b;
+    if (((_b = (_a = this.settings) == null ? void 0 : _a.dragDrop) == null ? void 0 : _b.showDropIndicators) === false) {
+      return;
+    }
     if (!_OutlineItem.dropZone || !_OutlineItem.dropZonePadding) {
       return;
     }
@@ -3508,7 +3997,7 @@ var _OutlineItem = class {
    * 支持同文档拖拽、跨文档拖拽、Alt+拖拽创建块引用
    */
   handleBlockDrop(e) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e;
     e.preventDefault();
     e.stopPropagation();
     const multiSelectionManager = (_a = this.getMultiSelectionManager) == null ? void 0 : _a.call(this);
@@ -3516,7 +4005,6 @@ var _OutlineItem = class {
     if (!crossDocData) {
       try {
         const jsonData = (_b = e.dataTransfer) == null ? void 0 : _b.getData("application/json");
-        console.log("[OutlineItem] handleBlockDrop - jsonData from dataTransfer:", jsonData);
         if (jsonData) {
           crossDocData = CrossDocumentDragUtils.parseDragData(jsonData);
         }
@@ -3537,13 +4025,14 @@ var _OutlineItem = class {
     }
     const rect = this.element.getBoundingClientRect();
     const dropZoneHeight = rect.height / 3;
+    const allowNestedDrop = ((_e = (_d = this.settings) == null ? void 0 : _d.dragDrop) == null ? void 0 : _e.allowNestedDrop) !== false;
     let position;
     if (e.clientY < rect.top + dropZoneHeight) {
       position = "before";
     } else if (e.clientY > rect.bottom - dropZoneHeight) {
       position = "after";
     } else {
-      position = "child";
+      position = allowNestedDrop ? "child" : "after";
     }
     if (crossDocData) {
       this.handleCrossDocumentDrop(crossDocData, position);
@@ -3577,19 +4066,28 @@ var _OutlineItem = class {
    * 支持：Alt+拖拽创建块引用、跨文档移动、同文档移动
    */
   handleCrossDocumentDrop(dragData, position) {
-    var _a, _b;
+    var _a, _b, _c, _d, _e, _f;
     if (!this.app) {
       console.warn("[OutlineItem] handleCrossDocumentDrop - app is null");
       return;
     }
+    const crossDocumentDragEnabled = ((_b = (_a = this.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.crossDocumentDrag) !== false;
+    const isCrossDocument = CrossDocumentDragUtils.isCrossDocumentDrag(dragData, this.sourcePath);
+    if (isCrossDocument && !crossDocumentDragEnabled) {
+      return;
+    }
     if (dragData.isAltDrag) {
+      const autoBlockIdEnabled = ((_d = (_c = this.settings) == null ? void 0 : _c.features) == null ? void 0 : _d.autoBlockId) !== false;
+      if (!autoBlockIdEnabled) {
+        return;
+      }
       const block = dragData.blocks[0];
       if (block) {
         const originalContent = block.content;
         const blockWithId = CrossDocumentDragUtils.ensureBlockIdInContent(block);
         const blockRef = CrossDocumentDragUtils.generateBlockRef(dragData.sourceFile, blockWithId);
         const isSameDocument = dragData.sourceViewId === this.viewId;
-        const isSourceMode = ((_a = this.settings) == null ? void 0 : _a.editor.renderMode) !== "live-preview";
+        const isSourceMode = ((_e = this.settings) == null ? void 0 : _e.editor.renderMode) !== "live-preview";
         if (isSameDocument && isSourceMode) {
           if (blockWithId.content !== originalContent) {
             this.editor.updateBlockContent(block.id, blockWithId.content);
@@ -3611,7 +4109,6 @@ var _OutlineItem = class {
       }
       return;
     }
-    const isCrossDocument = CrossDocumentDragUtils.isCrossDocumentDrag(dragData, this.sourcePath);
     if (isCrossDocument) {
       const newBlocks = CrossDocumentDragUtils.deserializeBlocks(
         dragData.blocks,
@@ -3624,7 +4121,7 @@ var _OutlineItem = class {
         blockIds
       });
     } else {
-      const blockId = (_b = dragData.blocks[0]) == null ? void 0 : _b.id;
+      const blockId = (_f = dragData.blocks[0]) == null ? void 0 : _f.id;
       if (blockId && blockId !== this.block.id) {
         this.moveBlock(blockId, this.block.id, position);
       }
@@ -3709,10 +4206,14 @@ var _OutlineItem = class {
       this.fileDropHandler = new FileDropHandler(
         this.app,
         this.sourcePath,
-        (text) => this.insertTextAtFileDragPosition(text)
+        (text) => this.insertTextAtFileDragPosition(text),
+        this.settings || void 0
       );
     } else {
       this.fileDropHandler.setSourcePath(this.sourcePath);
+      if (this.settings) {
+        this.fileDropHandler.setSettings(this.settings);
+      }
     }
     await this.fileDropHandler.handleDrop(e, false);
   }
@@ -3868,12 +4369,14 @@ var _OutlineItem = class {
    * 内容变化处理
    */
   handleContentChange() {
+    var _a, _b;
     const newContent = this.contentElement.textContent || "";
     this.onUpdate(this.block.id, newContent);
     if (newContent) {
       this.contentElement.removeAttribute("data-placeholder");
     } else {
-      this.contentElement.setAttribute("data-placeholder", "\u8F93\u5165\u5185\u5BB9...");
+      const placeholder = ((_b = (_a = this.settings) == null ? void 0 : _a.editor) == null ? void 0 : _b.placeholder) || "\u8F93\u5165\u5185\u5BB9...";
+      this.contentElement.setAttribute("data-placeholder", placeholder);
     }
   }
   /**
@@ -3907,14 +4410,22 @@ var _OutlineItem = class {
       this.triggerRenderAndRestoreFocus(this.block.id);
     }
   }
+  /**
+   * 获取折叠指示器 SVG 图标
+   * 使用统一的 SVG，通过 CSS transform 控制旋转
+   * viewBox 调整为 6-14 范围，让三角形填满整个图标区域
+   */
+  getCollapseIndicatorSvg() {
+    return `<svg viewBox="6 5 10 10">
+            <path d="M13.75 9.56879C14.0833 9.76124 14.0833 10.2424 13.75 10.4348L8.5 13.4659C8.16667 13.6584 7.75 13.4178 7.75 13.0329L7.75 6.97072C7.75 6.58582 8.16667 6.34525 8.5 6.5377L13.75 9.56879Z" stroke="none" fill="currentColor"></path>
+        </svg>`;
+  }
   updateCollapseIndicator() {
     if (this.collapseIndicator) {
       if (this.editor.isCollapsed(this.block.id)) {
         this.collapseIndicator.classList.add("collapsed");
-        this.collapseIndicator.innerHTML = "\u25B6";
       } else {
         this.collapseIndicator.classList.remove("collapsed");
-        this.collapseIndicator.innerHTML = "\u25BC";
       }
     }
   }
@@ -4154,10 +4665,12 @@ var _OutlineItem = class {
    * 方案 E：更新块的层级（用于 indent/outdent 后复用）
    */
   updateLevel(newLevel) {
+    var _a, _b;
     if (this.block.level !== newLevel) {
       this.block.level = newLevel;
       this.element.setAttribute("data-level", newLevel.toString());
-      this.element.style.paddingLeft = `${newLevel * UI_CONFIG.indentSize}px`;
+      const indentSize = ((_b = (_a = this.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.indentSize) || UI_CONFIG.indentSize;
+      this.element.style.paddingLeft = `${newLevel * indentSize}px`;
     }
   }
   /**
@@ -4250,7 +4763,15 @@ var _OutlineItem = class {
       this.linkSuggestManager.destroy();
       this.linkSuggestManager = null;
     }
-    this.fileDropHandler = null;
+    if (this.tagSuggestMenu) {
+      this.tagSuggestMenu.destroy();
+      this.tagSuggestMenu = null;
+    }
+    this.slashCommandMenu = null;
+    if (this.fileDropHandler) {
+      this.fileDropHandler.destroy();
+      this.fileDropHandler = null;
+    }
     this.block = null;
     this.editor = null;
     this.contentElement = null;
@@ -4275,8 +4796,10 @@ var _OutlineItem = class {
     }
   }
   setLevel(level) {
+    var _a, _b;
     this.block.level = level;
-    this.element.style.paddingLeft = `${level * UI_CONFIG.indentSize}px`;
+    const indentSize = ((_b = (_a = this.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.indentSize) || UI_CONFIG.indentSize;
+    this.element.style.paddingLeft = `${level * indentSize}px`;
     this.element.setAttribute("data-level", level.toString());
   }
   /**
@@ -4425,6 +4948,7 @@ var _OutlineItem = class {
    * 绑定双层渲染事件
    */
   bindLivePreviewEvents() {
+    var _a, _b;
     if (!this.displayElement || !this.editorElement) {
       return;
     }
@@ -4463,10 +4987,11 @@ var _OutlineItem = class {
       }
       this.enterEditMode();
     });
-    this.editorElement.addEventListener("input", () => {
+    this.editorElement.addEventListener("input", (e) => {
       const editedContent = this.editorElement.value;
       const newContent = this.restoreBlockRefId(editedContent);
       this.onUpdate(this.block.id, newContent);
+      this.handleInput(e);
     });
     this.editorElement.addEventListener("blur", () => {
       this.exitEditMode();
@@ -4484,10 +5009,13 @@ var _OutlineItem = class {
       );
       this.livePreviewEditor.bindShortcuts();
       this.livePreviewEditor.bindContextMenu();
-      this.linkSuggestManager = new LinkSuggestManager(this.app);
-      this.linkSuggestManager.bind(this.editorElement, (linkText, start, end) => {
-        this.insertLinkText(linkText, start, end);
-      });
+      const linkSuggestEnabled = ((_b = (_a = this.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.linkSuggest) !== false;
+      if (linkSuggestEnabled) {
+        this.linkSuggestManager = new LinkSuggestManager(this.app);
+        this.linkSuggestManager.bind(this.editorElement, (linkText, start, end) => {
+          this.insertLinkText(linkText, start, end);
+        });
+      }
     }
   }
   /**
@@ -4559,7 +5087,7 @@ var _OutlineItem = class {
    * 跳过重新渲染以避免闪烁
    */
   async renderDisplay() {
-    var _a;
+    var _a, _b, _c;
     if (!this.app || !this.displayElement)
       return;
     const content = ((_a = this.editorElement) == null ? void 0 : _a.value) || this.block.content;
@@ -4569,16 +5097,29 @@ var _OutlineItem = class {
     this.displayElement.empty();
     this.hasAsyncEmbedCache = null;
     if (!content.trim()) {
-      this.displayElement.setAttribute("data-placeholder", "\u8F93\u5165\u5185\u5BB9...");
+      const placeholder = ((_c = (_b = this.settings) == null ? void 0 : _b.editor) == null ? void 0 : _c.placeholder) || "\u8F93\u5165\u5185\u5BB9...";
+      this.displayElement.setAttribute("data-placeholder", placeholder);
       this.lastRenderedContent = content;
       return;
     }
     const renderComponent = new import_obsidian5.Component();
     renderComponent.load();
     try {
+      const markdownContent = content.split("\n").map((line, index, arr) => {
+        const nextLine = arr[index + 1];
+        const isNextLineBlockElement = nextLine && /^(#{1,6}\s|```|>|\s*[-*+]\s|\s*\d+\.\s)/.test(nextLine);
+        const isCurrentLineBlockElement = /^(#{1,6}\s|```|>|\s*[-*+]\s|\s*\d+\.\s)/.test(line);
+        if (index === arr.length - 1) {
+          return line;
+        }
+        if (isCurrentLineBlockElement || isNextLineBlockElement) {
+          return line + "\n\n";
+        }
+        return line + "<br>";
+      }).join("");
       await import_obsidian5.MarkdownRenderer.render(
         this.app,
-        content,
+        markdownContent,
         this.displayElement,
         this.sourcePath || "",
         renderComponent
@@ -5126,8 +5667,12 @@ var _OutlineItem = class {
     this.editorElement.value = beforeCursor;
     const currentBlockContent = this.restoreBlockRefId(beforeCursor);
     this.onUpdate(this.block.id, currentBlockContent);
-    const newBlock = this.editor.createNewBlock(this.block.id);
-    this.onUpdate(newBlock.id, afterCursor);
+    const timestamp = afterCursor === "" ? this.generateThinoTimestamp() : "";
+    const newBlockContent = timestamp + afterCursor;
+    const newBlock = this.editor.createNewBlock(this.block.id, timestamp);
+    if (afterCursor) {
+      this.onUpdate(newBlock.id, newBlockContent);
+    }
     this.exitEditMode();
     (_a = this.onRender) == null ? void 0 : _a.call(this);
     setTimeout(() => {
@@ -5150,6 +5695,268 @@ var _OutlineItem = class {
         }
       }
     }
+  }
+  /**
+   * Handle input event for Slash Command
+  */
+  handleInput(e) {
+    var _a, _b, _c, _d;
+    const target = e.target;
+    let content = "";
+    let cursorPosition = 0;
+    if (target instanceof HTMLTextAreaElement) {
+      content = target.value;
+      cursorPosition = target.selectionStart;
+    } else {
+      content = target.textContent || "";
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        cursorPosition = selection.getRangeAt(0).startOffset;
+      }
+    }
+    const textBeforeCursor = content.slice(0, cursorPosition);
+    const slashCommandEnabled = ((_b = (_a = this.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.slashCommand) !== false;
+    if (slashCommandEnabled && this.slashCommandMenu) {
+      const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([a-zA-Z0-9_]*)$/);
+      if (slashMatch) {
+        const query = slashMatch[1];
+        const cursorCoords = this.getCursorScreenCoordinates(target, cursorPosition);
+        this.slashCommandMenu.show(cursorCoords, (command) => {
+          this.executeSlashCommand(command, content, cursorPosition, slashMatch[0].length);
+        });
+        this.slashCommandMenu.filter(query);
+      } else {
+        if (this.slashCommandMenu.isOpen()) {
+          this.slashCommandMenu.hide();
+        }
+      }
+    }
+    const tagSuggestEnabled = ((_d = (_c = this.settings) == null ? void 0 : _c.features) == null ? void 0 : _d.tagSuggest) !== false;
+    if (tagSuggestEnabled && this.tagSuggestMenu) {
+      const tagMatch = textBeforeCursor.match(/(?:^|\s)#([\w\-\/]*)$/);
+      if (tagMatch) {
+        const query = tagMatch[1];
+        const cursorCoords = this.getCursorScreenCoordinates(target, cursorPosition);
+        this.tagSuggestMenu.show(cursorCoords, query, (tag) => {
+          this.executeTagSelection(tag, content, cursorPosition, tagMatch[0].length);
+        });
+      } else {
+        if (this.tagSuggestMenu.isOpen()) {
+          this.tagSuggestMenu.hide();
+        }
+      }
+    }
+  }
+  /**
+   * 获取光标在屏幕上的坐标（支持 textarea 和 contentEditable）
+   */
+  getCursorScreenCoordinates(element, cursorPosition) {
+    if (element instanceof HTMLTextAreaElement) {
+      return this.getTextareaCursorCoordinates(element, cursorPosition);
+    } else {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0).cloneRange();
+        range.collapse(true);
+        const rect2 = range.getBoundingClientRect();
+        if (rect2.width > 0 || rect2.height > 0 || rect2.x !== 0 && rect2.y !== 0) {
+          return { x: rect2.left, y: rect2.bottom };
+        }
+      }
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left, y: rect.bottom };
+    }
+  }
+  /**
+   * 获取 textarea 中光标的屏幕坐标
+   * 使用镜像 div 技术来计算精确位置
+   */
+  getTextareaCursorCoordinates(textarea, cursorPosition) {
+    const mirror = document.createElement("div");
+    const style = window.getComputedStyle(textarea);
+    const properties = [
+      "fontFamily",
+      "fontSize",
+      "fontWeight",
+      "fontStyle",
+      "letterSpacing",
+      "textTransform",
+      "wordSpacing",
+      "textIndent",
+      "whiteSpace",
+      "wordWrap",
+      "wordBreak",
+      "lineHeight",
+      "padding",
+      "paddingTop",
+      "paddingRight",
+      "paddingBottom",
+      "paddingLeft",
+      "border",
+      "borderWidth",
+      "boxSizing"
+    ];
+    mirror.style.position = "absolute";
+    mirror.style.visibility = "hidden";
+    mirror.style.overflow = "hidden";
+    mirror.style.whiteSpace = "pre-wrap";
+    mirror.style.wordWrap = "break-word";
+    properties.forEach((prop) => {
+      mirror.style[prop] = style.getPropertyValue(
+        prop.replace(/([A-Z])/g, "-$1").toLowerCase()
+      );
+    });
+    mirror.style.width = textarea.offsetWidth + "px";
+    document.body.appendChild(mirror);
+    const textBeforeCursor = textarea.value.substring(0, cursorPosition);
+    mirror.textContent = textBeforeCursor;
+    const cursorSpan = document.createElement("span");
+    cursorSpan.textContent = "|";
+    mirror.appendChild(cursorSpan);
+    const textareaRect = textarea.getBoundingClientRect();
+    const cursorSpanRect = cursorSpan.getBoundingClientRect();
+    const x = textareaRect.left + (cursorSpanRect.left - mirror.getBoundingClientRect().left);
+    const y = textareaRect.top + (cursorSpanRect.top - mirror.getBoundingClientRect().top) - textarea.scrollTop + parseInt(style.lineHeight || "20");
+    document.body.removeChild(mirror);
+    return { x, y };
+  }
+  executeSlashCommand(command, content, cursorPosition, matchLength) {
+    const slashStartPos = cursorPosition - matchLength;
+    const prefix = content.slice(0, slashStartPos);
+    const suffix = content.slice(cursorPosition);
+    let newContent = prefix + suffix;
+    let newCursorPosition = slashStartPos;
+    if (command.type === "priority") {
+      const priorityEmojis = ["\u{1F53A}", "\u23EB", "\u{1F53C}", "\u{1F53D}", "\u23EC"];
+      const priorityRegex = new RegExp(`(^|\\s)(${priorityEmojis.join("|")})(?:\\s|$)`, "g");
+      const existingMatch = newContent.match(priorityRegex);
+      if (existingMatch) {
+        newContent = newContent.replace(priorityRegex, (match, before) => {
+          return before === "" ? "" : " ";
+        }).trim();
+      }
+      if (command.emoji) {
+        newContent = newContent.trim() + " " + command.emoji;
+      }
+      newCursorPosition = Math.min(slashStartPos, newContent.length);
+    } else if (command.type === "date") {
+      const [dateType, dateStr] = command.value.split(":");
+      if (dateStr) {
+        const dateEmojiMap = {
+          "due": "\u{1F4C5}",
+          "scheduled": "\u23F3",
+          "start": "\u{1F6EB}",
+          "created": "\u2795",
+          "done_date": "\u2705",
+          "cancelled_date": "\u274C"
+        };
+        const emoji = command.emoji || dateEmojiMap[dateType] || "\u{1F4C5}";
+        const existingDateRegex = new RegExp(`${emoji}\\s*\\d{4}-\\d{2}-\\d{2}`, "g");
+        const existingMatch = newContent.match(existingDateRegex);
+        if (existingMatch) {
+          newContent = newContent.replace(existingDateRegex, `${emoji} ${dateStr}`);
+          newCursorPosition = Math.min(slashStartPos, newContent.length);
+        } else {
+          const needsSpace = prefix.length > 0 && !prefix.endsWith(" ");
+          const insertText = (needsSpace ? " " : "") + `${emoji} ${dateStr}`;
+          newContent = prefix + insertText + suffix;
+          newCursorPosition = prefix.length + insertText.length;
+        }
+      }
+    } else if (command.type === "status") {
+      const statusMap = {
+        "todo": "todo",
+        "in_progress": "in_progress",
+        "done": "done",
+        "cancelled": "cancelled",
+        "normal": "normal"
+      };
+      const status = statusMap[command.value];
+      if (status) {
+        const blockId = this.block.id;
+        this.editor.setBlockStatus(blockId, status);
+        newCursorPosition = Math.min(slashStartPos, newContent.length);
+        this.updateBlockContentAndFocus(newContent, newCursorPosition);
+        if (this.onRender) {
+          this.onRender();
+          setTimeout(() => {
+            this.focusBlockById(blockId, "end");
+          }, 50);
+        }
+        return;
+      }
+    } else if (command.type === "time") {
+      const timeValue = command.value;
+      const existingTimeRegex = /^\[\s*\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?\s*\]\s*/;
+      const existingMatch = newContent.match(existingTimeRegex);
+      if (existingMatch) {
+        newContent = newContent.replace(existingTimeRegex, timeValue + " ");
+        newCursorPosition = Math.min(slashStartPos - existingMatch[0].length + timeValue.length + 1, newContent.length);
+      } else {
+        const contentWithoutSlash = newContent.trim();
+        newContent = timeValue + " " + contentWithoutSlash;
+        newCursorPosition = timeValue.length + 1;
+      }
+    } else {
+      newContent = prefix + command.value + suffix;
+      newCursorPosition = prefix.length + command.value.length;
+    }
+    this.updateBlockContentAndFocus(newContent, newCursorPosition);
+  }
+  /**
+   * 更新块内容并设置光标位置
+   */
+  updateBlockContentAndFocus(newContent, cursorPosition) {
+    const contentWithBlockRef = this.restoreBlockRefId(newContent);
+    this.onUpdate(this.block.id, contentWithBlockRef);
+    setTimeout(() => {
+      var _a;
+      if (this.editorElement) {
+        this.editorElement.value = newContent;
+        this.editorElement.style.display = "block";
+        if (this.displayElement) {
+          this.displayElement.style.display = "none";
+        }
+        this.editorElement.focus();
+        const pos = Math.min(cursorPosition, newContent.length);
+        this.editorElement.setSelectionRange(pos, pos);
+      } else if (this.contentElement) {
+        this.contentElement.textContent = newContent;
+        this.contentElement.focus();
+        try {
+          const range = document.createRange();
+          const sel = window.getSelection();
+          if (this.contentElement.firstChild) {
+            const pos = Math.min(cursorPosition, ((_a = this.contentElement.firstChild.textContent) == null ? void 0 : _a.length) || 0);
+            range.setStart(this.contentElement.firstChild, pos);
+            range.collapse(true);
+            sel == null ? void 0 : sel.removeAllRanges();
+            sel == null ? void 0 : sel.addRange(range);
+          }
+        } catch (e) {
+          console.error("[OutlineItem] Error setting cursor position:", e);
+        }
+      }
+    }, 10);
+  }
+  /**
+   * 更新块内容的辅助方法（保留向后兼容）
+   */
+  updateBlockContent(newContent) {
+    this.updateBlockContentAndFocus(newContent, newContent.length);
+  }
+  /**
+   * 执行标签选择
+   */
+  executeTagSelection(tag, content, cursorPosition, matchLength) {
+    const tagStartPos = cursorPosition - matchLength;
+    const prefix = content.slice(0, tagStartPos);
+    const suffix = content.slice(cursorPosition);
+    const needsSpace = prefix.length > 0 && !prefix.endsWith(" ") && !prefix.endsWith("\n");
+    const tagText = (needsSpace ? " " : "") + `#${tag}`;
+    const newContent = prefix + tagText + suffix;
+    const newCursorPosition = prefix.length + tagText.length;
+    this.updateBlockContentAndFocus(newContent, newCursorPosition);
   }
 };
 var OutlineItem = _OutlineItem;
@@ -5809,8 +6616,7 @@ var EventDelegator = class {
 
 // src/features/vertical-lines.ts
 var VerticalLinesManager = class {
-  // resize 防抖延迟
-  constructor(container, editor, onToggleCollapse) {
+  constructor(container, editor, onToggleCollapse, indentSize) {
     this.lines = [];
     this.lineElements = [];
     // 节流机制 - 避免短时间内多次更新
@@ -5832,6 +6638,11 @@ var VerticalLinesManager = class {
     this.resizeObserver = null;
     this.resizeDebounceTimer = null;
     this.RESIZE_DEBOUNCE_MS = 50;
+    // resize 防抖延迟
+    // 设置引用
+    this.indentSize = UI_CONFIG.indentSize;
+    // 销毁标志 - 防止销毁后继续执行
+    this.isDestroyed = false;
     /**
      * 处理点击事件 - 复用 obsidian-outliner 的点击逻辑
      */
@@ -5846,6 +6657,9 @@ var VerticalLinesManager = class {
     };
     this.editor = editor;
     this.onToggleCollapse = onToggleCollapse;
+    if (indentSize !== void 0) {
+      this.indentSize = indentSize;
+    }
     if (getComputedStyle(container).position === "static") {
       container.style.position = "relative";
     }
@@ -6040,6 +6854,8 @@ var VerticalLinesManager = class {
    * 避免短时间内多次调用，合并为一次更新
    */
   update() {
+    if (this.isDestroyed)
+      return;
     if (this.updateTimer !== null || this.pendingUpdate) {
       return;
     }
@@ -6053,6 +6869,8 @@ var VerticalLinesManager = class {
    * 执行实际更新
    */
   performUpdate() {
+    if (this.isDestroyed)
+      return;
     this.calculate();
     this.updateDom();
   }
@@ -6090,18 +6908,17 @@ var VerticalLinesManager = class {
     const containerRect = this.scroller.parentElement.getBoundingClientRect();
     const isMobile = document.body.classList.contains("is-mobile");
     let left;
-    if (isMobile) {
-      const bulletElement = blockElement.querySelector(".workflowy-bullet");
-      if (bulletElement) {
-        const bulletRect = bulletElement.getBoundingClientRect();
-        left = bulletRect.left + bulletRect.width / 2 - containerRect.left;
-      } else {
-        const displayLevel = parseInt(blockElement.getAttribute("data-level") || "0");
-        left = displayLevel * 24 + 27;
-      }
+    const bulletElement = blockElement.querySelector(".workflowy-bullet");
+    if (bulletElement) {
+      const bulletRect = bulletElement.getBoundingClientRect();
+      left = bulletRect.left + bulletRect.width / 2 - containerRect.left;
     } else {
       const displayLevel = parseInt(blockElement.getAttribute("data-level") || "0");
-      left = displayLevel * UI_CONFIG.indentSize + 23;
+      if (isMobile) {
+        left = displayLevel * 24 + 27;
+      } else {
+        left = displayLevel * this.indentSize + 23;
+      }
     }
     const top = rect.top - containerRect.top;
     const lastVisibleChild = this.findLastVisibleChild(block);
@@ -6113,7 +6930,13 @@ var VerticalLinesManager = class {
         bottom = lastChildRect.bottom - containerRect.top;
       }
     }
-    const topOffset = isMobile ? 24 : 28;
+    const contentLine = blockElement.querySelector(".workflowy-content-line");
+    let topOffset;
+    if (contentLine) {
+      topOffset = contentLine.getBoundingClientRect().height;
+    } else {
+      topOffset = isMobile ? 24 : 28;
+    }
     const height = bottom - top - topOffset;
     if (height > 20) {
       this.lines.push({
@@ -6249,6 +7072,7 @@ var VerticalLinesManager = class {
    * 销毁垂直线管理器
    */
   destroy() {
+    this.isDestroyed = true;
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
@@ -6298,6 +7122,8 @@ var MultiSelectionManager = class {
     this.justFinishedSelecting = false;
     this.selectionCounter = null;
     this.updateThrottleTimer = null;
+    // 销毁标志 - 防止销毁后继续执行
+    this.isDestroyed = false;
     this.container = container;
     this.editor = editor;
     this.onSelectionChange = onSelectionChange;
@@ -6424,6 +7250,8 @@ var MultiSelectionManager = class {
    * 处理鼠标移动事件
    */
   handleMouseMove(e) {
+    if (this.isDestroyed)
+      return;
     if (!this.isSelecting || !this.selectionStart) {
       return;
     }
@@ -6940,6 +7768,7 @@ var MultiSelectionManager = class {
    * 销毁管理器
    */
   destroy() {
+    this.isDestroyed = true;
     if (this.updateThrottleTimer !== null) {
       window.clearTimeout(this.updateThrottleTimer);
       this.updateThrottleTimer = null;
@@ -7145,6 +7974,15 @@ var ZoomManager = class {
   isZoomed() {
     return this.zoomedBlockId !== null;
   }
+  /**
+   * 销毁 ZoomManager，释放所有资源
+   */
+  destroy() {
+    this.onZoomChange = void 0;
+    this.getDocumentTitle = null;
+    this.zoomedBlockId = null;
+    this.editor = null;
+  }
 };
 
 // src/features/theme-manager.ts
@@ -7275,6 +8113,13 @@ var ThemeManager = class {
    */
   getThemes() {
     return THEMES;
+  }
+  /**
+   * 销毁 ThemeManager，释放所有资源
+   */
+  destroy() {
+    this.onThemeChange = void 0;
+    this.container = null;
   }
 };
 
@@ -7774,6 +8619,651 @@ var MobileToolbar = class {
   }
 };
 
+// src/ui/slash-command-menu.ts
+var SlashCommandMenu = class {
+  constructor(_app, _settings) {
+    this.isVisible = false;
+    this.selectedIndex = 0;
+    this.onSelect = null;
+    this.filteredCommands = [];
+    // 日期选择器相关
+    this.datePickerElement = null;
+    this.selectedDate = new Date();
+    this.pendingDateCommand = null;
+    // 时间选择器相关
+    this.timePickerElement = null;
+    this.pendingTimeCommand = null;
+    // 销毁标志 - 防止销毁后继续执行
+    this.isDestroyed = false;
+    // 命令分组（Time 放最前面，符合 TickTickSync 格式）
+    this.COMMAND_GROUPS = [
+      {
+        title: "Time",
+        type: "time",
+        commands: [
+          { label: "Set Time", value: "time", type: "time", emoji: "\u231A", tooltip: "\u8BBE\u7F6E\u4EFB\u52A1\u65F6\u95F4 [HH:MM]" },
+          { label: "Time Range", value: "time_range", type: "time", emoji: "\u23F1\uFE0F", tooltip: "\u8BBE\u7F6E\u65F6\u95F4\u8303\u56F4 [\u5F00\u59CB - \u7ED3\u675F]" }
+        ]
+      },
+      {
+        title: "Priority",
+        type: "priority",
+        commands: [
+          { label: "Highest", value: "Highest", type: "priority", emoji: "\u{1F53A}", tooltip: "\u6700\u9AD8\u4F18\u5148\u7EA7" },
+          { label: "High", value: "High", type: "priority", emoji: "\u23EB", tooltip: "\u9AD8\u4F18\u5148\u7EA7" },
+          { label: "Medium", value: "Medium", type: "priority", emoji: "\u{1F53C}", tooltip: "\u4E2D\u4F18\u5148\u7EA7" },
+          { label: "Low", value: "Low", type: "priority", emoji: "\u{1F53D}", tooltip: "\u4F4E\u4F18\u5148\u7EA7" },
+          { label: "Lowest", value: "Lowest", type: "priority", emoji: "\u23EC", tooltip: "\u6700\u4F4E\u4F18\u5148\u7EA7" },
+          { label: "Normal (Clear)", value: "Normal", type: "priority", emoji: "", tooltip: "\u6E05\u9664\u4F18\u5148\u7EA7" }
+        ]
+      },
+      {
+        title: "Date",
+        type: "date",
+        commands: [
+          { label: "Due Date", value: "due", type: "date", emoji: "\u{1F4C5}", dateType: "due", tooltip: "\u622A\u6B62\u65E5\u671F" },
+          { label: "Scheduled", value: "scheduled", type: "date", emoji: "\u23F3", dateType: "scheduled", tooltip: "\u8BA1\u5212\u65E5\u671F" },
+          { label: "Start Date", value: "start", type: "date", emoji: "\u{1F6EB}", dateType: "start", tooltip: "\u5F00\u59CB\u65E5\u671F" },
+          { label: "Created", value: "created", type: "date", emoji: "\u2795", dateType: "created", tooltip: "\u521B\u5EFA\u65E5\u671F" },
+          { label: "Done", value: "done_date", type: "date", emoji: "\u2705", dateType: "done", tooltip: "\u5B8C\u6210\u65E5\u671F" },
+          { label: "Cancelled", value: "cancelled_date", type: "date", emoji: "\u274C", dateType: "cancelled", tooltip: "\u53D6\u6D88\u65E5\u671F" }
+        ]
+      },
+      {
+        title: "Status",
+        type: "status",
+        commands: [
+          { label: "Todo", value: "todo", type: "status", emoji: "\u2610", tooltip: "\u5F85\u529E\u4EFB\u52A1" },
+          { label: "In Progress", value: "in_progress", type: "status", emoji: "\u25D0", tooltip: "\u8FDB\u884C\u4E2D" },
+          { label: "Done", value: "done", type: "status", emoji: "\u2611", tooltip: "\u5DF2\u5B8C\u6210" },
+          { label: "Cancelled", value: "cancelled", type: "status", emoji: "\u2298", tooltip: "\u5DF2\u53D6\u6D88" },
+          { label: "Normal Bullet", value: "normal", type: "status", emoji: "\u2022", tooltip: "\u666E\u901A\u9879\u76EE\u7B26\u53F7" }
+        ]
+      }
+    ];
+    this.container = document.body;
+    this.createMenuElement();
+    this.boundHandleClickOutside = this.handleClickOutside.bind(this);
+  }
+  createMenuElement() {
+    this.menuElement = document.createElement("div");
+    this.menuElement.addClass("workflowy-slash-menu");
+    this.menuElement.style.display = "none";
+    this.container.appendChild(this.menuElement);
+  }
+  getAllCommands() {
+    const commands = [];
+    for (const group of this.COMMAND_GROUPS) {
+      commands.push(...group.commands);
+    }
+    return commands;
+  }
+  show(position, onSelect) {
+    if (this.isDestroyed)
+      return;
+    this.onSelect = onSelect;
+    this.isVisible = true;
+    this.selectedIndex = 0;
+    this.filteredCommands = this.getAllCommands();
+    this.renderMenu();
+    this.menuElement.style.left = `${position.x}px`;
+    this.menuElement.style.top = `${position.y + 20}px`;
+    this.menuElement.style.display = "block";
+    this.adjustMenuPosition();
+    setTimeout(() => {
+      document.addEventListener("mousedown", this.boundHandleClickOutside);
+    }, 0);
+  }
+  adjustMenuPosition() {
+    const rect = this.menuElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    if (rect.right > viewportWidth) {
+      this.menuElement.style.left = `${viewportWidth - rect.width - 10}px`;
+    }
+    if (rect.bottom > viewportHeight) {
+      const currentTop = parseInt(this.menuElement.style.top);
+      this.menuElement.style.top = `${currentTop - rect.height - 40}px`;
+    }
+  }
+  hide() {
+    this.isVisible = false;
+    this.menuElement.style.display = "none";
+    this.onSelect = null;
+    this.hideDatePicker();
+    this.hideTimePicker();
+    document.removeEventListener("mousedown", this.boundHandleClickOutside);
+  }
+  handleClickOutside(e) {
+    const target = e.target;
+    const isInMenu = this.menuElement.contains(target);
+    const isInDatePicker = this.datePickerElement && this.datePickerElement.contains(target);
+    const isInTimePicker = this.timePickerElement && this.timePickerElement.contains(target);
+    if (!isInMenu && !isInDatePicker && !isInTimePicker) {
+      this.hide();
+    }
+  }
+  filter(query) {
+    if (!query) {
+      this.filteredCommands = this.getAllCommands();
+    } else {
+      const lowerQuery = query.toLowerCase();
+      this.filteredCommands = this.getAllCommands().filter(
+        (cmd) => cmd.label.toLowerCase().includes(lowerQuery) || cmd.type.toLowerCase().includes(lowerQuery)
+      );
+    }
+    this.selectedIndex = 0;
+    this.renderMenu();
+  }
+  navigate(direction) {
+    if (!this.isVisible || this.filteredCommands.length === 0)
+      return;
+    if (direction === "up") {
+      this.selectedIndex = (this.selectedIndex - 1 + this.filteredCommands.length) % this.filteredCommands.length;
+    } else {
+      this.selectedIndex = (this.selectedIndex + 1) % this.filteredCommands.length;
+    }
+    this.renderMenu();
+    this.scrollSelectedIntoView();
+  }
+  selectCurrent() {
+    if (!this.isVisible || this.filteredCommands.length === 0)
+      return;
+    const command = this.filteredCommands[this.selectedIndex];
+    if (command.type === "date") {
+      this.pendingDateCommand = command;
+      this.showDatePicker();
+      return;
+    }
+    if (command.type === "time") {
+      this.pendingTimeCommand = command;
+      this.showTimePicker();
+      return;
+    }
+    if (this.onSelect) {
+      this.onSelect(command);
+    }
+    this.hide();
+  }
+  isOpen() {
+    return this.isVisible;
+  }
+  isDatePickerOpen() {
+    return this.datePickerElement !== null && this.datePickerElement.style.display !== "none";
+  }
+  isTimePickerOpen() {
+    return this.timePickerElement !== null && this.timePickerElement.style.display !== "none";
+  }
+  handleKeyDown(e) {
+    if (!this.isVisible)
+      return false;
+    if (this.isDatePickerOpen()) {
+      return this.handleDatePickerKeyDown(e);
+    }
+    if (this.isTimePickerOpen()) {
+      return this.handleTimePickerKeyDown(e);
+    }
+    switch (e.key) {
+      case "ArrowUp":
+        e.preventDefault();
+        e.stopPropagation();
+        this.navigate("up");
+        return true;
+      case "ArrowDown":
+        e.preventDefault();
+        e.stopPropagation();
+        this.navigate("down");
+        return true;
+      case "Enter":
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectCurrent();
+        return true;
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        this.hide();
+        return true;
+      case "Tab":
+        e.preventDefault();
+        e.stopPropagation();
+        this.hide();
+        return true;
+    }
+    return false;
+  }
+  renderMenu() {
+    this.menuElement.empty();
+    if (this.filteredCommands.length === 0) {
+      const emptyEl = this.menuElement.createDiv("workflowy-slash-menu-empty");
+      emptyEl.setText("No commands found");
+      return;
+    }
+    let globalIndex = 0;
+    const groupedCommands = this.groupCommandsByType(this.filteredCommands);
+    for (const [type, commands] of groupedCommands) {
+      const group = this.COMMAND_GROUPS.find((g) => g.type === type);
+      if (group && commands.length > 0) {
+        const headerEl = this.menuElement.createDiv("workflowy-slash-menu-group-header");
+        headerEl.setText(group.title);
+      }
+      for (const cmd of commands) {
+        const currentIndex = globalIndex;
+        const itemEl = this.menuElement.createDiv("workflowy-slash-menu-item");
+        if (cmd.tooltip) {
+          itemEl.setAttribute("title", cmd.tooltip);
+        }
+        if (currentIndex === this.selectedIndex) {
+          itemEl.addClass("is-selected");
+        }
+        const iconEl = itemEl.createSpan("workflowy-slash-menu-icon");
+        iconEl.setText(cmd.emoji || "\u{1F539}");
+        const labelEl = itemEl.createSpan("workflowy-slash-menu-label");
+        labelEl.setText(cmd.label);
+        itemEl.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.selectedIndex = currentIndex;
+          this.selectCurrent();
+        });
+        itemEl.addEventListener("mouseenter", () => {
+          this.selectedIndex = currentIndex;
+          this.updateSelection();
+        });
+        globalIndex++;
+      }
+    }
+  }
+  groupCommandsByType(commands) {
+    const grouped = /* @__PURE__ */ new Map();
+    for (const group of this.COMMAND_GROUPS) {
+      const groupCommands = commands.filter((cmd) => cmd.type === group.type);
+      if (groupCommands.length > 0) {
+        grouped.set(group.type, groupCommands);
+      }
+    }
+    return grouped;
+  }
+  updateSelection() {
+    const items = this.menuElement.querySelectorAll(".workflowy-slash-menu-item");
+    items.forEach((item, index) => {
+      if (index === this.selectedIndex) {
+        item.addClass("is-selected");
+      } else {
+        item.removeClass("is-selected");
+      }
+    });
+  }
+  scrollSelectedIntoView() {
+    const items = this.menuElement.querySelectorAll(".workflowy-slash-menu-item");
+    const selectedEl = items[this.selectedIndex];
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: "nearest" });
+    }
+  }
+  // ==================== 日期选择器 ====================
+  showDatePicker() {
+    if (!this.datePickerElement) {
+      this.createDatePicker();
+    }
+    this.selectedDate = new Date();
+    this.renderDatePicker();
+    const menuRect = this.menuElement.getBoundingClientRect();
+    this.datePickerElement.style.left = `${menuRect.right + 8}px`;
+    this.datePickerElement.style.top = `${menuRect.top}px`;
+    this.datePickerElement.style.display = "block";
+    this.adjustDatePickerPosition();
+  }
+  adjustDatePickerPosition() {
+    if (!this.datePickerElement)
+      return;
+    const rect = this.datePickerElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    if (rect.right > viewportWidth) {
+      const menuRect = this.menuElement.getBoundingClientRect();
+      this.datePickerElement.style.left = `${menuRect.left - rect.width - 8}px`;
+    }
+    if (rect.bottom > viewportHeight) {
+      this.datePickerElement.style.top = `${viewportHeight - rect.height - 10}px`;
+    }
+  }
+  hideDatePicker() {
+    if (this.datePickerElement) {
+      this.datePickerElement.style.display = "none";
+    }
+    this.pendingDateCommand = null;
+  }
+  createDatePicker() {
+    this.datePickerElement = document.createElement("div");
+    this.datePickerElement.addClass("workflowy-date-picker");
+    this.datePickerElement.style.display = "none";
+    this.container.appendChild(this.datePickerElement);
+  }
+  renderDatePicker() {
+    if (!this.datePickerElement)
+      return;
+    this.datePickerElement.empty();
+    const shortcutsEl = this.datePickerElement.createDiv("workflowy-date-shortcuts");
+    const todayBtn = shortcutsEl.createEl("button", { cls: "workflowy-date-shortcut-btn" });
+    todayBtn.setText("Today");
+    todayBtn.addEventListener("click", () => this.selectDateShortcut(0));
+    const tomorrowBtn = shortcutsEl.createEl("button", { cls: "workflowy-date-shortcut-btn" });
+    tomorrowBtn.setText("Tomorrow");
+    tomorrowBtn.addEventListener("click", () => this.selectDateShortcut(1));
+    const nextWeekBtn = shortcutsEl.createEl("button", { cls: "workflowy-date-shortcut-btn" });
+    nextWeekBtn.setText("Next Week");
+    nextWeekBtn.addEventListener("click", () => this.selectDateShortcut(7));
+    const headerEl = this.datePickerElement.createDiv("workflowy-date-header");
+    const prevBtn = headerEl.createEl("button", { cls: "workflowy-date-nav-btn" });
+    prevBtn.setText("\u2039");
+    prevBtn.addEventListener("click", () => this.navigateMonth(-1));
+    const monthYearEl = headerEl.createSpan("workflowy-date-month-year");
+    monthYearEl.setText(this.formatMonthYear(this.selectedDate));
+    const nextBtn = headerEl.createEl("button", { cls: "workflowy-date-nav-btn" });
+    nextBtn.setText("\u203A");
+    nextBtn.addEventListener("click", () => this.navigateMonth(1));
+    const weekdaysEl = this.datePickerElement.createDiv("workflowy-date-weekdays");
+    const weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+    weekdays.forEach((day) => {
+      const dayEl = weekdaysEl.createSpan("workflowy-date-weekday");
+      dayEl.setText(day);
+    });
+    const gridEl = this.datePickerElement.createDiv("workflowy-date-grid");
+    this.renderDateGrid(gridEl);
+  }
+  renderDateGrid(gridEl) {
+    const year = this.selectedDate.getFullYear();
+    const month = this.selectedDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startDayOfWeek = firstDay.getDay();
+    const daysInMonth = lastDay.getDate();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < startDayOfWeek; i++) {
+      gridEl.createDiv("workflowy-date-cell empty");
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const cellEl = gridEl.createDiv("workflowy-date-cell");
+      cellEl.setText(day.toString());
+      const cellDate = new Date(year, month, day);
+      cellDate.setHours(0, 0, 0, 0);
+      if (cellDate.getTime() === today.getTime()) {
+        cellEl.addClass("today");
+      }
+      cellEl.addEventListener("click", () => {
+        this.confirmDateSelection(new Date(year, month, day));
+      });
+    }
+  }
+  selectDateShortcut(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    this.confirmDateSelection(date);
+  }
+  navigateMonth(delta) {
+    this.selectedDate.setMonth(this.selectedDate.getMonth() + delta);
+    this.renderDatePicker();
+  }
+  formatMonthYear(date) {
+    const months = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
+    ];
+    return `${months[date.getMonth()]} ${date.getFullYear()}`;
+  }
+  confirmDateSelection(date) {
+    if (this.pendingDateCommand && this.onSelect) {
+      const dateStr = this.formatDate(date);
+      const commandWithDate = {
+        ...this.pendingDateCommand,
+        value: `${this.pendingDateCommand.value}:${dateStr}`
+      };
+      this.onSelect(commandWithDate);
+    }
+    this.hide();
+  }
+  formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  handleDatePickerKeyDown(e) {
+    switch (e.key) {
+      case "Enter":
+        e.preventDefault();
+        e.stopPropagation();
+        this.confirmDateSelection(this.selectedDate);
+        return true;
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        this.hideDatePicker();
+        return true;
+      case "ArrowLeft":
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedDate.setDate(this.selectedDate.getDate() - 1);
+        this.renderDatePicker();
+        return true;
+      case "ArrowRight":
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedDate.setDate(this.selectedDate.getDate() + 1);
+        this.renderDatePicker();
+        return true;
+      case "ArrowUp":
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedDate.setDate(this.selectedDate.getDate() - 7);
+        this.renderDatePicker();
+        return true;
+      case "ArrowDown":
+        e.preventDefault();
+        e.stopPropagation();
+        this.selectedDate.setDate(this.selectedDate.getDate() + 7);
+        this.renderDatePicker();
+        return true;
+    }
+    return false;
+  }
+  // ==================== 时间选择器 ====================
+  showTimePicker() {
+    if (!this.timePickerElement) {
+      this.createTimePicker();
+    }
+    this.renderTimePicker();
+    const menuRect = this.menuElement.getBoundingClientRect();
+    this.timePickerElement.style.left = `${menuRect.right + 8}px`;
+    this.timePickerElement.style.top = `${menuRect.top}px`;
+    this.timePickerElement.style.display = "block";
+    this.adjustTimePickerPosition();
+  }
+  adjustTimePickerPosition() {
+    if (!this.timePickerElement)
+      return;
+    const rect = this.timePickerElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    if (rect.right > viewportWidth) {
+      const menuRect = this.menuElement.getBoundingClientRect();
+      this.timePickerElement.style.left = `${menuRect.left - rect.width - 8}px`;
+    }
+    if (rect.bottom > viewportHeight) {
+      this.timePickerElement.style.top = `${viewportHeight - rect.height - 10}px`;
+    }
+  }
+  hideTimePicker() {
+    if (this.timePickerElement) {
+      this.timePickerElement.style.display = "none";
+    }
+    this.pendingTimeCommand = null;
+  }
+  createTimePicker() {
+    this.timePickerElement = document.createElement("div");
+    this.timePickerElement.addClass("workflowy-time-picker");
+    this.timePickerElement.style.display = "none";
+    this.container.appendChild(this.timePickerElement);
+  }
+  renderTimePicker() {
+    var _a;
+    if (!this.timePickerElement)
+      return;
+    this.timePickerElement.empty();
+    const isTimeRange = ((_a = this.pendingTimeCommand) == null ? void 0 : _a.value) === "time_range";
+    const titleEl = this.timePickerElement.createDiv("workflowy-time-picker-title");
+    titleEl.setText(isTimeRange ? "Set Time Range" : "Set Time");
+    const inputsEl = this.timePickerElement.createDiv("workflowy-time-picker-inputs");
+    const startGroup = inputsEl.createDiv("workflowy-time-input-group");
+    if (isTimeRange) {
+      startGroup.createSpan("workflowy-time-label").setText("Start");
+    }
+    const startInput = startGroup.createEl("input", {
+      type: "time",
+      cls: "workflowy-time-input",
+      attr: { id: "time-start" }
+    });
+    startInput.value = this.getCurrentTimeRounded();
+    let endInput = null;
+    if (isTimeRange) {
+      const endGroup = inputsEl.createDiv("workflowy-time-input-group");
+      endGroup.createSpan("workflowy-time-label").setText("End");
+      endInput = endGroup.createEl("input", {
+        type: "time",
+        cls: "workflowy-time-input",
+        attr: { id: "time-end" }
+      });
+      const endTime = new Date();
+      endTime.setHours(endTime.getHours() + 1);
+      endInput.value = this.formatTimeValue(endTime);
+    }
+    const shortcutsEl = this.timePickerElement.createDiv("workflowy-time-shortcuts");
+    const presets = isTimeRange ? [
+      { label: "30m", duration: 30 },
+      { label: "1h", duration: 60 },
+      { label: "2h", duration: 120 }
+    ] : [
+      { label: "Now", time: this.getCurrentTimeRounded() },
+      { label: "9:00", time: "09:00" },
+      { label: "14:00", time: "14:00" },
+      { label: "18:00", time: "18:00" }
+    ];
+    presets.forEach((preset) => {
+      const btn = shortcutsEl.createEl("button", { cls: "workflowy-time-shortcut-btn" });
+      btn.setText(preset.label);
+      btn.addEventListener("click", () => {
+        if ("duration" in preset && endInput) {
+          const startTime = startInput.value;
+          const [hours, minutes] = startTime.split(":").map(Number);
+          const endDate = new Date();
+          endDate.setHours(hours, minutes + preset.duration);
+          endInput.value = this.formatTimeValue(endDate);
+        } else if ("time" in preset) {
+          startInput.value = preset.time;
+        }
+      });
+    });
+    const actionsEl = this.timePickerElement.createDiv("workflowy-time-picker-actions");
+    const cancelBtn = actionsEl.createEl("button", { cls: "workflowy-time-cancel-btn" });
+    cancelBtn.setText("Cancel");
+    cancelBtn.addEventListener("click", () => this.hideTimePicker());
+    const confirmBtn = actionsEl.createEl("button", { cls: "workflowy-time-confirm-btn" });
+    confirmBtn.setText("Confirm");
+    confirmBtn.addEventListener("click", () => {
+      const startTime = startInput.value;
+      if (isTimeRange && endInput) {
+        const endTime = endInput.value;
+        this.confirmTimeSelection(startTime, endTime);
+      } else {
+        this.confirmTimeSelection(startTime);
+      }
+    });
+  }
+  getCurrentTimeRounded() {
+    const now = new Date();
+    const minutes = Math.round(now.getMinutes() / 15) * 15;
+    now.setMinutes(minutes);
+    return this.formatTimeValue(now);
+  }
+  formatTimeValue(date) {
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }
+  confirmTimeSelection(startTime, endTime) {
+    if (this.pendingTimeCommand && this.onSelect) {
+      let timeValue;
+      if (endTime) {
+        timeValue = `[${startTime} - ${endTime}]`;
+      } else {
+        timeValue = `[${startTime}]`;
+      }
+      const commandWithTime = {
+        ...this.pendingTimeCommand,
+        value: timeValue
+      };
+      this.onSelect(commandWithTime);
+    }
+    this.hide();
+  }
+  handleTimePickerKeyDown(e) {
+    var _a;
+    switch (e.key) {
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        this.hideTimePicker();
+        return true;
+      case "Enter":
+        e.preventDefault();
+        e.stopPropagation();
+        const confirmBtn = (_a = this.timePickerElement) == null ? void 0 : _a.querySelector(".workflowy-time-confirm-btn");
+        if (confirmBtn) {
+          confirmBtn.click();
+        }
+        return true;
+    }
+    return false;
+  }
+  /**
+   * 销毁 SlashCommandMenu，释放所有资源
+   */
+  destroy() {
+    this.isDestroyed = true;
+    document.removeEventListener("mousedown", this.boundHandleClickOutside);
+    if (this.menuElement && this.menuElement.parentNode) {
+      this.menuElement.parentNode.removeChild(this.menuElement);
+    }
+    if (this.datePickerElement && this.datePickerElement.parentNode) {
+      this.datePickerElement.parentNode.removeChild(this.datePickerElement);
+    }
+    if (this.timePickerElement && this.timePickerElement.parentNode) {
+      this.timePickerElement.parentNode.removeChild(this.timePickerElement);
+    }
+    this.menuElement = null;
+    this.datePickerElement = null;
+    this.timePickerElement = null;
+    this.container = null;
+    this.onSelect = null;
+    this.pendingDateCommand = null;
+    this.pendingTimeCommand = null;
+    this.filteredCommands = [];
+    this.boundHandleClickOutside = null;
+  }
+};
+
 // src/workflowy-view.ts
 var WorkflowyView = class extends import_obsidian7.FileView {
   constructor(leaf, plugin) {
@@ -7787,6 +9277,7 @@ var WorkflowyView = class extends import_obsidian7.FileView {
     this.navigationHeader = null;
     this.themeManager = null;
     this.mobileToolbar = null;
+    this.slashCommandMenu = null;
     // 文件同步相关
     this.lastKnownContent = "";
     // 记录最后已知的内容
@@ -7798,6 +9289,10 @@ var WorkflowyView = class extends import_obsidian7.FileView {
     this.lastFocusedBlockId = null;
     // 待处理的 subpath（用于链接跳转后滚动和高亮）
     this.pendingSubpath = null;
+    // 视图关闭标志（用于防止异步操作继续）
+    this.isClosing = false;
+    // wheel 事件处理器（用于正确移除事件监听器）
+    this.wheelHandler = null;
     /**
      * FileView 必需属性：是否允许没有文件
      */
@@ -7815,7 +9310,7 @@ var WorkflowyView = class extends import_obsidian7.FileView {
         if (newContent === this.lastKnownContent) {
           return;
         }
-        const currentEditorContent = this.editor.toMarkdown(this.getCollapseStateOptions());
+        const currentEditorContent = this.editor.toMarkdown(this.getCollapseStateOptions(), this.getThinoOptions());
         if (newContent === currentEditorContent) {
           this.lastKnownContent = newContent;
           return;
@@ -7854,6 +9349,7 @@ var WorkflowyView = class extends import_obsidian7.FileView {
         this.plugin.saveSettings();
       }
     });
+    this.slashCommandMenu = new SlashCommandMenu(this.app, this.plugin.settings);
   }
   getViewType() {
     return WORKFLOWY_VIEW_TYPE;
@@ -7866,10 +9362,14 @@ var WorkflowyView = class extends import_obsidian7.FileView {
     return "list-tree";
   }
   async onOpen() {
-    var _a;
+    var _a, _b, _c;
     this.container = this.contentEl;
     this.container.empty();
     this.container.addClass("workflowy-container");
+    if ((_b = (_a = this.plugin.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.animationsEnabled) {
+      this.container.addClass("animations-enabled");
+    }
+    this.applyUIStyles();
     const uniqueId = `workflowy-container-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.container.setAttribute("id", uniqueId);
     this.containerSelector = `#${uniqueId}`;
@@ -7952,15 +9452,32 @@ var WorkflowyView = class extends import_obsidian7.FileView {
         }
       })
     );
+    this.wheelHandler = (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const currentSize = this.app.vault.getConfig("baseFontSize") || 16;
+        let newSize = currentSize;
+        if (e.deltaY < 0) {
+          newSize = Math.min(30, currentSize + 1);
+        } else {
+          newSize = Math.max(10, currentSize - 1);
+        }
+        if (newSize !== currentSize) {
+          this.app.vault.setConfig("baseFontSize", newSize);
+        }
+      }
+    };
+    this.container.addEventListener("wheel", this.wheelHandler, { passive: false });
     if (!this.file) {
       const state = this.leaf.getViewState();
-      if (((_a = state.state) == null ? void 0 : _a.file) && typeof state.state.file === "string") {
+      if (((_c = state.state) == null ? void 0 : _c.file) && typeof state.state.file === "string") {
         await this.loadFile(state.state.file);
       }
     }
     this.renderBlocks();
   }
   async onClose() {
+    this.isClosing = true;
     this.saveAllEditingContent();
     if (this.file) {
       await this.saveToFile();
@@ -7968,6 +9485,10 @@ var WorkflowyView = class extends import_obsidian7.FileView {
     if (this.containerSelector) {
       EventDelegator.getInstance().unregisterEvent("keydown", this.containerSelector);
       this.containerSelector = null;
+    }
+    if (this.wheelHandler) {
+      this.container.removeEventListener("wheel", this.wheelHandler);
+      this.wheelHandler = null;
     }
     if (this.navigationHeader) {
       this.navigationHeader.destroy();
@@ -7981,12 +9502,29 @@ var WorkflowyView = class extends import_obsidian7.FileView {
       this.multiSelectionManager.destroy();
       this.multiSelectionManager = null;
     }
-    this.zoomManager = null;
-    this.fileDropHandler = null;
+    if (this.zoomManager) {
+      this.zoomManager.destroy();
+      this.zoomManager = null;
+    }
+    if (this.themeManager) {
+      this.themeManager.destroy();
+      this.themeManager = null;
+    }
+    if (this.fileDropHandler) {
+      this.fileDropHandler.destroy();
+      this.fileDropHandler = null;
+    }
     if (this.mobileToolbar) {
       this.mobileToolbar.destroy();
       this.mobileToolbar = null;
     }
+    if (this.slashCommandMenu) {
+      this.slashCommandMenu.destroy();
+      this.slashCommandMenu = null;
+    }
+    this.blockElements.forEach((item) => {
+      item.destroy();
+    });
     this.blockElements.clear();
   }
   async setState(state, result) {
@@ -8018,6 +9556,32 @@ var WorkflowyView = class extends import_obsidian7.FileView {
         });
       });
     }
+  }
+  /**
+   * 应用 UI 样式设置（字体族）
+   * 注：字体大小和行高直接使用 Obsidian 全局设置（--font-text-size, --line-height-normal）
+   * 注：圆点大小使用 em 单位，会自动跟随字体大小变化
+   */
+  applyUIStyles() {
+    if (!this.container || !this.plugin.settings)
+      return;
+    const ui = this.plugin.settings.ui;
+    const containerEl = this.container;
+    let fontFamily;
+    switch (ui.fontFamily) {
+      case "theme":
+        fontFamily = "var(--font-text)";
+        break;
+      case "system":
+        fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+        break;
+      case "custom":
+        fontFamily = ui.customFontFamily || "var(--font-text)";
+        break;
+      default:
+        fontFamily = "var(--font-text)";
+    }
+    containerEl.style.setProperty("--workflowy-font-family", fontFamily);
   }
   /**
    * 创建导航头部（面包屑+搜索框）
@@ -8118,7 +9682,9 @@ var WorkflowyView = class extends import_obsidian7.FileView {
     if (file instanceof import_obsidian7.TFile) {
       this.file = file;
       const content = await this.app.vault.read(file);
-      this.editor.loadFromMarkdown(content, this.getCollapseStateOptions());
+      if (this.isClosing)
+        return;
+      this.editor.loadFromMarkdown(content, this.getCollapseStateOptions(), this.getThinoOptions());
       this.renderBlocks();
       this.updateNavigationHeader();
     } else {
@@ -8134,10 +9700,33 @@ var WorkflowyView = class extends import_obsidian7.FileView {
       marker: this.plugin.settings.collapseState.marker
     };
   }
+  /**
+   * 获取 Thino 兼容选项
+   */
+  getThinoOptions() {
+    return {
+      enabled: this.plugin.settings.thino.enabled,
+      timestampFormat: this.plugin.settings.thino.timestampFormat,
+      autoTimestamp: this.plugin.settings.thino.autoTimestamp
+    };
+  }
+  /**
+   * 生成 Thino 时间戳
+   */
+  generateThinoTimestamp() {
+    const now = new Date();
+    const hours = now.getHours().toString().padStart(2, "0");
+    const minutes = now.getMinutes().toString().padStart(2, "0");
+    const seconds = now.getSeconds().toString().padStart(2, "0");
+    if (this.plugin.settings.thino.timestampFormat === "HH:mm:ss") {
+      return `${hours}:${minutes}:${seconds} `;
+    }
+    return `${hours}:${minutes} `;
+  }
   async saveToFile() {
     if (!this.file)
       return;
-    const markdown = this.editor.toMarkdown(this.getCollapseStateOptions());
+    const markdown = this.editor.toMarkdown(this.getCollapseStateOptions(), this.getThinoOptions());
     this.isSaving = true;
     this.lastKnownContent = markdown;
     try {
@@ -8207,6 +9796,8 @@ var WorkflowyView = class extends import_obsidian7.FileView {
       renderPromises.push(...promises);
     }
     await Promise.all(renderPromises);
+    if (this.isClosing)
+      return;
     requestAnimationFrame(() => {
       if (scrollContainer && savedScrollTop > 0) {
         scrollContainer.scrollTop = savedScrollTop;
@@ -8250,13 +9841,20 @@ var WorkflowyView = class extends import_obsidian7.FileView {
    * 初始化垂直线管理器
    */
   initializeVerticalLines(editorContainer) {
+    var _a, _b, _c, _d;
     if (this.verticalLinesManager) {
       this.verticalLinesManager.destroy();
+      this.verticalLinesManager = null;
     }
+    if (((_b = (_a = this.plugin.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.showVerticalLines) === false) {
+      return;
+    }
+    const indentSize = (_d = (_c = this.plugin.settings) == null ? void 0 : _c.ui) == null ? void 0 : _d.indentSize;
     this.verticalLinesManager = new VerticalLinesManager(
       editorContainer,
       this.editor,
-      (blockId) => this.handleVerticalLineClick(blockId)
+      (blockId) => this.handleVerticalLineClick(blockId),
+      indentSize
     );
     requestAnimationFrame(() => {
       if (this.verticalLinesManager) {
@@ -8373,8 +9971,10 @@ var WorkflowyView = class extends import_obsidian7.FileView {
             // 插件设置
             this.viewId,
             // 视图唯一ID（用于跨文档拖拽）
-            orderIndex
+            orderIndex,
             // 有序列表序号
+            this.slashCommandMenu
+            // Slash Command Menu
           );
           const renderPromise = blockItem.waitForRender();
           if (renderPromise) {
@@ -8456,8 +10056,12 @@ var WorkflowyView = class extends import_obsidian7.FileView {
           // 文件路径
           this.plugin.settings,
           // 插件设置
-          this.viewId
+          this.viewId,
           // 视图唯一ID（用于跨文档拖拽）
+          1,
+          // orderIndex
+          this.slashCommandMenu
+          // Slash Command Menu
         );
         element = blockItem.getElement();
       }
@@ -8823,7 +10427,7 @@ var WorkflowyView = class extends import_obsidian7.FileView {
     this.file = file;
     const content = await this.app.vault.read(file);
     this.lastKnownContent = content;
-    this.editor.loadFromMarkdown(content, this.getCollapseStateOptions());
+    this.editor.loadFromMarkdown(content, this.getCollapseStateOptions(), this.getThinoOptions());
     await this.renderBlocks();
     this.updateNavigationHeader();
     if (this.pendingSubpath) {
@@ -9057,7 +10661,14 @@ var WorkflowyView = class extends import_obsidian7.FileView {
    * 刷新视图（用于设置更改后重新渲染）
    */
   refresh() {
+    var _a, _b;
     this.saveAllEditingContent();
+    this.applyUIStyles();
+    if ((_b = (_a = this.plugin.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.animationsEnabled) {
+      this.container.addClass("animations-enabled");
+    } else {
+      this.container.removeClass("animations-enabled");
+    }
     this.renderBlocks();
   }
   /**
@@ -9108,7 +10719,8 @@ var WorkflowyView = class extends import_obsidian7.FileView {
     this.fileDropHandler = new FileDropHandler(
       this.app,
       ((_a = this.file) == null ? void 0 : _a.path) || "",
-      (text) => this.insertLinkAtTarget(text)
+      (text) => this.insertLinkAtTarget(text),
+      this.plugin.settings
     );
     this.container.addEventListener("paste", async (e) => {
       var _a2;
@@ -9117,6 +10729,7 @@ var WorkflowyView = class extends import_obsidian7.FileView {
         if (this.file) {
           this.fileDropHandler.setSourcePath(this.file.path);
         }
+        this.fileDropHandler.setSettings(this.plugin.settings);
         await this.fileDropHandler.handlePaste(e);
       }
     }, true);
@@ -9155,7 +10768,11 @@ var WorkflowyView = class extends import_obsidian7.FileView {
    * 初始化移动端工具栏
    */
   initMobileToolbar() {
+    var _a, _b;
     if (!import_obsidian7.Platform.isMobile) {
+      return;
+    }
+    if (((_b = (_a = this.plugin.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.mobileToolbar) === false) {
       return;
     }
     this.mobileToolbar = new MobileToolbar();
@@ -9288,8 +10905,9 @@ var WorkflowyView = class extends import_obsidian7.FileView {
    */
   executeNewBlock() {
     const focusedBlockId = this.getFocusedBlockId();
+    const initialContent = this.plugin.settings.thino.enabled && this.plugin.settings.thino.autoTimestamp ? this.generateThinoTimestamp() : void 0;
     if (focusedBlockId) {
-      const newBlock = this.editor.createNewBlock(focusedBlockId);
+      const newBlock = this.editor.createNewBlock(focusedBlockId, initialContent);
       this.renderBlocksAndSave();
       setTimeout(() => {
         const item = this.blockElements.get(newBlock.id);
@@ -9298,7 +10916,7 @@ var WorkflowyView = class extends import_obsidian7.FileView {
         }
       }, 50);
     } else {
-      const newBlock = this.editor.createNewBlock();
+      const newBlock = this.editor.createNewBlock(void 0, initialContent);
       this.renderBlocksAndSave();
       setTimeout(() => {
         const item = this.blockElements.get(newBlock.id);
@@ -10002,16 +11620,46 @@ var DEFAULT_SETTINGS = {
     indentSize: 30,
     showBullets: true,
     showCollapseIndicators: true,
+    showVerticalLines: true,
+    // 默认显示垂直缩进线
     animationsEnabled: false,
-    theme: "default"
+    theme: "default",
     // 默认主题
+    fontSize: 14,
+    // 默认 14px
+    lineHeight: 1.5,
+    // 默认 1.5 倍行高
+    bulletAlign: "top",
+    // 默认顶部对齐
+    fontFamily: "theme",
+    // 默认跟随主题
+    customFontFamily: ""
+    // 自定义字体族（空表示未设置）
   },
   editor: {
     autoSave: true,
     autoSaveDelay: 1e3,
     placeholder: "\u8F93\u5165\u5185\u5BB9...",
-    renderMode: "source"
+    renderMode: "source",
     // 默认源码模式（向后兼容）
+    attachmentPath: "default",
+    // 默认使用 Obsidian 附件路径
+    customAttachmentPath: ""
+    // 自定义附件路径（空表示未设置）
+  },
+  features: {
+    slashCommand: true,
+    // 默认启用斜杠命令
+    tagSuggest: true,
+    // 默认启用标签建议
+    linkSuggest: true,
+    // 默认启用链接建议
+    crossDocumentDrag: true,
+    // 默认启用跨文档拖拽
+    autoBlockId: true,
+    // 默认启用自动生成块 ID
+    mobileToolbar: true
+    // 默认启用移动端工具栏
   },
   search: {
     mode: "highlight",
@@ -10037,6 +11685,14 @@ var DEFAULT_SETTINGS = {
     // 默认关闭，保持向后兼容
     marker: "c"
     // 默认标记，完整格式: <!--c-->
+  },
+  thino: {
+    enabled: false,
+    // 默认关闭
+    timestampFormat: "HH:mm",
+    // 默认 HH:mm 格式
+    autoTimestamp: false
+    // 默认不自动添加时间戳
   }
 };
 
@@ -10069,18 +11725,62 @@ var WorkflowySettingTab = class extends import_obsidian8.PluginSettingTab {
     new import_obsidian8.Setting(containerEl).setName("\u7F29\u8FDB\u5927\u5C0F").setDesc("\u6BCF\u7EA7\u7F29\u8FDB\u7684\u50CF\u7D20\u5927\u5C0F\uFF08\u9ED8\u8BA4\uFF1A30px\uFF09").addSlider((slider) => slider.setLimits(10, 60, 5).setValue(this.plugin.settings.ui.indentSize).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.ui.indentSize = value;
       await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
     }));
     new import_obsidian8.Setting(containerEl).setName("\u663E\u793A\u5706\u70B9\u6807\u8BB0").setDesc("\u5728\u6BCF\u4E2A\u5757\u524D\u663E\u793A\u5706\u70B9\u6807\u8BB0").addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showBullets).onChange(async (value) => {
       this.plugin.settings.ui.showBullets = value;
       await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
     }));
     new import_obsidian8.Setting(containerEl).setName("\u663E\u793A\u6298\u53E0\u6307\u793A\u5668").setDesc("\u5728\u6709\u5B50\u5757\u7684\u5757\u524D\u663E\u793A\u6298\u53E0/\u5C55\u5F00\u6307\u793A\u5668").addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showCollapseIndicators).onChange(async (value) => {
       this.plugin.settings.ui.showCollapseIndicators = value;
       await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
+    }));
+    new import_obsidian8.Setting(containerEl).setName("\u663E\u793A\u5782\u76F4\u7F29\u8FDB\u7EBF").setDesc("\u5728\u5C42\u7EA7\u4E4B\u95F4\u663E\u793A\u5782\u76F4\u7F29\u8FDB\u7EBF").addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showVerticalLines).onChange(async (value) => {
+      this.plugin.settings.ui.showVerticalLines = value;
+      await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
     }));
     new import_obsidian8.Setting(containerEl).setName("\u542F\u7528\u52A8\u753B").setDesc("\u542F\u7528\u754C\u9762\u52A8\u753B\u6548\u679C\uFF08\u53EF\u80FD\u5F71\u54CD\u6027\u80FD\uFF09").addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.animationsEnabled).onChange(async (value) => {
       this.plugin.settings.ui.animationsEnabled = value;
       await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
+    }));
+    new import_obsidian8.Setting(containerEl).setName("\u5B57\u4F53\u5927\u5C0F\u4E0E\u884C\u9AD8").setDesc("\u5B57\u4F53\u5927\u5C0F\u548C\u884C\u9AD8\u8DDF\u968F Obsidian \u5168\u5C40\u8BBE\u7F6E\u3002\u8BF7\u5728\u300C\u8BBE\u7F6E \u2192 \u5916\u89C2 \u2192 \u5B57\u4F53\u5927\u5C0F\u300D\u4E2D\u8C03\u6574\u3002\u5706\u70B9\u5927\u5C0F\u4F1A\u968F\u5B57\u4F53\u5927\u5C0F\u81EA\u52A8\u7F29\u653E\u3002");
+    new import_obsidian8.Setting(containerEl).setName("\u5B57\u4F53\u6765\u6E90").setDesc("\u9009\u62E9\u5B57\u4F53\u6765\u6E90\uFF1A\u8DDF\u968F\u4E3B\u9898\u3001\u7CFB\u7EDF\u5B57\u4F53\u6216\u81EA\u5B9A\u4E49\u5B57\u4F53").addDropdown((dropdown) => dropdown.addOption("theme", "\u8DDF\u968F\u4E3B\u9898").addOption("system", "\u7CFB\u7EDF\u5B57\u4F53").addOption("custom", "\u81EA\u5B9A\u4E49\u5B57\u4F53").setValue(this.plugin.settings.ui.fontFamily).onChange(async (value) => {
+      this.plugin.settings.ui.fontFamily = value;
+      await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
+      this.display();
+    }));
+    if (this.plugin.settings.ui.fontFamily === "custom") {
+      new import_obsidian8.Setting(containerEl).setName("\u81EA\u5B9A\u4E49\u5B57\u4F53\u65CF").setDesc("\u8F93\u5165\u81EA\u5B9A\u4E49\u5B57\u4F53\u65CF\u540D\u79F0\uFF0C\u591A\u4E2A\u5B57\u4F53\u7528\u9017\u53F7\u5206\u9694").addText((text) => text.setPlaceholder('\u4F8B\u5982: "Source Han Sans", "Microsoft YaHei"').setValue(this.plugin.settings.ui.customFontFamily).onChange(async (value) => {
+        this.plugin.settings.ui.customFontFamily = value;
+        await this.plugin.saveSettings();
+        this.plugin.refreshAllViews();
+      }));
+    }
+    containerEl.createEl("h2", { text: "\u529F\u80FD\u5F00\u5173" });
+    new import_obsidian8.Setting(containerEl).setName("\u659C\u6760\u547D\u4EE4\u83DC\u5355").setDesc("\u8F93\u5165 / \u65F6\u663E\u793A\u547D\u4EE4\u83DC\u5355\uFF08\u4F18\u5148\u7EA7\u3001\u65E5\u671F\u3001\u72B6\u6001\u7B49\uFF09").addToggle((toggle) => toggle.setValue(this.plugin.settings.features.slashCommand).onChange(async (value) => {
+      this.plugin.settings.features.slashCommand = value;
+      await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
+    }));
+    new import_obsidian8.Setting(containerEl).setName("\u6807\u7B7E\u5EFA\u8BAE").setDesc("\u8F93\u5165 # \u65F6\u663E\u793A\u6807\u7B7E\u5EFA\u8BAE\u83DC\u5355").addToggle((toggle) => toggle.setValue(this.plugin.settings.features.tagSuggest).onChange(async (value) => {
+      this.plugin.settings.features.tagSuggest = value;
+      await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
+    }));
+    new import_obsidian8.Setting(containerEl).setName("\u94FE\u63A5\u5EFA\u8BAE").setDesc("\u8F93\u5165 [[ \u65F6\u663E\u793A\u94FE\u63A5\u5EFA\u8BAE\u83DC\u5355").addToggle((toggle) => toggle.setValue(this.plugin.settings.features.linkSuggest).onChange(async (value) => {
+      this.plugin.settings.features.linkSuggest = value;
+      await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
+    }));
+    new import_obsidian8.Setting(containerEl).setName("\u79FB\u52A8\u7AEF\u5DE5\u5177\u680F").setDesc("\u5728\u79FB\u52A8\u7AEF\u663E\u793A\u5E95\u90E8\u5FEB\u6377\u64CD\u4F5C\u5DE5\u5177\u680F").addToggle((toggle) => toggle.setValue(this.plugin.settings.features.mobileToolbar).onChange(async (value) => {
+      this.plugin.settings.features.mobileToolbar = value;
+      await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
     }));
     containerEl.createEl("h2", { text: "\u7F16\u8F91\u5668\u8BBE\u7F6E" });
     new import_obsidian8.Setting(containerEl).setName("\u81EA\u52A8\u4FDD\u5B58").setDesc("\u7F16\u8F91\u65F6\u81EA\u52A8\u4FDD\u5B58\u66F4\u6539").addToggle((toggle) => toggle.setValue(this.plugin.settings.editor.autoSave).onChange(async (value) => {
@@ -10094,12 +11794,24 @@ var WorkflowySettingTab = class extends import_obsidian8.PluginSettingTab {
     new import_obsidian8.Setting(containerEl).setName("\u5360\u4F4D\u7B26\u6587\u672C").setDesc("\u7A7A\u5757\u663E\u793A\u7684\u5360\u4F4D\u7B26\u6587\u672C").addText((text) => text.setPlaceholder("\u8F93\u5165\u5185\u5BB9...").setValue(this.plugin.settings.editor.placeholder).onChange(async (value) => {
       this.plugin.settings.editor.placeholder = value;
       await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
     }));
     new import_obsidian8.Setting(containerEl).setName("\u6E32\u67D3\u6A21\u5F0F").setDesc("\u9009\u62E9\u5757\u5185\u5BB9\u7684\u663E\u793A\u65B9\u5F0F").addDropdown((dropdown) => dropdown.addOption("source", "\u6E90\u7801\u6A21\u5F0F - \u663E\u793A\u539F\u59CB Markdown \u8BED\u6CD5\uFF08\u5F53\u524D\u9ED8\u8BA4\uFF09").addOption("live-preview", "Live Preview - \u7F16\u8F91\u65F6\u663E\u793A\u6E90\u7801\uFF0C\u975E\u7F16\u8F91\u65F6\u663E\u793A\u6E32\u67D3\u6548\u679C").setValue(this.plugin.settings.editor.renderMode).onChange(async (value) => {
       this.plugin.settings.editor.renderMode = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
+    new import_obsidian8.Setting(containerEl).setName("\u9644\u4EF6\u4FDD\u5B58\u8DEF\u5F84").setDesc("\u9009\u62E9\u7C98\u8D34/\u62D6\u62FD\u6587\u4EF6\u7684\u4FDD\u5B58\u4F4D\u7F6E").addDropdown((dropdown) => dropdown.addOption("default", "\u4F7F\u7528 Obsidian \u9ED8\u8BA4\u9644\u4EF6\u8DEF\u5F84").addOption("custom", "\u81EA\u5B9A\u4E49\u8DEF\u5F84").setValue(this.plugin.settings.editor.attachmentPath).onChange(async (value) => {
+      this.plugin.settings.editor.attachmentPath = value;
+      await this.plugin.saveSettings();
+      this.display();
+    }));
+    if (this.plugin.settings.editor.attachmentPath === "custom") {
+      new import_obsidian8.Setting(containerEl).setName("\u81EA\u5B9A\u4E49\u9644\u4EF6\u8DEF\u5F84").setDesc("\u8F93\u5165\u76F8\u5BF9\u4E8E vault \u6839\u76EE\u5F55\u7684\u8DEF\u5F84\uFF0C\u4F8B\u5982: attachments \u6216 assets/images").addText((text) => text.setPlaceholder("\u4F8B\u5982: attachments").setValue(this.plugin.settings.editor.customAttachmentPath).onChange(async (value) => {
+        this.plugin.settings.editor.customAttachmentPath = value;
+        await this.plugin.saveSettings();
+      }));
+    }
     containerEl.createEl("h2", { text: "\u641C\u7D22\u8BBE\u7F6E" });
     new import_obsidian8.Setting(containerEl).setName("\u641C\u7D22\u6A21\u5F0F").setDesc("\u9009\u62E9\u641C\u7D22\u65F6\u7684\u663E\u793A\u65B9\u5F0F").addDropdown((dropdown) => dropdown.addOption("highlight", "\u663E\u793A\u9AD8\u4EAE - \u9AD8\u4EAE\u5339\u914D\u7684\u8282\u70B9\uFF0C\u663E\u793A\u6240\u6709\u5185\u5BB9").addOption("filter", "\u8FC7\u6EE4\u8282\u70B9 - \u53EA\u663E\u793A\u5339\u914D\u7684\u8282\u70B9\u53CA\u5176\u7236\u8282\u70B9").setValue(this.plugin.settings.search.mode).onChange(async (value) => {
       this.plugin.settings.search.mode = value;
@@ -10117,6 +11829,7 @@ var WorkflowySettingTab = class extends import_obsidian8.PluginSettingTab {
     new import_obsidian8.Setting(containerEl).setName("\u542F\u7528\u62D6\u62FD").setDesc("\u5141\u8BB8\u901A\u8FC7\u62D6\u62FD\u91CD\u65B0\u6392\u5217\u5757").addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.enabled).onChange(async (value) => {
       this.plugin.settings.dragDrop.enabled = value;
       await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
     }));
     new import_obsidian8.Setting(containerEl).setName("\u663E\u793A\u653E\u7F6E\u6307\u793A\u5668").setDesc("\u62D6\u62FD\u65F6\u663E\u793A\u653E\u7F6E\u4F4D\u7F6E\u7684\u89C6\u89C9\u6307\u793A\u5668").addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.showDropIndicators).onChange(async (value) => {
       this.plugin.settings.dragDrop.showDropIndicators = value;
@@ -10124,6 +11837,14 @@ var WorkflowySettingTab = class extends import_obsidian8.PluginSettingTab {
     }));
     new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u5D4C\u5957\u653E\u7F6E").setDesc("\u5141\u8BB8\u5C06\u5757\u653E\u7F6E\u4E3A\u5176\u4ED6\u5757\u7684\u5B50\u5757").addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.allowNestedDrop).onChange(async (value) => {
       this.plugin.settings.dragDrop.allowNestedDrop = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian8.Setting(containerEl).setName("\u8DE8\u6587\u6863\u62D6\u62FD").setDesc("\u5141\u8BB8\u5728\u4E0D\u540C\u6587\u6863\u4E4B\u95F4\u62D6\u62FD\u5757").addToggle((toggle) => toggle.setValue(this.plugin.settings.features.crossDocumentDrag).onChange(async (value) => {
+      this.plugin.settings.features.crossDocumentDrag = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian8.Setting(containerEl).setName("\u81EA\u52A8\u751F\u6210\u5757 ID").setDesc("Alt+\u62D6\u62FD\u521B\u5EFA\u5757\u5F15\u7528\u65F6\u81EA\u52A8\u751F\u6210\u5757 ID").addToggle((toggle) => toggle.setValue(this.plugin.settings.features.autoBlockId).onChange(async (value) => {
+      this.plugin.settings.features.autoBlockId = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h2", { text: "\u6298\u53E0\u72B6\u6001\u8BBE\u7F6E" });
@@ -10138,6 +11859,23 @@ var WorkflowySettingTab = class extends import_obsidian8.PluginSettingTab {
         await this.plugin.saveSettings();
       }
     }));
+    containerEl.createEl("h2", { text: "Thino \u517C\u5BB9" });
+    new import_obsidian8.Setting(containerEl).setName("\u542F\u7528 Thino \u517C\u5BB9\u6A21\u5F0F").setDesc("\u517C\u5BB9 Thino/Memos \u63D2\u4EF6\u7684\u683C\u5F0F\u3002\u5F00\u542F\u540E\u7B2C1\u7EA7\u5217\u8868\u9879\u7684\u7EED\u884C\u4F1A\u4FDD\u7559\u539F\u59CB\u7F29\u8FDB\u683C\u5F0F\uFF08Tab\u6216\u7A7A\u683C\uFF09\uFF0C\u5173\u95ED\u65F6\u7EDF\u4E00\u8F6C\u4E3A\u7A7A\u683C").addToggle((toggle) => toggle.setValue(this.plugin.settings.thino.enabled).onChange(async (value) => {
+      this.plugin.settings.thino.enabled = value;
+      await this.plugin.saveSettings();
+      this.plugin.refreshAllViews();
+      this.display();
+    }));
+    if (this.plugin.settings.thino.enabled) {
+      new import_obsidian8.Setting(containerEl).setName("\u65B0\u5EFA\u8282\u70B9\u81EA\u52A8\u6DFB\u52A0\u65F6\u95F4\u6233").setDesc("\u521B\u5EFA\u65B0\u8282\u70B9\u65F6\u81EA\u52A8\u5728\u5F00\u5934\u6DFB\u52A0\u5F53\u524D\u65F6\u95F4").addToggle((toggle) => toggle.setValue(this.plugin.settings.thino.autoTimestamp).onChange(async (value) => {
+        this.plugin.settings.thino.autoTimestamp = value;
+        await this.plugin.saveSettings();
+      }));
+      new import_obsidian8.Setting(containerEl).setName("\u65F6\u95F4\u6233\u683C\u5F0F").setDesc("\u9009\u62E9\u81EA\u52A8\u6DFB\u52A0\u7684\u65F6\u95F4\u6233\u683C\u5F0F").addDropdown((dropdown) => dropdown.addOption("HH:mm", "HH:mm\uFF08\u5982 14:30\uFF09").addOption("HH:mm:ss", "HH:mm:ss\uFF08\u5982 14:30:45\uFF09").setValue(this.plugin.settings.thino.timestampFormat).onChange(async (value) => {
+        this.plugin.settings.thino.timestampFormat = value;
+        await this.plugin.saveSettings();
+      }));
+    }
     containerEl.createEl("h2", { text: "\u9AD8\u7EA7\u8BBE\u7F6E" });
     new import_obsidian8.Setting(containerEl).setName("\u4E25\u683C\u6A21\u5F0F").setDesc("\u542F\u7528\u4E25\u683C\u7684\u529F\u80FD\u9694\u79BB\uFF08\u63A8\u8350\uFF09").addToggle((toggle) => toggle.setValue(this.plugin.settings.isolation.strictMode).onChange(async (value) => {
       this.plugin.settings.isolation.strictMode = value;
@@ -10190,6 +11928,7 @@ var WorkflowyPlugin = class extends import_obsidian9.Plugin {
     if (!healthCheck.healthy) {
       console.warn("[WorkflowyPlugin] Final health check failed:", healthCheck);
     }
+    OutlineItem.cleanupStaticResources();
     cleanupIsolationSystem();
   }
   /**
@@ -10407,6 +12146,25 @@ var WorkflowyPlugin = class extends import_obsidian9.Plugin {
         return true;
       }
     });
+    this.addCommand({
+      id: "workflowy-toggle-thino-timestamp",
+      name: "Workflowy: \u5207\u6362\u65B0\u5EFA\u8282\u70B9\u81EA\u52A8\u6DFB\u52A0\u65F6\u95F4\u6233",
+      callback: () => {
+        this.toggleThinoAutoTimestamp();
+      }
+    });
+  }
+  /**
+   * 切换 Thino 自动时间戳功能
+   */
+  toggleThinoAutoTimestamp() {
+    if (!this.settings.thino.enabled) {
+      this.settings.thino.enabled = true;
+    }
+    this.settings.thino.autoTimestamp = !this.settings.thino.autoTimestamp;
+    this.saveSettings();
+    const status = this.settings.thino.autoTimestamp ? "\u5DF2\u5F00\u542F" : "\u5DF2\u5173\u95ED";
+    new import_obsidian9.Notice(`\u65B0\u5EFA\u8282\u70B9\u81EA\u52A8\u6DFB\u52A0\u65F6\u95F4\u6233\uFF1A${status}`);
   }
   /**
    * 切换渲染模式（源码模式 ↔ Live Preview 模式）

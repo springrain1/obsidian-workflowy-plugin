@@ -3,14 +3,25 @@
 
 /* Workflowy Enhanced Styles */
 .workflowy-container {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
+    /* 使用 Obsidian 原生 CSS 变量，跟随用户全局设置 */
+    /* --font-text-size 和 --line-height-normal 由 Obsidian 设置控制 */
+    /* 圆点大小使用 em 单位，会自动跟随字体大小变化 */
+    --workflowy-font-family: var(--font-text);
+
+    font-family: var(--workflowy-font-family);
+    font-size: var(--font-text-size);
+    line-height: var(--line-height-normal);
     color: var(--text-normal);
     background: var(--background-primary);
     padding: 20px;
     height: 100%;
     overflow-y: auto;
+}
+
+/* 禁用动画时移除所有过渡效果 */
+.workflowy-container:not(.animations-enabled) * {
+    transition: none !important;
+    animation: none !important;
 }
 
 /* 导航头部样式（面包屑+搜索框） */
@@ -24,7 +35,8 @@
     border-radius: 8px;
     border: 1px solid var(--background-modifier-border);
     transition: all 0.2s ease;
-    position: relative; /* 为绝对定位的菜单提供定位上下文 */
+    position: relative;
+    /* 为绝对定位的菜单提供定位上下文 */
 }
 
 .workflowy-container .workflowy-navigation-header:hover {
@@ -182,24 +194,41 @@
 
 .workflowy-container .workflowy-content-line {
     display: flex;
-    align-items: flex-start;
-    min-height: 28px;
+    align-items: var(--workflowy-bullet-align, flex-start);
+    min-height: 2em;
     padding: 2px 0;
 }
 
 .workflowy-container .workflowy-collapse {
-    width: 16px;
-    height: 16px;
+    width: 1.1em;
+    height: 1.1em;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 6px 4px 0 0;
+    /* 
+     * 对齐计算：让折叠指示器中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高约 1.5em，第一行中心 ≈ 4px + 0.75em
+     * 折叠指示器高度 1.1em，中心在 0.55em
+     * margin-top = 4px + 0.75em - 0.55em = 4px + 0.2em
+     */
+    margin: calc(4px + 0.2em) 0.3em 0 0;
     cursor: pointer;
-    font-size: 10px;
     color: var(--text-muted);
     border-radius: 2px;
     transition: all 0.2s ease;
     flex-shrink: 0;
+}
+
+/* 折叠指示器 SVG 样式 */
+.workflowy-container .workflowy-collapse svg {
+    width: 0.7em;
+    height: 0.7em;
+    transition: transform 0.2s ease;
+}
+
+/* 展开状态：SVG 旋转 90° */
+.workflowy-container .workflowy-collapse:not(.collapsed) svg {
+    transform: rotate(90deg);
 }
 
 .workflowy-container .workflowy-collapse:hover {
@@ -208,36 +237,51 @@
 }
 
 .workflowy-container .workflowy-collapse-placeholder {
-    width: 16px;
-    height: 16px;
-    margin: 6px 4px 0 0;
+    width: 1.1em;
+    height: 1.1em;
+    margin: calc(4px + 0.2em) 0.3em 0 0;
     flex-shrink: 0;
 }
 
 .workflowy-container .workflowy-bullet {
-    width: 6px;
-    height: 6px;
+    /* 使用 em 单位让圆点大小跟随字体大小变化 */
+    width: 0.4em;
+    height: 0.4em;
     border-radius: 50%;
     background: var(--text-muted);
-    margin: 11px 12px 0 0;
+    /* 
+     * 对齐计算：让圆点中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高约 1.5em，第一行中心 ≈ 4px + 0.75em
+     * 圆点高度 0.4em，中心在 0.2em
+     * margin-top = 4px + 0.75em - 0.2em = 4px + 0.55em
+     */
+    margin: calc(4px + 0.55em) 0.7em 0 0;
     flex-shrink: 0;
     transition: all 0.2s ease;
-    cursor: pointer; /* 可点击缩放 */
+    cursor: pointer;
 }
 
 /* 有序列表序号样式 */
 .workflowy-container .workflowy-order-number {
-    font-size: 14px;
+    font-size: inherit;
     color: var(--text-muted);
-    margin: 4px -6px 0 0;
+    /* 
+     * 对齐计算：让序号中心与圆点中心对齐
+     * 圆点 margin-top: calc(4px + 0.55em)，圆点中心在 margin-top + 0.2em
+     * 序号高度约 1em（line-height: 1），中心在 0.5em
+     * 序号 margin-top = 圆点 margin-top + 圆点中心 - 序号中心
+     *                = (4px + 0.55em) + 0.2em - 0.5em = 4px + 0.25em
+     */
+    margin: calc(4px + 0.25em) -0.3em 0 0;
     flex-shrink: 0;
     font-weight: normal;
-    min-width: 14px;
+    min-width: 1em;
+    line-height: 1;
 }
 
-/* 折叠状态的节点 bullet 添加外圈阴影效果 */
+/* 折叠状态的节点 bullet 添加外圈阴影效果（使用 em 单位） */
 .workflowy-container .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.15);
+    box-shadow: 0 0 0 0.3em rgba(128, 128, 128, 0.15);
 }
 
 .workflowy-container .workflowy-item:hover .workflowy-bullet {
@@ -253,11 +297,17 @@
 
 /* 待办事项复选框样式 */
 .workflowy-container .workflowy-checkbox {
-    width: 18px;
-    height: 18px;
+    width: 1.3em;
+    height: 1.3em;
     border: 2px solid var(--text-muted);
     border-radius: 4px;
-    margin: 5px 6px 0 0;
+    /* 
+     * 对齐计算：让复选框中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高约 1.5em，第一行中心 ≈ 4px + 0.75em
+     * 复选框高度 1.3em，中心在 0.65em
+     * margin-top = 4px + 0.75em - 0.65em = 4px + 0.1em
+     */
+    margin: calc(4px + 0.1em) 0.4em 0 0;
     flex-shrink: 0;
     transition: all 0.2s ease;
     display: flex;
@@ -265,6 +315,12 @@
     justify-content: center;
     cursor: pointer;
     background: var(--background-primary);
+}
+
+/* 复选框内 SVG 图标样式 */
+.workflowy-container .workflowy-checkbox svg {
+    width: 0.85em;
+    height: 0.85em;
 }
 
 .workflowy-container .workflowy-checkbox.completed {
@@ -330,8 +386,9 @@
     outline: none;
     border: none;
     background: transparent;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: var(--font-text-size);
+    line-height: var(--line-height-normal);
+    font-family: var(--workflowy-font-family, inherit);
     padding: 4px 8px;
     margin: 0;
     color: var(--text-normal);
@@ -341,6 +398,7 @@
     border-radius: 3px;
     transition: all 0.2s ease;
 }
+
 
 .workflowy-container .workflowy-content:focus {
     background: rgba(var(--color-accent-rgb), 0.05);
@@ -507,13 +565,15 @@
 @media (max-width: 768px) {
     .workflowy-container {
         padding: 12px;
+        /* 移动端跟随 Obsidian 设置，不再单独设置字体大小 */
     }
 
     .workflowy-container .workflowy-content {
-        font-size: 16px;
+        font-size: var(--font-text-size);
         padding: 6px 8px;
     }
 }
+
 /* 多选功能样式 */
 .workflowy-container .workflowy-selection-box {
     position: absolute;
@@ -566,6 +626,7 @@
 .workflowy-selection-counter.visible {
     display: block;
 }
+
 /* 
 拖拽指示线 - 完全复用 obsidian-outliner 的实现 */
 .workflowy-drop-zone {
@@ -772,6 +833,8 @@
 /* 主题 1: 默认（跟随 Obsidian） */
 .workflowy-container.workflowy-theme-default {
     /* 使用 Obsidian 原生变量，无需额外定义 */
+    /* 添加透明属性避免空规则集警告 */
+    --theme-default-marker: 1;
 }
 
 /* 主题 2: 经典白 */
@@ -806,7 +869,8 @@
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #3498db !important; /* 蓝色光标 */
+    caret-color: #3498db !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-bullet {
@@ -857,7 +921,8 @@
 
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #ff9500 !important; /* 橙色光标，与主题文字颜色一致 */
+    caret-color: #ff9500 !important;
+    /* 橙色光标，与主题文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-bullet {
@@ -909,7 +974,8 @@
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #8b7355 !important; /* 棕色光标 */
+    caret-color: #8b7355 !important;
+    /* 棕色光标 */
 }
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-bullet {
@@ -960,7 +1026,8 @@
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #9b59b6 !important; /* 紫色光标 */
+    caret-color: #9b59b6 !important;
+    /* 紫色光标 */
 }
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-bullet {
@@ -1011,7 +1078,8 @@
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #5dade2 !important; /* 亮蓝色光标，与主题强调色一致 */
+    caret-color: #5dade2 !important;
+    /* 亮蓝色光标，与主题强调色一致 */
 }
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-bullet {
@@ -1063,7 +1131,8 @@
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #e0e0e0 !important; /* 浅灰色光标，与文字颜色一致 */
+    caret-color: #e0e0e0 !important;
+    /* 浅灰色光标，与文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-bullet {
@@ -1115,7 +1184,8 @@
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #4caf50 !important; /* 绿色光标 */
+    caret-color: #4caf50 !important;
+    /* 绿色光标 */
 }
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-bullet {
@@ -1166,7 +1236,8 @@
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #2196f3 !important; /* 蓝色光标 */
+    caret-color: #2196f3 !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-bullet {
@@ -1217,7 +1288,8 @@
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #ff9800 !important; /* 橙色光标 */
+    caret-color: #ff9800 !important;
+    /* 橙色光标 */
 }
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-bullet {
@@ -1268,7 +1340,8 @@
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #e91e63 !important; /* 粉色光标 */
+    caret-color: #e91e63 !important;
+    /* 粉色光标 */
 }
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-bullet {
@@ -1319,7 +1392,8 @@
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #ffffff !important; /* 纯白光标，与文字颜色一致 */
+    caret-color: #ffffff !important;
+    /* 纯白光标，与文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-bullet {
@@ -1344,36 +1418,44 @@
 
 /* 暗色主题光标颜色优化 */
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-content {
-    caret-color: #ff9500 !important; /* 橙色光标，与主题文字颜色一致 */
+    caret-color: #ff9500 !important;
+    /* 橙色光标，与主题文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-content {
-    caret-color: #5dade2 !important; /* 亮蓝色光标，与主题强调色一致 */
+    caret-color: #5dade2 !important;
+    /* 亮蓝色光标，与主题强调色一致 */
 }
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-content {
-    caret-color: #e0e0e0 !important; /* 浅灰色光标，与文字颜色一致 */
+    caret-color: #e0e0e0 !important;
+    /* 浅灰色光标，与文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-content {
-    caret-color: #ffffff !important; /* 纯白光标，与文字颜色一致 */
+    caret-color: #ffffff !important;
+    /* 纯白光标，与文字颜色一致 */
 }
 
 /* 暗色主题折叠节点阴影优化 */
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(76, 217, 100, 0.3) !important; /* 绿色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(76, 217, 100, 0.3) !important;
+    /* 绿色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(93, 173, 226, 0.35) !important; /* 蓝色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(93, 173, 226, 0.35) !important;
+    /* 蓝色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(192, 192, 192, 0.3) !important; /* 浅灰半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(192, 192, 192, 0.3) !important;
+    /* 浅灰半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25) !important; /* 白色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25) !important;
+    /* 白色半透明阴影 */
 }
 
 /* 暗色主题的主题配色定义 */
@@ -1522,68 +1604,84 @@
 
 /* 亮色主题光标颜色优化 */
 .workflowy-container.workflowy-theme-default .workflowy-content {
-    caret-color: var(--text-accent) !important; /* 跟随 Obsidian 强调色 */
+    caret-color: var(--text-accent) !important;
+    /* 跟随 Obsidian 强调色 */
 }
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-content {
-    caret-color: #3498db !important; /* 蓝色光标 */
+    caret-color: #3498db !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-content {
-    caret-color: #8b7355 !important; /* 棕色光标 */
+    caret-color: #8b7355 !important;
+    /* 棕色光标 */
 }
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-content {
-    caret-color: #9b59b6 !important; /* 紫色光标 */
+    caret-color: #9b59b6 !important;
+    /* 紫色光标 */
 }
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-content {
-    caret-color: #4caf50 !important; /* 绿色光标 */
+    caret-color: #4caf50 !important;
+    /* 绿色光标 */
 }
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-content {
-    caret-color: #2196f3 !important; /* 蓝色光标 */
+    caret-color: #2196f3 !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-content {
-    caret-color: #ff9800 !important; /* 橙色光标 */
+    caret-color: #ff9800 !important;
+    /* 橙色光标 */
 }
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-content {
-    caret-color: #e91e63 !important; /* 粉色光标 */
+    caret-color: #e91e63 !important;
+    /* 粉色光标 */
 }
 
 /* 亮色主题折叠节点阴影优化 */
 .workflowy-container.workflowy-theme-default .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.2) !important; /* 中性灰色阴影 */
+    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.2) !important;
+    /* 中性灰色阴影 */
 }
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.25) !important; /* 蓝色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.25) !important;
+    /* 蓝色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(139, 115, 85, 0.3) !important; /* 棕色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(139, 115, 85, 0.3) !important;
+    /* 棕色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(155, 89, 182, 0.3) !important; /* 紫色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(155, 89, 182, 0.3) !important;
+    /* 紫色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.3) !important; /* 绿色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.3) !important;
+    /* 绿色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.3) !important; /* 蓝色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.3) !important;
+    /* 蓝色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.3) !important; /* 橙色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.3) !important;
+    /* 橙色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(233, 30, 99, 0.3) !important; /* 粉色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(233, 30, 99, 0.3) !important;
+    /* 粉色半透明阴影 */
 }
 
 /* 亮色主题的主题配色定义 */
@@ -1842,7 +1940,8 @@
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-content {
     color: var(--theme-text-normal) !important;
-    caret-color: #fbbf24 !important; /* 黄色光标 */
+    caret-color: #fbbf24 !important;
+    /* 黄色光标 */
 }
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-content-display {
@@ -1859,7 +1958,8 @@
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #fbbf24 !important; /* 黄色光标 */
+    caret-color: #fbbf24 !important;
+    /* 黄色光标 */
 }
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-bullet {
@@ -1881,7 +1981,8 @@
 
 /* Element 深灰主题折叠节点阴影 */
 .workflowy-container.workflowy-theme-element-dark .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(232, 234, 237, 0.3) !important; /* 浅灰半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(232, 234, 237, 0.3) !important;
+    /* 浅灰半透明阴影 */
 }
 
 /* Element 深灰主题预览 */
@@ -1906,34 +2007,42 @@
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content {
     color: var(--theme-text-normal) !important;
-    caret-color: #00ff00 !important; /* 荧光绿光标 */
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5); /* 荧光效果 */
+    caret-color: #00ff00 !important;
+    /* 荧光绿光标 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-display {
     color: var(--theme-text-normal) !important;
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3); /* 荧光效果 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-display p {
     color: var(--theme-text-normal) !important;
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3); /* 荧光效果 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-display em {
     color: var(--theme-text-muted) !important;
-    text-shadow: 0 0 3px rgba(0, 255, 0, 0.2); /* 荧光效果 */
+    text-shadow: 0 0 3px rgba(0, 255, 0, 0.2);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #00ff00 !important; /* 荧光绿光标 */
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5); /* 荧光效果 */
+    caret-color: #00ff00 !important;
+    /* 荧光绿光标 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-bullet {
     background: var(--theme-bullet) !important;
-    box-shadow: 0 0 8px rgba(0, 255, 0, 0.6); /* 荧光发光效果 */
+    box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
+    /* 荧光发光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-collapse {
@@ -1942,7 +2051,8 @@
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-vertical-line {
     border-left-color: var(--theme-line) !important;
-    box-shadow: 0 0 3px rgba(0, 255, 0, 0.3); /* 垂直线发光 */
+    box-shadow: 0 0 3px rgba(0, 255, 0, 0.3);
+    /* 垂直线发光 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-navigation-header {
@@ -1952,7 +2062,8 @@
 
 /* Matrix 黑绿主题折叠节点阴影 */
 .workflowy-container.workflowy-theme-matrix-green .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(0, 255, 0, 0.4), 0 0 12px rgba(0, 255, 0, 0.6) !important; /* 荧光绿阴影 + 发光 */
+    box-shadow: 0 0 0 4px rgba(0, 255, 0, 0.4), 0 0 12px rgba(0, 255, 0, 0.6) !important;
+    /* 荧光绿阴影 + 发光 */
 }
 
 /* Matrix 黑绿主题预览 */
@@ -3358,7 +3469,8 @@
 /* 搜索输入框 */
 .workflowy-container .workflowy-search-container .workflowy-search {
     flex: 1;
-    padding-right: 32px;  /* 为清除按钮留出空间 */
+    padding-right: 32px;
+    /* 为清除按钮留出空间 */
 }
 
 /* 清除按钮 */
@@ -3406,7 +3518,8 @@
 
 /* 搜索过滤模式：匹配节点的折叠指示器和圆点 */
 .workflowy-container .workflowy-item.search-matched-node .workflowy-collapse {
-    transform: rotate(-90deg) !important;  /* 向右 ▶ */
+    transform: rotate(-90deg) !important;
+    /* 向右 ▶ */
 }
 
 /* 搜索模式下：覆盖折叠状态的阴影规则 */
@@ -3428,7 +3541,8 @@
 
 /* 搜索过滤模式：父节点（非匹配但可见）的折叠指示器和圆点 */
 .workflowy-container .workflowy-item.search-parent-node .workflowy-collapse {
-    transform: rotate(-45deg) !important;  /* 向右下斜 45 度 ▼ */
+    transform: rotate(-45deg) !important;
+    /* 向右下斜 45 度 ▼ */
 }
 
 /* 只有有真正折叠指示器（有子节点）的父节点才显示圆圈阴影 */
@@ -3535,13 +3649,17 @@
 }
 
 /* 显示层（MarkdownRenderer 渲染结果） - 与源码模式完全一致 */
+/* 显示层（MarkdownRenderer 渲染结果） - 与源码模式完全一致 */
 .workflowy-content-display {
-    /* 与 .workflowy-content 保持一致 */
+    /* 与 .workflowy-content 和 .workflowy-content-editor 保持一致 */
+    box-sizing: border-box;
+    /* 统一为 border-box，与 editor 一致 */
     outline: none;
     border: none;
     background: transparent;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: var(--font-text-size);
+    line-height: var(--line-height-normal);
+    font-family: var(--workflowy-font-family, inherit);
     padding: 4px 8px;
     margin: 0;
     color: var(--text-normal);
@@ -3552,6 +3670,7 @@
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+/* ... existing hover styles ... */
 .workflowy-content-display:hover {
     background: rgba(var(--color-accent-rgb), 0.05);
     box-shadow: 0 0 0 1px rgba(var(--color-accent-rgb), 0.2);
@@ -3564,8 +3683,8 @@
     outline: none !important;
     border: none !important;
     background: transparent !important;
-    font-size: 14px !important;
-    line-height: 1.5 !important;
+    font-size: var(--font-text-size) !important;
+    line-height: var(--line-height-normal) !important;
     padding: 4px 8px !important;
     margin: 0 !important;
     color: var(--text-normal) !important;
@@ -3576,8 +3695,8 @@
     border-radius: 3px !important;
     resize: none !important;
     box-sizing: border-box !important;
-    /* 字体设置 - 与源码模式完全一致 */
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+    /* 字体设置 - 使用 CSS 变量 */
+    font-family: var(--workflowy-font-family, inherit) !important;
     font-weight: 400 !important;
     font-style: normal !important;
     letter-spacing: normal !important;
@@ -3604,9 +3723,14 @@
 }
 
 /* 显示层中的 Markdown 元素 */
-.workflowy-content-display p {
-    margin: 0;
-    display: inline;
+.workflowy-content-display p,
+.workflowy-content-display div {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: inherit !important;
+    /* display: inline;  移除 display: inline，因为这可能会破坏多行文本的正常流布局，
+       但我们需要确保它表现得像纯文本一样紧凑 */
+    display: block;
 }
 
 .workflowy-content-display strong {
@@ -3661,27 +3785,29 @@
 /* 列表样式 */
 .workflowy-content-display ul,
 .workflowy-content-display ol {
-    margin: 0;
+    margin: 0.2em 0;
     padding-left: 1.5em;
-    display: inline-block;
+    display: block;
 }
 
 .workflowy-content-display li {
     margin: 0;
+    display: list-item;
 }
 
 /* 块引用 */
 .workflowy-content-display blockquote {
-    margin: 0;
+    margin: 0.2em 0;
     padding-left: 1em;
     border-left: 3px solid var(--quote-opening-modifier);
     color: var(--text-muted);
-    display: inline-block;
+    display: block;
 }
 
 /* 确保空内容时有最小高度 */
 .workflowy-content-display:empty::before {
-    content: '\200B'; /* 零宽空格 */
+    content: '\200B';
+    /* 零宽空格 */
     display: inline-block;
 }
 
@@ -3691,7 +3817,8 @@
 /* 移动端容器优化 */
 .is-mobile .workflowy-container {
     padding: 12px;
-    font-size: 16px; /* 移动端使用更大的字体 */
+    font-size: 16px;
+    /* 移动端使用更大的字体 */
 }
 
 /* 移动端工具栏优化 */
@@ -3704,18 +3831,21 @@
 .is-mobile .workflowy-btn {
     padding: 10px 14px;
     font-size: 14px;
-    min-height: 44px; /* iOS 推荐的最小触摸目标 */
+    min-height: 44px;
+    /* iOS 推荐的最小触摸目标 */
 }
 
 .is-mobile .workflowy-search {
     width: 100%;
-    font-size: 16px; /* 防止 iOS 自动缩放 */
+    font-size: 16px;
+    /* 防止 iOS 自动缩放 */
     min-height: 44px;
 }
 
 /* 移动端内容项优化 */
 .is-mobile .workflowy-item {
-    margin: 0 !important;  /* 减少节点间距 */
+    margin: 0 !important;
+    /* 减少节点间距 */
     position: relative;
 }
 
@@ -3723,18 +3853,23 @@
 .is-mobile .workflowy-content-display,
 .is-mobile .workflowy-content-editor {
     font-size: 15px !important;
-    line-height: 1.4 !important;  /* 稍微减小行高 */
-    padding: 4px 8px !important;  /* 减少内边距 */
-    min-height: 28px !important;  /* 减小最小高度 */
+    line-height: 1.4 !important;
+    /* 稍微减小行高 */
+    padding: 4px 8px !important;
+    /* 减少内边距 */
+    min-height: 28px !important;
+    /* 减小最小高度 */
 }
 
 /* 移动端内容行优化 - 参考幕布布局 */
 .is-mobile .workflowy-content-line {
-    min-height: 24px !important;  /* 减小最小高度 */
+    min-height: 1.7em !important;
+    /* 使用 em 单位，随字体缩放 */
     display: flex !important;
     align-items: center !important;
     position: relative;
-    padding-right: 24px !important;  /* 为右侧折叠指示器区域留出空间 */
+    padding-right: 24px !important;
+    /* 为右侧折叠指示器区域留出空间 */
 }
 
 /* 右侧折叠指示器背景区域 - 仅对有子节点的项显示（参考幕布） */
@@ -3742,11 +3877,15 @@
     content: '';
     position: absolute;
     right: 0;
-    top: 2px;      /* 上下留出间隔 */
-    bottom: 2px;   /* 上下留出间隔 */
+    top: 2px;
+    /* 上下留出间隔 */
+    bottom: 2px;
+    /* 上下留出间隔 */
     width: 20px;
-    background: rgba(245, 245, 245, 0.95);  /* 浅灰色背景 */
-    border-radius: 4px;  /* 圆角 */
+    background: rgba(245, 245, 245, 0.95);
+    /* 浅灰色背景 */
+    border-radius: 4px;
+    /* 圆角 */
     pointer-events: none;
     z-index: 4;
 }
@@ -3771,7 +3910,8 @@
     min-height: 24px !important;
     /* 重置样式 */
     padding: 0 !important;
-    margin: 0 4px 0 0 !important;  /* 减少右边距 */
+    margin: 0 4px 0 0 !important;
+    /* 减少右边距 */
     /* 背景透明 */
     background: transparent !important;
     background-color: transparent !important;
@@ -3835,7 +3975,8 @@
     cursor: pointer;
     flex-shrink: 0;
     color: var(--text-muted) !important;
-    z-index: 6;  /* 高于背景层 */
+    z-index: 6;
+    /* 高于背景层 */
 }
 
 /* 移动端折叠指示器 - 折叠状态三角指向左侧 ◀ */
@@ -3864,12 +4005,12 @@
 /* ==================== 移动端复选框 ==================== */
 
 .is-mobile .workflowy-container .workflowy-checkbox {
-    width: 24px !important;
-    height: 24px !important;
-    min-width: 24px !important;
-    min-height: 24px !important;
+    width: 1.6em !important;
+    height: 1.6em !important;
+    min-width: 1.6em !important;
+    min-height: 1.6em !important;
     padding: 0 !important;
-    margin: 0 4px 0 0 !important;
+    margin: 0 0.3em 0 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -3882,12 +4023,12 @@
     order: 0 !important;
 }
 
-/* 移动端复选框内部方框 - 与桌面端 18px 一致 */
+/* 移动端复选框内部方框 - 使用 em 单位 */
 .is-mobile .workflowy-container .workflowy-checkbox::before {
     content: '' !important;
     display: block !important;
-    width: 16px !important;
-    height: 16px !important;
+    width: 1.1em !important;
+    height: 1.1em !important;
     border: 2px solid var(--text-muted) !important;
     border-radius: 4px !important;
     background: var(--background-primary) !important;
@@ -3940,7 +4081,8 @@
 
 /* 移动端拖拽指示器优化 */
 .is-mobile .workflowy-drop-zone {
-    height: 4px; /* 更粗的指示线 */
+    height: 4px;
+    /* 更粗的指示线 */
 }
 
 /* 移动端选择计数器优化 */
@@ -4126,3 +4268,406 @@
         padding-bottom: calc(50px + env(safe-area-inset-bottom, 0px)) !important;
     }
 }
+
+/* Slash Command Menu */
+.workflowy-slash-menu {
+    position: fixed;
+    z-index: 10000;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    width: 220px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 6px;
+    font-size: 13px;
+    pointer-events: auto;
+}
+
+/* 分组标题 - 简洁风格 */
+.workflowy-slash-menu-group-header {
+    padding: 6px 8px 4px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+.workflowy-slash-menu-group-header:first-child {
+    margin-top: 0;
+}
+
+.workflowy-slash-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    cursor: pointer;
+    color: var(--text-normal);
+    pointer-events: auto;
+    border-radius: 4px;
+    margin: 1px 0;
+    transition: background-color 0.1s ease;
+    position: relative;
+}
+
+.workflowy-slash-menu-item:hover,
+.workflowy-slash-menu-item.is-selected {
+    background-color: var(--background-modifier-hover);
+}
+
+.workflowy-slash-menu-icon {
+    margin-right: 8px;
+    width: 18px;
+    text-align: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.workflowy-slash-menu-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workflowy-slash-menu-empty {
+    padding: 12px 8px;
+    color: var(--text-muted);
+    text-align: center;
+    font-size: 12px;
+}
+
+/* Custom Status Icons */
+.workflowy-checkbox.status-in-progress {
+    color: var(--text-accent);
+}
+
+.workflowy-checkbox.status-cancelled {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+/* Ensure SVG icons are sized correctly */
+.workflowy-checkbox svg {
+    display: block;
+    width: 12px;
+    height: 12px;
+}
+
+/* ==================== Date Picker Styles (New) ==================== */
+
+.workflowy-date-picker {
+    position: fixed;
+    z-index: 1001;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    min-width: 260px;
+}
+
+/* 快捷按钮区域 */
+.workflowy-date-shortcuts {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-date-shortcut-btn {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s ease;
+}
+
+.workflowy-date-shortcut-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--text-accent);
+}
+
+/* 月份导航 */
+.workflowy-date-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.workflowy-date-nav-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.workflowy-date-nav-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-date-month-year {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+/* 星期标题 */
+.workflowy-date-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+}
+
+.workflowy-date-weekday {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    padding: 4px 0;
+}
+
+/* 日期网格 */
+.workflowy-date-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.workflowy-date-cell {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.workflowy-date-cell:hover {
+    background: var(--background-modifier-hover);
+}
+
+.workflowy-date-cell.empty {
+    cursor: default;
+}
+
+.workflowy-date-cell.today {
+    background: var(--text-accent);
+    color: var(--text-on-accent, #fff);
+    font-weight: 600;
+}
+
+.workflowy-date-cell.today:hover {
+    background: var(--interactive-accent-hover, var(--text-accent));
+}
+
+.workflowy-date-cell.selected {
+    background: var(--background-modifier-hover);
+    border: 2px solid var(--text-accent);
+}
+
+
+/* ==================== Tag Suggest Menu Styles ==================== */
+
+.workflowy-tag-suggest-menu {
+    position: fixed;
+    z-index: 10000;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    width: 200px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 4px 0;
+    font-size: 14px;
+    pointer-events: auto;
+}
+
+.workflowy-tag-suggest-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--text-normal);
+    pointer-events: auto;
+    border-radius: 4px;
+    margin: 1px 4px;
+    transition: all 0.15s ease;
+}
+
+.workflowy-tag-suggest-item:hover,
+.workflowy-tag-suggest-item.is-selected {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-tag-suggest-icon {
+    margin-right: 8px;
+    width: 16px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-accent);
+    font-weight: 600;
+}
+
+.workflowy-tag-suggest-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+.workflowy-tag-suggest-empty {
+    padding: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    font-style: italic;
+    font-size: 12px;
+}
+
+
+/* ==================== Time Picker Styles ==================== */
+
+.workflowy-time-picker {
+    position: fixed;
+    z-index: 10001;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    min-width: 200px;
+}
+
+.workflowy-time-picker-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-time-picker-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.workflowy-time-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.workflowy-time-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 40px;
+}
+
+.workflowy-time-input {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.workflowy-time-input:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
+.workflowy-time-shortcuts {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.workflowy-time-shortcut-btn {
+    padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s ease;
+}
+
+.workflowy-time-shortcut-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--text-accent);
+}
+
+.workflowy-time-picker-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-time-cancel-btn,
+.workflowy-time-confirm-btn {
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.workflowy-time-cancel-btn {
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.workflowy-time-cancel-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-time-confirm-btn {
+    background: var(--interactive-accent);
+    border: none;
+    color: var(--text-on-accent);
+}
+
+.workflowy-time-confirm-btn:hover {
+    background: var(--interactive-accent-hover);
+}
+
+
+/* Slash Menu Tooltip - 使用原生 title 属性，无需自定义样式 */
