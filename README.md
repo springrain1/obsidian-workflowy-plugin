@@ -161,12 +161,6 @@ Fixed bottom toolbar on mobile with quick actions:
 
 ## 📦 Installation
 
-### From Obsidian Community Plugins (Recommended)
-1. Open Obsidian Settings
-2. Go to "Community Plugins"
-3. Disable "Safe Mode"
-4. Click "Browse" and search for "Workflowy Outline"
-5. Click "Install" and enable the plugin
 
 ### Manual Installation
 1. Download the latest release from [Releases](https://github.com/user/obsidian-workflowy-plugin/releases)
@@ -273,9 +267,6 @@ This ensures complete separation between Workflowy functionality and native Obsi
 - **Touch Drag & Drop**: Full support for touch-based reordering
 - **Platform Detection**: Automatic device detection with appropriate optimizations
 
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) file for details
 
 ## 🙏 Acknowledgments
 

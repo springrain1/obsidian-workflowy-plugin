@@ -161,13 +161,6 @@
 
 ## 📦 安装方法
 
-### 从 Obsidian 社区插件安装（推荐）
-1. 打开 Obsidian 设置
-2. 进入"第三方插件"
-3. 关闭"安全模式"
-4. 点击"浏览"搜索"Workflowy Outline"
-5. 点击"安装"并启用插件
-
 ### 手动安装
 1. 从 [Releases](https://github.com/user/obsidian-workflowy-plugin/releases) 下载最新版本
 2. 解压到 Obsidian 插件目录：`{vault}/.obsidian/plugins/obsidian-workflowy-plugin/`
@@ -235,6 +228,7 @@
 - **自动时间戳**：创建新块时自动添加时间戳
 - **时间戳格式**：可选择 `HH:mm` 或 `HH:mm:ss` 格式
 
+
 ## 🏗️ 技术架构
 
 ### 核心组件
@@ -275,9 +269,9 @@ Markdown 文件 ↔ OutlineParser ↔ BlockEditor ↔ WorkflowyView ↔ 用户�
 - **触摸拖拽**：支持触摸拖拽重排序
 - **平台自动检测**：自动识别设备类型并应用相应优化
 
-## 📄 许可证
+## 🤝 贡献指南
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+欢迎提交 Issue 和 Pull Request！
 
 ## 🙏 致谢
 
