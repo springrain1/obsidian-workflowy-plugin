@@ -3,14 +3,31 @@
     "indentSize": 30,
     "showBullets": true,
     "showCollapseIndicators": true,
-    "animationsEnabled": true,
-    "theme": "default"
+    "showVerticalLines": true,
+    "animationsEnabled": false,
+    "theme": "warm-beige",
+    "fontSize": 19,
+    "lineHeight": 1.9,
+    "bulletAlign": "top",
+    "fontFamily": "theme",
+    "customFontFamily": "",
+    "zoomLevel": 1
   },
   "editor": {
     "autoSave": true,
     "autoSaveDelay": 1000,
     "placeholder": "输入内容...",
-    "renderMode": "live-preview"
+    "renderMode": "source",
+    "attachmentPath": "default",
+    "customAttachmentPath": ""
+  },
+  "features": {
+    "slashCommand": true,
+    "tagSuggest": true,
+    "linkSuggest": true,
+    "crossDocumentDrag": true,
+    "autoBlockId": true,
+    "mobileToolbar": true
   },
   "search": {
     "mode": "filter",
@@ -23,7 +40,7 @@
     "allowNestedDrop": true
   },
   "isolation": {
-    "strictMode": false,
+    "strictMode": true,
     "enableAssertions": false,
     "debugMode": false,
     "healthCheckInterval": 30000
@@ -31,5 +48,10 @@
   "collapseState": {
     "enabled": true,
     "marker": "c"
+  },
+  "thino": {
+    "enabled": true,
+    "timestampFormat": "HH:mm:ss",
+    "autoTimestamp": false
   }
 }
