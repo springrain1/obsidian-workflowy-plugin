@@ -233,6 +233,29 @@ Fixed bottom toolbar on mobile with quick actions:
 - **Auto Timestamp**: Automatically add timestamps when creating new blocks
 - **Timestamp Format**: Choose between `HH:mm` or `HH:mm:ss` format
 
+## 🏗️ Architecture
+
+### Core Components
+- **BlockEditor**: Block-level editing logic and state management
+- **OutlineParser**: Bidirectional conversion between Markdown and outline structure
+- **WorkflowyView**: Custom view component
+- **IsolationLayer**: Functional isolation system ensuring no interference with native Obsidian
+
+### Data Flow
+```
+Markdown File ↔ OutlineParser ↔ BlockEditor ↔ WorkflowyView ↔ User Interface
+```
+
+### Isolation Architecture
+The plugin employs a 5-layer isolation architecture:
+1. **ViewStateManager**: Centralized view state tracking
+2. **IsolationLayer**: Boundary enforcement and validation
+3. **CommandProxy**: Command interception and context validation
+4. **EventDelegator**: Event isolation and delegation
+5. **RuntimeValidator**: Runtime assertions and health checks
+
+This ensures complete separation between Workflowy functionality and native Obsidian experience.
+
 ## 🔧 Compatibility
 
 - **Obsidian Version**: 0.15.0+

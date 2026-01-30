@@ -235,6 +235,29 @@
 - **自动时间戳**：创建新块时自动添加时间戳
 - **时间戳格式**：可选择 `HH:mm` 或 `HH:mm:ss` 格式
 
+## 🏗️ 技术架构
+
+### 核心组件
+- **BlockEditor**：块级编辑逻辑和状态管理
+- **OutlineParser**：Markdown 与大纲结构的双向转换
+- **WorkflowyView**：自定义视图组件
+- **IsolationLayer**：功能隔离系统，确保不干扰原生 Obsidian
+
+### 数据流
+```
+Markdown 文件 ↔ OutlineParser ↔ BlockEditor ↔ WorkflowyView ↔ 用户界面
+```
+
+### 隔离架构
+插件采用 5 层隔离架构设计：
+1. **ViewStateManager**：视图状态追踪
+2. **IsolationLayer**：边界强制执行
+3. **CommandProxy**：命令拦截
+4. **EventDelegator**：事件隔离
+5. **RuntimeValidator**：运行时验证
+
+这确保了插件功能完全独立，不会影响 Obsidian 原生 Markdown 编辑体验。
+
 ## 🔧 兼容性
 
 - **Obsidian 版本**：0.15.0+
