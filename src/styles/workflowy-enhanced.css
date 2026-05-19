@@ -1,0 +1,1902 @@
+/* Workflowy Enhanced Styles - 参考 HackFlowy 和 Workflowy 设计 */
+
+/* 主容器 */
+.workflowy-container {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-normal);
+    background: var(--background-primary);
+    padding: 20px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* 工具栏 */
+.workflowy-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    /* 只对必要的属性添加过渡 */
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.workflowy-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--text-accent);
+}
+
+.workflowy-search {
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 14px;
+    flex: 1;
+    max-width: 300px;
+    transition: border-color 0.2s ease;
+}
+
+.workflowy-search:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
+/* 编辑器区域 */
+.workflowy-editor {
+    outline: none;
+    min-height: 400px;
+}
+
+/* 单个项目 */
+.workflowy-item {
+    position: relative;
+    margin: 0;
+    padding: 0;
+    transition: background-color 0.15s ease;
+}
+
+.workflowy-item:hover {
+    background: rgba(var(--mono-rgb-0), 0.03);
+    border-radius: 4px;
+}
+
+.workflowy-item.focused {
+    background: rgba(var(--color-accent-rgb), 0.08);
+    border-radius: 4px;
+}
+
+.workflowy-item.hovered {
+    background: rgba(var(--mono-rgb-0), 0.05);
+    border-radius: 4px;
+}
+
+/* 内容行 */
+.workflowy-content-line {
+    display: flex;
+    align-items: flex-start;
+    min-height: 28px;
+    padding: 2px 0;
+}
+
+/* 折叠指示器 */
+.workflowy-collapse {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 6px 4px 0 0;
+    cursor: pointer;
+    font-size: 10px;
+    color: var(--text-muted);
+    border-radius: 2px;
+    /* 只对必要的属性添加过渡 */
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.workflowy-collapse:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-collapse.collapsed {
+    transform: rotate(-90deg);
+}
+
+.workflowy-collapse-placeholder {
+    width: 16px;
+    height: 16px;
+    margin: 6px 4px 0 0;
+    flex-shrink: 0;
+}
+
+/* 圆点标记 */
+.workflowy-bullet {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    margin: 11px 12px 0 0;
+    flex-shrink: 0;
+    /* 只对必要的属性添加过渡 */
+    transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* 有子节点的 bullet 添加外圈阴影效果 */
+.workflowy-item:has(.workflowy-collapse) .workflowy-bullet {
+    box-shadow: 0 0 0 3px rgba(var(--mono-rgb-100), 0.15);
+}
+
+.workflowy-item:hover .workflowy-bullet {
+    background: var(--text-accent);
+    transform: scale(1.2);
+}
+
+.workflowy-item.focused .workflowy-bullet {
+    background: var(--text-accent);
+    box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb), 0.3);
+}
+
+/* 内容编辑区 */
+.workflowy-content {
+    flex: 1;
+    outline: none;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 4px 8px;
+    margin: 0;
+    color: var(--text-normal);
+    min-height: 20px;
+    word-wrap: break-word;
+    border-radius: 3px;
+    /* 只对必要的属性添加过渡，避免 transition: all 导致的性能问题 */
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.workflowy-content:focus {
+    background: rgba(var(--color-accent-rgb), 0.05);
+    box-shadow: 0 0 0 1px rgba(var(--color-accent-rgb), 0.2);
+}
+
+.workflowy-content:empty:before {
+    content: attr(data-placeholder);
+    color: var(--text-faint);
+    font-style: italic;
+    pointer-events: none;
+}
+
+/* 子项容器 */
+.workflowy-children {
+    margin-left: 0;
+    overflow: hidden;
+    /* 只对必要的属性添加过渡 */
+    transition: max-height 0.3s ease-out, opacity 0.3s ease-out, margin 0.3s ease-out;
+}
+
+.workflowy-children.collapsed {
+    max-height: 0;
+    opacity: 0;
+    margin: 0;
+}
+
+/* 搜索匹配高亮 */
+.search-match {
+    background: rgba(var(--color-yellow-rgb), 0.3) !important;
+    border-radius: 4px;
+}
+
+.search-match .workflowy-content {
+    background: rgba(var(--color-yellow-rgb), 0.2);
+}
+
+/* 垂直缩进线 - 完全复用 obsidian-outliner 的样式 */
+.workflowy-container .workflowy-vertical-lines-scroller {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 1;
+    overflow: hidden;
+}
+
+.workflowy-container .workflowy-vertical-lines-content-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.workflowy-container .workflowy-vertical-line {
+    pointer-events: auto;
+    position: absolute;
+    width: 0;
+    border-left: 1px solid var(--text-faint);
+    z-index: 2;
+    cursor: pointer;
+    background: transparent;
+    transition: border-color 0.15s ease;
+}
+
+.workflowy-container .workflowy-vertical-line:hover {
+    border-left-color: var(--text-normal);
+    border-left-width: 2px;
+}
+
+/* 拖拽状态 */
+.workflowy-item.dragging {
+    opacity: 0.6;
+    transform: rotate(1deg);
+    z-index: 1000;
+}
+
+/* 拖拽指示线 - 使用独立DOM元素，完全复用 obsidian-outliner 的实现 */
+.workflowy-drop-zone {
+    position: absolute;
+    height: 4px;
+    background: var(--color-accent);
+    z-index: 999;
+    pointer-events: none;
+    display: none;
+}
+
+.workflowy-drop-zone-padding {
+    position: absolute;
+    height: 4px;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+/* 拖拽时的行高亮 */
+.workflowy-item.drag-over-active {
+    background: rgba(var(--color-accent-rgb), 0.1);
+}
+
+/* 旧的拖拽样式保持兼容 */
+.workflowy-item.drag-over {
+    border-top: 2px solid var(--text-accent);
+}
+
+/* 选择状态 */
+.workflowy-item.selected {
+    background: rgba(var(--color-accent-rgb), 0.15);
+    border-radius: 4px;
+}
+
+.workflowy-item.selected .workflowy-bullet {
+    background: var(--text-accent);
+}
+
+/* 动画效果 - 优化：只在新建块时触发，避免每次重渲染都播放动画 */
+.workflowy-item.newly-created {
+    animation: fadeInUp 0.15s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(-2px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 层级缩进线 - 改进版本 */
+.workflowy-item {
+    position: relative;
+}
+
+/* 主缩进线 - 根据层级动态定位 */
+.workflowy-item::before {
+    content: '';
+    position: absolute;
+    left: calc(var(--indent-level) * 30px + 16px);
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--background-modifier-border);
+    opacity: 0.4;
+    z-index: 1;
+}
+
+/* 父级缩进线 - 为深层级项目显示所有父级的缩进线 */
+.workflowy-item[data-level="1"]::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--background-modifier-border);
+    opacity: 0.2;
+    z-index: 0;
+}
+
+.workflowy-item[data-level="2"]::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--background-modifier-border);
+    opacity: 0.2;
+    z-index: 0;
+    box-shadow: 30px 0 0 var(--background-modifier-border);
+}
+
+.workflowy-item[data-level="3"]::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--background-modifier-border);
+    opacity: 0.2;
+    z-index: 0;
+    box-shadow: 30px 0 0 var(--background-modifier-border), 60px 0 0 var(--background-modifier-border);
+}
+
+/* 最后一个子项的缩进线截断效果 */
+.workflowy-item:last-child::before {
+    bottom: 50%;
+}
+
+/* 顶级项目不显示缩进线 */
+.workflowy-item[data-level="0"]::before {
+    display: none;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .workflowy-container {
+        padding: 12px;
+    }
+    
+    .workflowy-toolbar {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .workflowy-search {
+        max-width: 100%;
+        margin-top: 8px;
+    }
+    
+    .workflowy-content {
+        font-size: 16px;
+        padding: 6px 8px;
+    }
+    
+    .workflowy-collapse {
+        width: 20px;
+        height: 20px;
+        margin: 4px 6px 0 0;
+    }
+    
+    .workflowy-bullet {
+        margin: 12px 16px 0 0;
+    }
+}
+
+/* 暗色主题优化 */
+.theme-dark .workflowy-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.theme-dark .workflowy-item.focused {
+    background: rgba(var(--color-accent-rgb), 0.12);
+}
+
+.theme-dark .workflowy-content:focus {
+    background: rgba(var(--color-accent-rgb), 0.08);
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+    .workflowy-bullet {
+        background: var(--text-normal);
+        border: 1px solid var(--background-primary);
+    }
+    
+    .workflowy-collapse {
+        background: var(--background-secondary);
+        border: 1px solid var(--text-muted);
+    }
+    
+    .workflowy-item:hover {
+        background: var(--background-modifier-border);
+    }
+}
+
+/* 打印样式 */
+@media print {
+    .workflowy-toolbar {
+        display: none;
+    }
+    
+    .workflowy-container {
+        padding: 0;
+    }
+    
+    .workflowy-item {
+        break-inside: avoid;
+    }
+    
+    .workflowy-collapse {
+        display: none;
+    }
+    
+    .workflowy-children.collapsed {
+        max-height: none;
+        opacity: 1;
+    }
+}
+/* 多选功能样式 */
+.workflowy-selection-box {
+    position: absolute;
+    border: 2px dashed var(--text-accent);
+    background: rgba(66, 165, 245, 0.1);
+    pointer-events: none;
+    z-index: 1000;
+    display: none;
+    border-radius: 2px;
+    box-shadow: 0 0 8px rgba(66, 165, 245, 0.3);
+}
+
+/* 选择过程中禁用文本选择 */
+.workflowy-container.selecting {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+.workflowy-container.selecting * {
+    cursor: default !important;
+}
+
+/* 选中状态 */
+.workflowy-item.workflowy-selected {
+    background: rgba(66, 165, 245, 0.15) !important;
+    border-radius: 4px;
+}
+
+.workflowy-item.workflowy-selected .workflowy-bullet {
+    background: var(--text-accent);
+    transform: scale(1.1);
+}
+
+.workflowy-item.workflowy-selected .workflowy-content {
+    background: rgba(66, 165, 245, 0.08);
+}
+
+/* Live Preview 模式下的选中状态 */
+.workflowy-item.workflowy-selected .workflowy-content-display,
+.workflowy-item.workflowy-selected .workflowy-content-editor {
+    background: rgba(66, 165, 245, 0.08);
+    border-radius: 3px;
+}
+
+/* 多选拖拽状态 */
+.workflowy-item.workflowy-selected.dragging {
+    opacity: 0.7;
+    transform: rotate(1deg);
+}
+
+/* 多选计数器 */
+.workflowy-selection-counter {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    z-index: 1001;
+    display: none;
+}
+
+.workflowy-selection-counter.visible {
+    display: block;
+}
+
+/* Obsidian 渲染块样式优化 */
+.workflowy-container .obsidian-block-renderer {
+    /* 重置 Obsidian 默认的标题和段落间距 */
+    margin: 0;
+    padding: 0;
+}
+
+/* 标题样式优化 - 减少上下间距 */
+.workflowy-container .obsidian-block-renderer h1,
+.workflowy-container .obsidian-block-renderer h2,
+.workflowy-container .obsidian-block-renderer h3,
+.workflowy-container .obsidian-block-renderer h4,
+.workflowy-container .obsidian-block-renderer h5,
+.workflowy-container .obsidian-block-renderer h6 {
+    margin-top: 0.5em;
+    margin-bottom: 0.3em;
+    padding: 0;
+}
+
+/* 段落样式优化 */
+.workflowy-container .obsidian-block-renderer p {
+    margin: 0.3em 0;
+    padding: 0;
+}
+
+/* 列表样式优化 */
+.workflowy-container .obsidian-block-renderer ul,
+.workflowy-container .obsidian-block-renderer ol {
+    margin: 0.3em 0;
+    padding-left: 1.5em;
+}
+
+/* 代码块样式优化 */
+.workflowy-container .obsidian-block-renderer pre {
+    margin: 0.5em 0;
+}
+
+/* 引用块样式优化 */
+.workflowy-container .obsidian-block-renderer blockquote {
+    margin: 0.5em 0;
+    padding-left: 1em;
+}
+
+/* 表格样式优化 */
+.workflowy-container .obsidian-block-renderer table {
+    margin: 0.5em 0;
+}
+
+/* 水平线样式优化 */
+.workflowy-container .obsidian-block-renderer hr {
+    margin: 0.5em 0;
+}
+/* ==
+================== 暗色主题 Callout 和表格优化 ==================== */
+
+/* ========== 深蓝主题 (Deep Blue) ========== */
+.workflowy-container.workflowy-theme-deep-blue .obsidian-paragraph .callout {
+    background: rgba(93, 173, 226, 0.15) !important;
+    border-left-color: #5dade2 !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-paragraph .callout-title {
+    color: #5dade2 !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-paragraph .callout-content {
+    color: #e0e0e0 !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-paragraph table th {
+    background: rgba(93, 173, 226, 0.2) !important;
+    color: #e0e0e0 !important;
+    font-weight: 600;
+    border-bottom: 2px solid #5dade2 !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-paragraph table td {
+    color: #e0e0e0 !important;
+    border-bottom: 1px solid #3a4a5a !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-paragraph table tr:hover {
+    background: rgba(93, 173, 226, 0.1) !important;
+}
+
+/* ========== 深灰主题 (Dark Gray) ========== */
+.workflowy-container.workflowy-theme-dark-gray .obsidian-paragraph .callout {
+    background: rgba(192, 192, 192, 0.15) !important;
+    border-left-color: #c0c0c0 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-paragraph .callout-title {
+    color: #e0e0e0 !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-paragraph .callout-content {
+    color: #e0e0e0 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-paragraph table th {
+    background: rgba(192, 192, 192, 0.2) !important;
+    color: #e0e0e0 !important;
+    font-weight: 600;
+    border-bottom: 2px solid #909090 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-paragraph table td {
+    color: #e0e0e0 !important;
+    border-bottom: 1px solid #4a4a4a !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-paragraph table tr:hover {
+    background: rgba(192, 192, 192, 0.1) !important;
+}
+
+/* ========== 午夜黑主题 (Midnight Black) ========== */
+.workflowy-container.workflowy-theme-midnight-black .obsidian-paragraph .callout {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-left-color: #ffffff !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-paragraph .callout-title {
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-paragraph .callout-content {
+    color: #ffffff !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-paragraph table th {
+    background: rgba(255, 255, 255, 0.15) !important;
+    color: #ffffff !important;
+    font-weight: 600;
+    border-bottom: 2px solid #ffffff !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-paragraph table td {
+    color: #ffffff !important;
+    border-bottom: 1px solid #333333 !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-paragraph table tr:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ========== Space 主题 (Element Dark) ========== */
+.workflowy-container.workflowy-theme-element-dark .obsidian-paragraph .callout {
+    background: rgba(251, 191, 36, 0.15) !important;
+    border-left-color: #fbbf24 !important;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-paragraph .callout-title {
+    color: #fbbf24 !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-paragraph .callout-content {
+    color: #e8eaed !important;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-paragraph table th {
+    background: rgba(251, 191, 36, 0.2) !important;
+    color: #e8eaed !important;
+    font-weight: 600;
+    border-bottom: 2px solid #fbbf24 !important;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-paragraph table td {
+    color: #e8eaed !important;
+    border-bottom: 1px solid #4a4f54 !important;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-paragraph table tr:hover {
+    background: rgba(251, 191, 36, 0.1) !important;
+}
+
+/* ========== 暗夜橙绿主题 (Dark Orange Green) - 额外优化 ========== */
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-paragraph .callout {
+    background: rgba(76, 217, 100, 0.15) !important;
+    border-left-color: #4cd964 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-paragraph .callout-title {
+    color: #ff9500 !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-paragraph .callout-content {
+    color: #4cd964 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-paragraph table th {
+    background: rgba(76, 217, 100, 0.2) !important;
+    color: #ff9500 !important;
+    font-weight: 600;
+    border-bottom: 2px solid #4cd964 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-paragraph table td {
+    color: #4cd964 !important;
+    border-bottom: 1px solid #2ecc71 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-paragraph table tr:hover {
+    background: rgba(76, 217, 100, 0.1) !important;
+}
+
+/* ========== Matrix 黑绿主题 (Hacker) - 额外优化 ========== */
+.workflowy-container.workflowy-theme-matrix-green .obsidian-paragraph .callout {
+    background: rgba(0, 255, 0, 0.1) !important;
+    border-left-color: #00ff00 !important;
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3) !important;
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-paragraph .callout-title {
+    color: #00ff00 !important;
+    font-weight: 600;
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-paragraph .callout-content {
+    color: #00ff00 !important;
+    text-shadow: 0 0 3px rgba(0, 255, 0, 0.3);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-paragraph table th {
+    background: rgba(0, 255, 0, 0.15) !important;
+    color: #00ff00 !important;
+    font-weight: 600;
+    border-bottom: 2px solid #00ff00 !important;
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-paragraph table td {
+    color: #00ff00 !important;
+    border-bottom: 1px solid #003300 !important;
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-paragraph table tr:hover {
+    background: rgba(0, 255, 0, 0.08) !important;
+    box-shadow: 0 0 8px rgba(0, 255, 0, 0.2) !important;
+}
+
+/* ==================== 代码块复制按钮位置修复 ==================== */
+
+/* 确保代码块容器使用相对定位，让复制按钮正确定位在右上角 */
+.workflowy-container .obsidian-code-block {
+    position: relative !important;
+}
+
+.workflowy-container .obsidian-code-block pre {
+    position: relative !important;
+}
+
+/* 确保 Obsidian 的复制按钮正确定位 */
+.workflowy-container .obsidian-code-block .clickable-icon,
+.workflowy-container .obsidian-code-block .copy-code-button,
+.workflowy-container pre .clickable-icon,
+.workflowy-container pre .copy-code-button {
+    position: absolute !important;
+    top: 8px !important;
+    right: 8px !important;
+    width: 24px !important;
+    height: 24px !important;
+    padding: 4px !important;
+    opacity: 0.6 !important;
+    transition: opacity 0.2s ease !important;
+}
+
+.workflowy-container .obsidian-code-block .clickable-icon:hover,
+.workflowy-container .obsidian-code-block .copy-code-button:hover,
+.workflowy-container pre .clickable-icon:hover,
+.workflowy-container pre .copy-code-button:hover {
+    opacity: 1 !important;
+}
+
+/* 确保代码块内容不会被复制按钮遮挡 */
+.workflowy-container .obsidian-code-block pre code {
+    display: block !important;
+    padding-right: 40px !important;
+}
+
+/* obsidian-block-renderer 中的代码块也需要相同处理 */
+.workflowy-container .obsidian-block-renderer pre {
+    position: relative !important;
+}
+
+.workflowy-container .obsidian-block-renderer pre .clickable-icon,
+.workflowy-container .obsidian-block-renderer pre .copy-code-button {
+    position: absolute !important;
+    top: 8px !important;
+    right: 8px !important;
+    width: 24px !important;
+    height: 24px !important;
+    padding: 4px !important;
+    opacity: 0.6 !important;
+    transition: opacity 0.2s ease !important;
+}
+
+.workflowy-container .obsidian-block-renderer pre .clickable-icon:hover,
+.workflowy-container .obsidian-block-renderer pre .copy-code-button:hover {
+    opacity: 1 !important;
+}
+
+.workflowy-container .obsidian-block-renderer pre code {
+    display: block !important;
+    padding-right: 40px !important;
+}
+
+/* ==================== 主题代码块配色优化 ==================== */
+
+/* ========== 默认主题 ========== */
+.workflowy-container.workflowy-theme-default .obsidian-code-block,
+.workflowy-container.workflowy-theme-default .obsidian-block-renderer pre {
+    background: var(--code-background) !important;
+}
+
+.workflowy-container.workflowy-theme-default .obsidian-code-block code,
+.workflowy-container.workflowy-theme-default .obsidian-block-renderer pre code {
+    color: var(--code-normal) !important;
+}
+
+/* ========== 经典白主题 ========== */
+.workflowy-container.workflowy-theme-classic-white .obsidian-code-block,
+.workflowy-container.workflowy-theme-classic-white .obsidian-block-renderer pre {
+    background: #f5f5f5 !important;
+    border: 2px solid #bdc3c7 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-classic-white .obsidian-code-block code,
+.workflowy-container.workflowy-theme-classic-white .obsidian-block-renderer pre code {
+    color: #2c3e50 !important;
+}
+
+/* ========== 暗夜橙绿主题 ========== */
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-code-block,
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-block-renderer pre {
+    background: #1a1a1a !important;
+    border: 2px solid #4cd964 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-code-block code,
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-block-renderer pre code {
+    color: #4cd964 !important;
+}
+
+/* ========== 米白灰主题 ========== */
+.workflowy-container.workflowy-theme-warm-beige .obsidian-code-block,
+.workflowy-container.workflowy-theme-warm-beige .obsidian-block-renderer pre {
+    background: #e8e8e0 !important;
+    border: 2px solid #8b7355 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .obsidian-code-block code,
+.workflowy-container.workflowy-theme-warm-beige .obsidian-block-renderer pre code {
+    color: #4a4a4a !important;
+}
+
+/* ========== 淡紫主题 ========== */
+.workflowy-container.workflowy-theme-soft-purple .obsidian-code-block,
+.workflowy-container.workflowy-theme-soft-purple .obsidian-block-renderer pre {
+    background: #e6d9f0 !important;
+    border: 2px solid #9b59b6 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .obsidian-code-block code,
+.workflowy-container.workflowy-theme-soft-purple .obsidian-block-renderer pre code {
+    color: #5b4a6b !important;
+}
+
+/* ========== 深蓝主题 ========== */
+.workflowy-container.workflowy-theme-deep-blue .obsidian-code-block,
+.workflowy-container.workflowy-theme-deep-blue .obsidian-block-renderer pre {
+    background: #2a3a4a !important;
+    border: 2px solid #5dade2 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-code-block code,
+.workflowy-container.workflowy-theme-deep-blue .obsidian-block-renderer pre code {
+    color: #e0e0e0 !important;
+}
+
+/* 深蓝主题代码高亮 */
+.workflowy-container.workflowy-theme-deep-blue .obsidian-code-block .token.keyword,
+.workflowy-container.workflowy-theme-deep-blue .obsidian-block-renderer pre .token.keyword {
+    color: #5dade2 !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-code-block .token.string,
+.workflowy-container.workflowy-theme-deep-blue .obsidian-block-renderer pre .token.string {
+    color: #a8d5ba !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-code-block .token.number,
+.workflowy-container.workflowy-theme-deep-blue .obsidian-block-renderer pre .token.number {
+    color: #f5b041 !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .obsidian-code-block .token.comment,
+.workflowy-container.workflowy-theme-deep-blue .obsidian-block-renderer pre .token.comment {
+    color: #808080 !important;
+    font-style: italic;
+}
+
+/* ========== 深灰主题 ========== */
+.workflowy-container.workflowy-theme-dark-gray .obsidian-code-block,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-block-renderer pre {
+    background: #3a3a3a !important;
+    border: 2px solid #909090 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-code-block code,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-block-renderer pre code {
+    color: #e0e0e0 !important;
+}
+
+/* 深灰主题代码高亮 */
+.workflowy-container.workflowy-theme-dark-gray .obsidian-code-block .token.keyword,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-block-renderer pre .token.keyword {
+    color: #c0c0c0 !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-code-block .token.string,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-block-renderer pre .token.string {
+    color: #b0b0b0 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-code-block .token.number,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-block-renderer pre .token.number {
+    color: #d0d0d0 !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .obsidian-code-block .token.comment,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-block-renderer pre .token.comment {
+    color: #808080 !important;
+    font-style: italic;
+}
+
+/* ========== 森林绿主题 ========== */
+.workflowy-container.workflowy-theme-forest-green .obsidian-code-block,
+.workflowy-container.workflowy-theme-forest-green .obsidian-block-renderer pre {
+    background: #c8e6c9 !important;
+    border: 2px solid #4caf50 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-forest-green .obsidian-code-block code,
+.workflowy-container.workflowy-theme-forest-green .obsidian-block-renderer pre code {
+    color: #1b5e20 !important;
+}
+
+/* ========== 海洋蓝主题 ========== */
+.workflowy-container.workflowy-theme-ocean-blue .obsidian-code-block,
+.workflowy-container.workflowy-theme-ocean-blue .obsidian-block-renderer pre {
+    background: #bbdefb !important;
+    border: 2px solid #2196f3 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .obsidian-code-block code,
+.workflowy-container.workflowy-theme-ocean-blue .obsidian-block-renderer pre code {
+    color: #0d47a1 !important;
+}
+
+/* ========== 日落橙主题 ========== */
+.workflowy-container.workflowy-theme-sunset-orange .obsidian-code-block,
+.workflowy-container.workflowy-theme-sunset-orange .obsidian-block-renderer pre {
+    background: #ffe0b2 !important;
+    border: 2px solid #ff9800 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .obsidian-code-block code,
+.workflowy-container.workflowy-theme-sunset-orange .obsidian-block-renderer pre code {
+    color: #e65100 !important;
+}
+
+/* ========== 樱花粉主题 ========== */
+.workflowy-container.workflowy-theme-cherry-pink .obsidian-code-block,
+.workflowy-container.workflowy-theme-cherry-pink .obsidian-block-renderer pre {
+    background: #f8bbd0 !important;
+    border: 2px solid #e91e63 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .obsidian-code-block code,
+.workflowy-container.workflowy-theme-cherry-pink .obsidian-block-renderer pre code {
+    color: #880e4f !important;
+}
+
+/* ========== 午夜黑主题 ========== */
+.workflowy-container.workflowy-theme-midnight-black .obsidian-code-block,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-block-renderer pre {
+    background: #1a1a1a !important;
+    border: 2px solid #666666 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-code-block code,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-block-renderer pre code {
+    color: #ffffff !important;
+}
+
+/* 午夜黑主题代码高亮 */
+.workflowy-container.workflowy-theme-midnight-black .obsidian-code-block .token.keyword,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-block-renderer pre .token.keyword {
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-code-block .token.string,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-block-renderer pre .token.string {
+    color: #cccccc !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-code-block .token.number,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-block-renderer pre .token.number {
+    color: #ffffff !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .obsidian-code-block .token.comment,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-block-renderer pre .token.comment {
+    color: #999999 !important;
+    font-style: italic;
+}
+
+/* ========== Space 主题 (Element Dark) ========== */
+.workflowy-container.workflowy-theme-element-dark .obsidian-code-block,
+.workflowy-container.workflowy-theme-element-dark .obsidian-block-renderer pre {
+    background: #3a3f44 !important;
+    border: 2px solid #fbbf24 !important;
+    border-radius: 6px !important;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-code-block code,
+.workflowy-container.workflowy-theme-element-dark .obsidian-block-renderer pre code {
+    color: #e8eaed !important;
+}
+
+/* Space 主题代码高亮 */
+.workflowy-container.workflowy-theme-element-dark .obsidian-code-block .token.keyword,
+.workflowy-container.workflowy-theme-element-dark .obsidian-block-renderer pre .token.keyword {
+    color: #fbbf24 !important;
+    font-weight: 600;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-code-block .token.string,
+.workflowy-container.workflowy-theme-element-dark .obsidian-block-renderer pre .token.string {
+    color: #a8d5ba !important;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-code-block .token.number,
+.workflowy-container.workflowy-theme-element-dark .obsidian-block-renderer pre .token.number {
+    color: #f5b041 !important;
+}
+
+.workflowy-container.workflowy-theme-element-dark .obsidian-code-block .token.comment,
+.workflowy-container.workflowy-theme-element-dark .obsidian-block-renderer pre .token.comment {
+    color: #888a8d !important;
+    font-style: italic;
+}
+
+/* ========== Matrix 黑绿主题 (Hacker) ========== */
+.workflowy-container.workflowy-theme-matrix-green .obsidian-code-block,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-block-renderer pre {
+    background: #0a0a0a !important;
+    border: 2px solid #00ff00 !important;
+    border-radius: 6px !important;
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3) !important;
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-code-block code,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-block-renderer pre code {
+    color: #00ff00 !important;
+    text-shadow: 0 0 3px rgba(0, 255, 0, 0.3);
+}
+
+/* Matrix 主题代码高亮 */
+.workflowy-container.workflowy-theme-matrix-green .obsidian-code-block .token.keyword,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-block-renderer pre .token.keyword {
+    color: #00ff00 !important;
+    font-weight: 600;
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-code-block .token.string,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-block-renderer pre .token.string {
+    color: #00cc00 !important;
+    text-shadow: 0 0 3px rgba(0, 255, 0, 0.3);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-code-block .token.number,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-block-renderer pre .token.number {
+    color: #00ff00 !important;
+    text-shadow: 0 0 3px rgba(0, 255, 0, 0.3);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .obsidian-code-block .token.comment,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-block-renderer pre .token.comment {
+    color: #009900 !important;
+    font-style: italic;
+}
+
+/* ==================== 代码块复制按钮主题适配 ==================== */
+
+/* 暗色主题的复制按钮 */
+.workflowy-container.workflowy-theme-deep-blue .obsidian-code-block .clickable-icon,
+.workflowy-container.workflowy-theme-deep-blue .obsidian-block-renderer pre .clickable-icon,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-code-block .clickable-icon,
+.workflowy-container.workflowy-theme-dark-gray .obsidian-block-renderer pre .clickable-icon,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-code-block .clickable-icon,
+.workflowy-container.workflowy-theme-midnight-black .obsidian-block-renderer pre .clickable-icon,
+.workflowy-container.workflowy-theme-element-dark .obsidian-code-block .clickable-icon,
+.workflowy-container.workflowy-theme-element-dark .obsidian-block-renderer pre .clickable-icon,
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-code-block .clickable-icon,
+.workflowy-container.workflowy-theme-dark-orange-green .obsidian-block-renderer pre .clickable-icon,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-code-block .clickable-icon,
+.workflowy-container.workflowy-theme-matrix-green .obsidian-block-renderer pre .clickable-icon {
+    filter: invert(1) !important;
+}
+
+/* ==================== 搜索功能增强样式 ==================== */
+
+/* 搜索容器 */
+.workflowy-search-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    max-width: 300px;
+}
+
+/* 搜索输入框 */
+.workflowy-search-container .workflowy-search {
+    flex: 1;
+    padding-right: 32px;  /* 为清除按钮留出空间 */
+}
+
+/* 清除按钮 */
+.workflowy-search-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.workflowy-search-clear:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.workflowy-search-clear svg {
+    display: block;
+}
+
+/* 过滤模式下隐藏的节点 */
+.workflowy-filtered-hidden {
+    display: none !important;
+}
+
+/* 文本高亮标记 */
+mark.search-highlight {
+    background: rgba(var(--color-yellow-rgb), 0.5);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: inherit;
+}
+
+/* 搜索过滤模式：匹配节点的折叠指示器和圆点 */
+.workflowy-item.search-matched-node .workflowy-collapse {
+    transform: rotate(-90deg) !important;  /* 向右 ▶ */
+}
+
+/* 搜索模式下：覆盖折叠状态的阴影规则 */
+/* 默认所有搜索模式下的节点不显示阴影（包括折叠状态） */
+.workflowy-item.search-matched-node:has(.workflowy-collapse.collapsed) .workflowy-bullet,
+.workflowy-item.search-matched-node:has(.workflowy-collapse) .workflowy-bullet,
+.workflowy-item.search-matched-node .workflowy-bullet,
+.workflowy-item.search-parent-node:has(.workflowy-collapse.collapsed) .workflowy-bullet,
+.workflowy-item.search-parent-node:has(.workflowy-collapse) .workflowy-bullet,
+.workflowy-item.search-parent-node .workflowy-bullet {
+    box-shadow: none !important;
+}
+
+/* 只有有真正折叠指示器（有子节点）的匹配节点才显示圆圈阴影 */
+/* 注意：不包括 .workflowy-collapse-placeholder，那只是占位符 */
+.workflowy-item.search-matched-node:has(.workflowy-collapse) .workflowy-bullet {
+    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.25) !important;
+}
+
+/* 搜索过滤模式：父节点（非匹配但可见）的折叠指示器和圆点 */
+.workflowy-item.search-parent-node .workflowy-collapse {
+    transform: rotate(-45deg) !important;  /* 向右下斜 45 度 ▼ */
+}
+
+/* 只有有真正折叠指示器（有子节点）的父节点才显示圆圈阴影 */
+.workflowy-item.search-parent-node:has(.workflowy-collapse) .workflowy-bullet {
+    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.25) !important;
+}
+
+
+/* ==================== Live Preview 模式样式 ==================== */
+
+/* 双层渲染容器 */
+.workflowy-content-wrapper {
+    position: relative;
+    flex: 1;
+}
+
+/* 显示层（MarkdownRenderer 渲染结果） - 与源码模式完全一致 */
+.workflowy-content-display {
+    /* 与 .workflowy-content 保持一致 */
+    outline: none;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 4px 8px;
+    margin: 0;
+    color: var(--text-normal);
+    min-height: 20px;
+    word-wrap: break-word;
+    white-space: pre-wrap; /* 支持多行显示和换行 */
+    overflow-wrap: break-word;
+    border-radius: 3px;
+    cursor: text;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    width: 100%; /* 确保占满容器宽度 */
+    box-sizing: border-box;
+}
+
+.workflowy-content-display:hover {
+    background: rgba(var(--color-accent-rgb), 0.05);
+    box-shadow: 0 0 0 1px rgba(var(--color-accent-rgb), 0.2);
+}
+
+/* 编辑层（textarea） - 与源码模式完全一致，无额外边框 */
+.workflowy-content-editor {
+    /* 与 .workflowy-content 保持一致 */
+    width: 100% !important;
+    outline: none !important;
+    border: none !important;
+    background: transparent !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+    padding: 4px 8px !important;
+    margin: 0 !important;
+    color: var(--text-normal) !important;
+    min-height: 20px !important;
+    /* 不设置 height，让 JS 动态控制 */
+    max-height: none !important;
+    word-wrap: break-word !important;
+    border-radius: 3px !important;
+    resize: none !important;
+    box-sizing: border-box !important;
+    /* 字体设置 - 与源码模式完全一致 */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+    font-weight: 400 !important;
+    font-style: normal !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease !important;
+    /* 强制移除所有可能的边框和阴影 */
+    box-shadow: none !important;
+    text-shadow: none !important;
+    /* 确保与父元素对齐 */
+    vertical-align: top !important;
+    /* 多行显示支持 - 参考源码模式 */
+    overflow: hidden !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    /* 注意：不要设置 display，让内联样式控制显示/隐藏 */
+}
+
+/* 编辑时的视觉反馈 - 与源码模式一致 */
+.workflowy-content-editor:focus {
+    background: rgba(var(--color-accent-rgb), 0.05) !important;
+    box-shadow: 0 0 0 1px rgba(var(--color-accent-rgb), 0.2) !important;
+    outline: none !important;
+    border: none !important;
+}
+
+/* 显示层中的 Markdown 元素 */
+.workflowy-content-display p {
+    margin: 0;
+    display: inline;
+}
+
+.workflowy-content-display strong {
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.workflowy-content-display em {
+    font-style: italic;
+}
+
+.workflowy-content-display code {
+    background-color: var(--code-background);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+}
+
+.workflowy-content-display a.internal-link {
+    color: var(--link-color);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.workflowy-content-display a.internal-link:hover {
+    text-decoration: underline;
+    color: var(--link-color-hover);
+}
+
+.workflowy-content-display .tag {
+    color: var(--tag-color);
+    background-color: var(--tag-background);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.workflowy-content-display .tag:hover {
+    background-color: var(--tag-background-hover);
+}
+
+/* 高亮文本 */
+.workflowy-content-display mark {
+    background-color: var(--text-highlight-bg);
+    color: var(--text-normal);
+    padding: 0.1em 0.2em;
+    border-radius: 2px;
+}
+
+/* 列表样式 */
+.workflowy-content-display ul,
+.workflowy-content-display ol {
+    margin: 0;
+    padding-left: 1.5em;
+    display: inline-block;
+}
+
+.workflowy-content-display li {
+    margin: 0;
+}
+
+/* 块引用 */
+.workflowy-content-display blockquote {
+    margin: 0;
+    padding-left: 1em;
+    border-left: 3px solid var(--quote-opening-modifier);
+    color: var(--text-muted);
+    display: inline-block;
+}
+
+/* 确保空内容时有最小高度 */
+.workflowy-content-display:empty::before {
+    content: '\200B'; /* 零宽空格 */
+    display: inline-block;
+}
+
+
+/* ==================== 导航栏样式优化 ==================== */
+
+/* 导航头部容器 */
+.workflowy-navigation-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    background: var(--background-primary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    min-height: 48px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    transition: all 0.2s ease;
+}
+
+/* 面包屑容器 */
+.workflowy-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0; /* 允许收缩 */
+    overflow: hidden;
+}
+
+/* 面包屑项 */
+.workflowy-breadcrumb-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    color: var(--text-muted);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+    background: transparent;
+}
+
+.workflowy-breadcrumb-item:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+/* 当前面包屑项 */
+.workflowy-breadcrumb-item.current {
+    color: var(--text-normal);
+    font-weight: 500;
+    background: var(--background-secondary);
+}
+
+/* 面包屑分隔符 */
+.workflowy-breadcrumb-delimiter {
+    color: var(--text-faint);
+    font-size: 16px;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+/* 搜索容器优化 */
+.workflowy-search-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 0 1 300px;
+    min-width: 200px;
+    transition: all 0.3s ease;
+}
+
+/* zoom 模式下隐藏搜索框时，面包屑扩展 */
+.workflowy-navigation-header.zoom-mode .workflowy-breadcrumbs {
+    flex: 1;
+    max-width: none;
+}
+
+.workflowy-navigation-header.zoom-mode .workflowy-search-container {
+    display: none;
+}
+
+/* 搜索输入框优化 */
+.workflowy-search {
+    width: 100%;
+    padding: 6px 32px 6px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.workflowy-search:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    background: var(--background-primary);
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.workflowy-search::placeholder {
+    color: var(--text-faint);
+}
+
+/* 主题按钮 */
+.workflowy-theme-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    background: transparent;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.workflowy-theme-button:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-theme-button svg {
+    display: block;
+}
+
+/* 主题菜单 */
+.workflowy-theme-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 280px;
+    max-width: 320px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 8px;
+    z-index: 1000;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* 主题选项 */
+.workflowy-theme-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 4px;
+}
+
+.workflowy-theme-option:last-child {
+    margin-bottom: 0;
+}
+
+.workflowy-theme-option:hover {
+    background: var(--background-modifier-hover);
+}
+
+.workflowy-theme-option.active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.workflowy-theme-option.active .workflowy-theme-name {
+    color: var(--text-on-accent);
+    font-weight: 600;
+}
+
+.workflowy-theme-option.active .workflowy-theme-desc {
+    color: var(--text-on-accent);
+    opacity: 0.9;
+}
+
+/* 主题预览 */
+.workflowy-theme-preview {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.theme-preview-content {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+}
+
+.theme-preview-bullet {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+
+.theme-preview-text {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 主题信息 */
+.workflowy-theme-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.workflowy-theme-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-normal);
+    margin-bottom: 2px;
+}
+
+.workflowy-theme-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .workflowy-navigation-header {
+        padding: 8px 12px;
+        gap: 12px;
+    }
+
+    .workflowy-breadcrumb-item {
+        max-width: 120px;
+        font-size: 13px;
+        padding: 3px 8px;
+    }
+
+    .workflowy-search-container {
+        flex: 0 1 200px;
+        min-width: 150px;
+    }
+
+    .workflowy-search {
+        font-size: 12px;
+        padding: 5px 28px 5px 10px;
+    }
+
+    .workflowy-theme-button {
+        width: 32px;
+        height: 32px;
+    }
+
+    .workflowy-theme-menu {
+        min-width: 240px;
+        max-width: 280px;
+    }
+}
+
+/* 暗色主题优化 */
+.theme-dark .workflowy-navigation-header {
+    background: var(--background-primary);
+    border-bottom-color: var(--background-modifier-border);
+}
+
+.theme-dark .workflowy-search {
+    background: var(--background-secondary);
+    border-color: var(--background-modifier-border);
+}
+
+.theme-dark .workflowy-search:focus {
+    background: var(--background-primary);
+}
+
+.theme-dark .workflowy-theme-menu {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+
+/* ==================== 移动端适配 ==================== */
+
+/* 移动端容器优化 */
+.is-mobile .workflowy-container {
+    padding: 12px;
+    font-size: 16px; /* 移动端使用更大的字体 */
+}
+
+/* 移动端工具栏优化 */
+.is-mobile .workflowy-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.is-mobile .workflowy-btn {
+    padding: 10px 14px;
+    font-size: 14px;
+    min-height: 44px; /* iOS 推荐的最小触摸目标 */
+}
+
+.is-mobile .workflowy-search {
+    width: 100%;
+    font-size: 16px; /* 防止 iOS 自动缩放 */
+    min-height: 44px;
+}
+
+/* 移动端内容项优化 */
+.is-mobile .workflowy-item {
+    margin: 2px 0;
+}
+
+.is-mobile .workflowy-content,
+.is-mobile .workflowy-content-display,
+.is-mobile .workflowy-content-editor {
+    font-size: 15px !important;
+    line-height: 1.5 !important;
+    padding: 6px 8px !important;
+    min-height: 36px !important;
+}
+
+/* 移动端内容行优化 */
+.is-mobile .workflowy-content-line {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+}
+
+/* 移动端圆点和折叠指示器优化 */
+.is-mobile .workflowy-bullet {
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
+    /* 触摸区域通过 padding 扩展 */
+    padding: 18px;
+    margin: -18px 8px -18px -18px;
+    cursor: pointer;
+}
+
+.is-mobile .workflowy-collapse {
+    width: 16px;
+    height: 16px;
+    font-size: 12px;
+    /* 触摸区域通过 padding 扩展 */
+    padding: 14px;
+    margin: -14px 4px -14px -14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 移动端复选框优化 */
+.is-mobile .workflowy-checkbox {
+    width: 16px;
+    height: 16px;
+    /* 触摸区域通过 padding 扩展 */
+    padding: 14px;
+    margin: -14px 4px -14px 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 移动端缩进优化 - 减小缩进以节省空间 */
+.is-mobile .workflowy-item[data-level="1"] {
+    padding-left: 24px !important;
+}
+
+.is-mobile .workflowy-item[data-level="2"] {
+    padding-left: 48px !important;
+}
+
+.is-mobile .workflowy-item[data-level="3"] {
+    padding-left: 72px !important;
+}
+
+.is-mobile .workflowy-item[data-level="4"] {
+    padding-left: 96px !important;
+}
+
+.is-mobile .workflowy-item[data-level="5"] {
+    padding-left: 120px !important;
+}
+
+.is-mobile .workflowy-item[data-level="6"] {
+    padding-left: 144px !important;
+}
+
+/* 移动端拖拽指示器优化 */
+.is-mobile .workflowy-drop-zone {
+    height: 4px; /* 更粗的指示线 */
+}
+
+/* 移动端选择计数器优化 */
+.is-mobile .workflowy-selection-counter {
+    top: 10px;
+    right: 10px;
+    font-size: 14px;
+    padding: 10px 14px;
+}
+
+/* 移动端面包屑导航优化 */
+.is-mobile .workflowy-breadcrumb {
+    font-size: 13px;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+}
+
+.is-mobile .workflowy-breadcrumb-item {
+    padding: 4px 8px;
+}
+
+/* 移动端折叠占位符优化 */
+.is-mobile .workflowy-collapse-placeholder {
+    width: 16px;
+    min-width: 16px;
+}
+
+/* 移动端垂直线优化 */
+.is-mobile .workflowy-vertical-line {
+    left: 4px;
+    width: 1px;
+}
+
+/* 移动端禁用悬停效果（触摸设备不需要） */
+.is-mobile .workflowy-item:hover {
+    background: transparent;
+}
+
+.is-mobile .workflowy-content:hover,
+.is-mobile .workflowy-content-display:hover {
+    background: transparent;
+    box-shadow: none;
+}
+
+/* 移动端焦点样式优化 */
+.is-mobile .workflowy-item.focused {
+    background: rgba(var(--color-accent-rgb), 0.08);
+}
+
+.is-mobile .workflowy-content:focus,
+.is-mobile .workflowy-content-display:focus,
+.is-mobile .workflowy-content-editor:focus {
+    background: rgba(var(--color-accent-rgb), 0.08) !important;
+}
+
+/* 平板设备优化（介于手机和桌面之间） */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .is-mobile .workflowy-container {
+        padding: 16px;
+        font-size: 15px;
+    }
+
+    .is-mobile .workflowy-content,
+    .is-mobile .workflowy-content-display,
+    .is-mobile .workflowy-content-editor {
+        font-size: 15px !important;
+    }
+}
+
+/* 小屏手机优化 */
+@media (max-width: 375px) {
+    .is-mobile .workflowy-container {
+        padding: 8px;
+    }
+
+    .is-mobile .workflowy-toolbar {
+        gap: 6px;
+    }
+
+    .is-mobile .workflowy-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+}

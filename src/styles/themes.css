@@ -1,0 +1,470 @@
+/**
+ * Workflowy 主题样式
+ * 12 种主题配色方案
+ */
+
+/* ==================== 主题 1: 默认（跟随 Obsidian） ==================== */
+.workflowy-container.workflowy-theme-default {
+    /* 使用 Obsidian 原生变量，无需额外定义 */
+}
+
+/* ==================== 主题 2: 经典白 ==================== */
+.workflowy-container.workflowy-theme-classic-white {
+    --theme-bg-primary: #ffffff;
+    --theme-bg-secondary: #f5f5f5;
+    --theme-text-normal: #2c3e50;
+    --theme-text-muted: #7f8c8d;
+    --theme-text-faint: #bdc3c7;
+    --theme-accent: #3498db;
+    --theme-bullet: #95a5a6;
+    --theme-line: #ecf0f1;
+}
+
+.workflowy-container.workflowy-theme-classic-white {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+}
+
+/* ==================== 主题 3: 暗夜橙绿 ==================== */
+.workflowy-container.workflowy-theme-dark-orange-green {
+    --theme-bg-primary: #0a0a0a;
+    --theme-bg-secondary: #1a1a1a;
+    --theme-text-normal: #ff9500;
+    --theme-text-muted: #4cd964;
+    --theme-text-faint: #2ecc71;
+    --theme-accent: #ff9500;
+    --theme-bullet: #4cd964;
+    --theme-line: #2ecc71;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+    border-color: #2a2a2a !important;
+}
+
+/* ==================== 主题 4: 米白灰 ==================== */
+.workflowy-container.workflowy-theme-warm-beige {
+    --theme-bg-primary: #f5f5f0;
+    --theme-bg-secondary: #e8e8e0;
+    --theme-text-normal: #4a4a4a;
+    --theme-text-muted: #7a7a7a;
+    --theme-text-faint: #aaaaaa;
+    --theme-accent: #8b7355;
+    --theme-bullet: #9a9a9a;
+    --theme-line: #d0d0c8;
+}
+
+.workflowy-container.workflowy-theme-warm-beige {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+}
+
+/* ==================== 主题 5: 淡紫 ==================== */
+.workflowy-container.workflowy-theme-soft-purple {
+    --theme-bg-primary: #f0e6f6;
+    --theme-bg-secondary: #e6d9f0;
+    --theme-text-normal: #5b4a6b;
+    --theme-text-muted: #8b7a9b;
+    --theme-text-faint: #b5a5c5;
+    --theme-accent: #9b59b6;
+    --theme-bullet: #a569bd;
+    --theme-line: #d5c5e5;
+}
+
+.workflowy-container.workflowy-theme-soft-purple {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+}
+
+/* ==================== 主题 6: 深蓝 ==================== */
+.workflowy-container.workflowy-theme-deep-blue {
+    --theme-bg-primary: #1e2a3a;
+    --theme-bg-secondary: #2a3a4a;
+    --theme-text-normal: #e0e0e0;
+    --theme-text-muted: #b0b0b0;
+    --theme-text-faint: #808080;
+    --theme-accent: #5dade2;
+    --theme-bullet: #c0c0c0;
+    --theme-line: #3a4a5a;
+}
+
+.workflowy-container.workflowy-theme-deep-blue {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+    border-color: #3a4a5a !important;
+}
+
+/* ==================== 主题 7: 深灰 ==================== */
+.workflowy-container.workflowy-theme-dark-gray {
+    --theme-bg-primary: #2a2a2a;
+    --theme-bg-secondary: #3a3a3a;
+    --theme-text-normal: #e0e0e0;
+    --theme-text-muted: #b0b0b0;
+    --theme-text-faint: #808080;
+    --theme-accent: #909090;
+    --theme-bullet: #c0c0c0;
+    --theme-line: #4a4a4a;
+}
+
+.workflowy-container.workflowy-theme-dark-gray {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+    border-color: #4a4a4a !important;
+}
+
+/* ==================== 主题 8: 森林绿 ==================== */
+.workflowy-container.workflowy-theme-forest-green {
+    --theme-bg-primary: #e8f5e9;
+    --theme-bg-secondary: #c8e6c9;
+    --theme-text-normal: #1b5e20;
+    --theme-text-muted: #388e3c;
+    --theme-text-faint: #66bb6a;
+    --theme-accent: #4caf50;
+    --theme-bullet: #66bb6a;
+    --theme-line: #a5d6a7;
+}
+
+.workflowy-container.workflowy-theme-forest-green {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+}
+
+/* ==================== 主题 9: 海洋蓝 ==================== */
+.workflowy-container.workflowy-theme-ocean-blue {
+    --theme-bg-primary: #e3f2fd;
+    --theme-bg-secondary: #bbdefb;
+    --theme-text-normal: #0d47a1;
+    --theme-text-muted: #1976d2;
+    --theme-text-faint: #42a5f5;
+    --theme-accent: #2196f3;
+    --theme-bullet: #64b5f6;
+    --theme-line: #90caf9;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+}
+
+/* ==================== 主题 10: 日落橙 ==================== */
+.workflowy-container.workflowy-theme-sunset-orange {
+    --theme-bg-primary: #fff3e0;
+    --theme-bg-secondary: #ffe0b2;
+    --theme-text-normal: #e65100;
+    --theme-text-muted: #f57c00;
+    --theme-text-faint: #ff9800;
+    --theme-accent: #ff9800;
+    --theme-bullet: #ffb74d;
+    --theme-line: #ffcc80;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+}
+
+/* ==================== 主题 11: 樱花粉 ==================== */
+.workflowy-container.workflowy-theme-cherry-pink {
+    --theme-bg-primary: #fce4ec;
+    --theme-bg-secondary: #f8bbd0;
+    --theme-text-normal: #880e4f;
+    --theme-text-muted: #c2185b;
+    --theme-text-faint: #e91e63;
+    --theme-accent: #e91e63;
+    --theme-bullet: #f06292;
+    --theme-line: #f48fb1;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+}
+
+/* ==================== 主题 12: 午夜黑 ==================== */
+.workflowy-container.workflowy-theme-midnight-black {
+    --theme-bg-primary: #000000;
+    --theme-bg-secondary: #1a1a1a;
+    --theme-text-normal: #ffffff;
+    --theme-text-muted: #cccccc;
+    --theme-text-faint: #999999;
+    --theme-accent: #ffffff;
+    --theme-bullet: #ffffff;
+    --theme-line: #333333;
+}
+
+.workflowy-container.workflowy-theme-midnight-black {
+    background: var(--theme-bg-primary) !important;
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-content {
+    color: var(--theme-text-normal) !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-bullet {
+    background: var(--theme-bullet) !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-collapse {
+    color: var(--theme-text-muted) !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-vertical-line {
+    border-left-color: var(--theme-line) !important;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-navigation-header {
+    background: var(--theme-bg-secondary) !important;
+    border-color: #333333 !important;
+}
+
+/* ==================== 主题切换过渡动画 ==================== */
+.workflowy-container {
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.workflowy-container .workflowy-content,
+.workflowy-container .workflowy-bullet,
+.workflowy-container .workflowy-collapse,
+.workflowy-container .workflowy-vertical-line,
+.workflowy-container .workflowy-navigation-header {
+    transition: all 0.3s ease;
+}
+
+
+/* ==================== 暗色主题优化 ==================== */
+
+/* 暗色主题光标颜色优化 */
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-content {
+    caret-color: #ff9500; /* 橙色光标，与主题文字颜色一致 */
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-content {
+    caret-color: #5dade2; /* 亮蓝色光标，与主题强调色一致 */
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-content {
+    caret-color: #e0e0e0; /* 浅灰色光标，与文字颜色一致 */
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-content {
+    caret-color: #ffffff; /* 纯白光标，与文字颜色一致 */
+}
+
+/* 暗色主题折叠节点阴影优化 */
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
+    box-shadow: 0 0 0 4px rgba(76, 217, 100, 0.3) !important; /* 绿色半透明阴影 */
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
+    box-shadow: 0 0 0 4px rgba(93, 173, 226, 0.35) !important; /* 蓝色半透明阴影 */
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
+    box-shadow: 0 0 0 4px rgba(192, 192, 192, 0.3) !important; /* 浅灰半透明阴影 */
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25) !important; /* 白色半透明阴影 */
+}
