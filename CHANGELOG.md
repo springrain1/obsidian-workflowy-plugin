@@ -4,7 +4,137 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## v2.6
+## v2.9
+
+### ✨ New Features
+
+#### Folder Outline View
+- **One-Click Folder Aggregation**: Right-click any folder in the file explorer and select "Open as Folder Outline" to seamlessly merge all Markdown notes within into a unified, continuous Workflowy-style outline.
+- **Smart Tab Management**: Automatically recognizes and reuses already opened folder views, avoiding duplicate tabs and keeping your workspace consistently tidy.
+- **Dynamic Title Sync**: The tab name intelligently tracks your selected folder, updating automatically in real-time.
+
+#### Seamless Bi-directional Cursor Sync
+- **Two-Way Cursor Memory**: Powered by a new core SourceMap engine. Whether editing in the Outline View or the Markdown Source View, a single click to switch will **keep your cursor precisely at the character you were editing**! No more painfully searching for your edit point in long documents.
+- **Buttery-Smooth Transitions**: Leveraged Obsidian's native `eState` (ephemeral state) engine to bypass easily race-conditioned timers, achieving a "zero-delay", instant seamless switching experience.
+
+### 🚀 Experience & Performance Boosts
+
+#### ⚡ Leap in Switching Performance
+- **Goodbye Switching Lag**: Refactored view-switching state management. We eradicated the invalid background disk-write actions to `workspace.json` that occurred during high-frequency view toggles. This not only drastically reduces device energy consumption but also noticeably enhances Obsidian's overall responsiveness.
+
+#### 🏗 Large Document Loading Optimization (Phase 1)
+- **Massive Performance Foundation Upgrade**: Completed deep performance profiling and architectural design for ultra-large documents (e.g., notes containing thousands of nodes). Thoroughly refactored the underlying rendering skeleton to pave the way for upcoming "Lightning Open" and "Instant Fold" features.
+
+---
+
+## v2.8.2
+
+### 🔧 Refactors & Optimizations
+- **Comprehensive Internationalization (i18n)**: Fully replaced hardcoded strings with the `t()` translation function across all components, including the Daily Notes Section, achieving full multi-language support.
+- **Fixed Theme Translation Failure**: Removed premature static export of the `THEMES` constant, switching to dynamic `getThemes()` calls. This permanently fixes the bug where fallback languages were loaded before i18n initialization, backed by new Vitest test cases.
+- **Rendering & Scroll Positioning**: Introduced a dual-layer `requestAnimationFrame` mechanism during Daily Notes Section mounting to ensure pixel-perfect scroll positioning and eliminate viewport jitter after complex DOM operations.
+- **Data Robustness Enhancements**: Improved the rigor of daily note date processing, searching, and creation. Upgraded YAML Frontmatter parsing security filters to seamlessly handle files with BOM characters and leading empty lines.
+
+---
+
+## v2.8.1
+
+### 🐛 Bug Fixes
+- **YAML Frontmatter Protection**: Implemented strict bypassing logic in the parser to protect the YAML frontmatter (`---`) block at the top of notes. This permanently fixes the issue where enabling Thino compatibility mode accidentally converted spaces inside YAML to tabs, which caused parsing errors.
+- **View Switching Experience**: Fixed an issue where switching from Outline View to Markdown View in a single document would unnecessarily open a new tab. It now seamlessly transforms the current tab in-place, keeping the new-tab behavior exclusive to the Daily Notes aggregated view.
+
+---
+
+## v2.8
+
+### ✨ New Features
+
+#### Daily Notes Plus Aggregated Outline View
+- **Brand new Daily Notes aggregated view**: Display and edit multiple Daily Notes in a single unified view
+- **Three note source modes**:
+  - Daily Notes mode: Automatically reads Obsidian core Daily Notes plugin configuration
+  - Folder mode: Select any folder to aggregate notes
+  - Tag mode: Filter notes by tags
+- **Flexible filtering and sorting**:
+  - Sorting: date (ascending/descending), creation time, modification time, file name
+  - Time ranges: this week/month/year, last week/month/year, this/last quarter, custom range
+  - Presets: save and quickly switch between common configurations
+- **Efficient editing experience**:
+  - Each Daily Note as independent section with collapse/expand
+  - Click title to open as standalone outline view
+  - Zoom navigation: click bullet to focus on child content with breadcrumb navigation
+  - Full outline editing features: indent, move, collapse, delete, multi-select, etc.
+  - Cross-section block dragging (normal drag to move, Alt+drag for block references)
+  - All editor shortcuts supported (Tab/Enter/Ctrl+Z, etc.)
+- **Performance optimization**:
+  - On-demand loading: configurable initial batch size, dynamic mount/unmount on scroll
+  - Delayed unloading: prevent frequent re-renders when scrolling quickly
+- **Convenient features**:
+  - Auto-create today's note: toolbar button + optional startup creation
+  - Date picker: quickly jump to specific date's Daily Note
+  - Fallback configuration: plugin-level settings when core plugin unavailable (folder, date format, template)
+  - Theme switching: supports all built-in themes, consistent with standalone view
+  - Responsive design: perfect for desktop and mobile
+
+#### Enhanced Link Navigation
+- Unified Workflowy link navigation system:
+  - Internal links `[[note]]`: open in current view or split pane
+  - Heading links `[[note#heading]]`: scroll and highlight target heading
+  - Block references `[[note#^blockid]]`: precise navigation to target block
+  - Embed link jump button: click to open source file
+- Ctrl+Alt+click or Shift+click to open in split pane
+- Link navigation in Daily Notes aggregated view:
+  - File in aggregation scope: auto-expand corresponding section and navigate
+  - File outside scope: open standalone view in new tab
+- Jump highlight effect: target content flashes yellow background for 2 seconds, fading out
+
+#### Cross-Document Drag Optimizations
+- Alt+drag block reference creation workflow optimized:
+  - Same-document source mode: fast path avoiding file events
+  - Cross-document or Live Preview: async source block ID update, wait for metadata
+  - Auto-generates Obsidian-compliant block IDs (^block-id format)
+  - Updates target position block reference after completion
+- Cross-section multi-select drag support:
+  - Detects multi-select drag data format (`workflowy-multi-blocks`)
+  - Supports batch block movement across Daily Notes sections
+  - Preserves original drop zone logic (before/after/child)
+
+### 🐛 Bug Fixes
+- Fixed multi-select drag compatibility in cross-section scenarios
+- Fixed potential data loss risk when saving before file fully loaded
+- Fixed editor container loss in certain scenarios
+- Fixed subpath navigation event payload parsing compatibility
+
+### 🔧 Improvements
+- Deep settings merge: compatible with missing nested config fields from old versions
+- Editor container caching: avoid repeated DOM queries, improve rendering performance
+- Cross-document event optimization: explicit event payload structure, supports targetLeaf specification
+- Debug logging system: enable detailed logs via `settings.isolation.debugMode`
+- Unified commands: Daily Notes view and standalone view share editing commands (indent, move, collapse, etc.)
+
+### 📝 License System
+- Daily Notes Plus features require license (7-day trial)
+- License management UI: enter license key, view status, appreciation/WeChat QR codes
+- Trial period displays remaining days
+- Expiration prompt for license renewal
+
+---
+
+## v2.7
+
+### ✨ New Features
+
+#### Table Rendering Enhancements
+- Full Markdown table support in Live Preview mode:
+  - Table borders, header background, zebra striping
+  - Text alignment within tables (left/center/right)
+  - Row hover highlighting
+- Table styles for all themes (14 built-in themes)
+- Table line break logic optimized: table rows connected with single newline to prevent parsing errors
+
+---
+### ✨ New Features
+- Support for table rendering in nodes
 
 ### ✨ New Features
 

@@ -3,14 +3,25 @@
 
 /* Workflowy Enhanced Styles */
 .workflowy-container {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
+    /* 使用 Obsidian 原生 CSS 变量，跟随用户全局设置 */
+    /* --font-text-size 和 --line-height-normal 由 Obsidian 设置控制 */
+    /* 圆点大小使用 em 单位，会自动跟随字体大小变化 */
+    --workflowy-font-family: var(--font-text);
+
+    font-family: var(--workflowy-font-family);
+    font-size: var(--font-text-size);
+    line-height: var(--line-height-normal);
     color: var(--text-normal);
     background: var(--background-primary);
     padding: 20px;
     height: 100%;
     overflow-y: auto;
+}
+
+/* 禁用动画时移除所有过渡效果 */
+.workflowy-container:not(.animations-enabled) * {
+    transition: none !important;
+    animation: none !important;
 }
 
 /* 导航头部样式（面包屑+搜索框） */
@@ -24,7 +35,8 @@
     border-radius: 8px;
     border: 1px solid var(--background-modifier-border);
     transition: all 0.2s ease;
-    position: relative; /* 为绝对定位的菜单提供定位上下文 */
+    position: relative;
+    /* 为绝对定位的菜单提供定位上下文 */
 }
 
 .workflowy-container .workflowy-navigation-header:hover {
@@ -182,24 +194,41 @@
 
 .workflowy-container .workflowy-content-line {
     display: flex;
-    align-items: flex-start;
-    min-height: 28px;
+    align-items: var(--workflowy-bullet-align, flex-start);
+    min-height: 2em;
     padding: 2px 0;
 }
 
 .workflowy-container .workflowy-collapse {
-    width: 16px;
-    height: 16px;
+    width: 1.1em;
+    height: 1.1em;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 6px 4px 0 0;
+    /* 
+     * 对齐计算：让折叠指示器中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高约 1.5em，第一行中心 ≈ 4px + 0.75em
+     * 折叠指示器高度 1.1em，中心在 0.55em
+     * margin-top = 4px + 0.75em - 0.55em = 4px + 0.2em
+     */
+    margin: calc(4px + 0.2em) 0.3em 0 0;
     cursor: pointer;
-    font-size: 10px;
     color: var(--text-muted);
     border-radius: 2px;
     transition: all 0.2s ease;
     flex-shrink: 0;
+}
+
+/* 折叠指示器 SVG 样式 */
+.workflowy-container .workflowy-collapse svg {
+    width: 0.7em;
+    height: 0.7em;
+    transition: transform 0.2s ease;
+}
+
+/* 展开状态：SVG 旋转 90° */
+.workflowy-container .workflowy-collapse:not(.collapsed) svg {
+    transform: rotate(90deg);
 }
 
 .workflowy-container .workflowy-collapse:hover {
@@ -208,26 +237,51 @@
 }
 
 .workflowy-container .workflowy-collapse-placeholder {
-    width: 16px;
-    height: 16px;
-    margin: 6px 4px 0 0;
+    width: 1.1em;
+    height: 1.1em;
+    margin: calc(4px + 0.2em) 0.3em 0 0;
     flex-shrink: 0;
 }
 
 .workflowy-container .workflowy-bullet {
-    width: 6px;
-    height: 6px;
+    /* 使用 em 单位让圆点大小跟随字体大小变化 */
+    width: 0.4em;
+    height: 0.4em;
     border-radius: 50%;
     background: var(--text-muted);
-    margin: 11px 12px 0 0;
+    /* 
+     * 对齐计算：让圆点中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高约 1.5em，第一行中心 ≈ 4px + 0.75em
+     * 圆点高度 0.4em，中心在 0.2em
+     * margin-top = 4px + 0.75em - 0.2em = 4px + 0.55em
+     */
+    margin: calc(4px + 0.55em) 0.7em 0 0;
     flex-shrink: 0;
     transition: all 0.2s ease;
-    cursor: pointer; /* 可点击缩放 */
+    cursor: pointer;
 }
 
-/* 折叠状态的节点 bullet 添加外圈阴影效果 */
+/* 有序列表序号样式 */
+.workflowy-container .workflowy-order-number {
+    font-size: inherit;
+    color: var(--text-muted);
+    /* 
+     * 对齐计算：让序号中心与圆点中心对齐
+     * 圆点 margin-top: calc(4px + 0.55em)，圆点中心在 margin-top + 0.2em
+     * 序号高度约 1em（line-height: 1），中心在 0.5em
+     * 序号 margin-top = 圆点 margin-top + 圆点中心 - 序号中心
+     *                = (4px + 0.55em) + 0.2em - 0.5em = 4px + 0.25em
+     */
+    margin: calc(4px + 0.25em) -0.3em 0 0;
+    flex-shrink: 0;
+    font-weight: normal;
+    min-width: 1em;
+    line-height: 1;
+}
+
+/* 折叠状态的节点 bullet 添加外圈阴影效果（使用 em 单位） */
 .workflowy-container .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.15);
+    box-shadow: 0 0 0 0.3em rgba(128, 128, 128, 0.15);
 }
 
 .workflowy-container .workflowy-item:hover .workflowy-bullet {
@@ -243,11 +297,17 @@
 
 /* 待办事项复选框样式 */
 .workflowy-container .workflowy-checkbox {
-    width: 18px;
-    height: 18px;
+    width: 1.3em;
+    height: 1.3em;
     border: 2px solid var(--text-muted);
     border-radius: 4px;
-    margin: 5px 6px 0 0;
+    /* 
+     * 对齐计算：让复选框中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高约 1.5em，第一行中心 ≈ 4px + 0.75em
+     * 复选框高度 1.3em，中心在 0.65em
+     * margin-top = 4px + 0.75em - 0.65em = 4px + 0.1em
+     */
+    margin: calc(4px + 0.1em) 0.4em 0 0;
     flex-shrink: 0;
     transition: all 0.2s ease;
     display: flex;
@@ -255,6 +315,12 @@
     justify-content: center;
     cursor: pointer;
     background: var(--background-primary);
+}
+
+/* 复选框内 SVG 图标样式 */
+.workflowy-container .workflowy-checkbox svg {
+    width: 0.85em;
+    height: 0.85em;
 }
 
 .workflowy-container .workflowy-checkbox.completed {
@@ -320,8 +386,9 @@
     outline: none;
     border: none;
     background: transparent;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: var(--font-text-size);
+    line-height: var(--line-height-normal);
+    font-family: var(--workflowy-font-family, inherit);
     padding: 4px 8px;
     margin: 0;
     color: var(--text-normal);
@@ -331,6 +398,7 @@
     border-radius: 3px;
     transition: all 0.2s ease;
 }
+
 
 .workflowy-container .workflowy-content:focus {
     background: rgba(var(--color-accent-rgb), 0.05);
@@ -359,6 +427,46 @@
 .workflowy-container .search-match {
     background: rgba(var(--color-yellow-rgb), 0.3) !important;
     border-radius: 4px;
+}
+
+/* 跳转目标高亮：由标题/块引用导航临时添加 is-flashing */
+.workflowy-container .workflowy-content.is-flashing,
+.workflowy-container .workflowy-content-display.is-flashing,
+.workflowy-container .workflowy-content-editor.is-flashing,
+.workflowy-container h1.is-flashing,
+.workflowy-container h2.is-flashing,
+.workflowy-container h3.is-flashing,
+.workflowy-container h4.is-flashing,
+.workflowy-container h5.is-flashing,
+.workflowy-container h6.is-flashing,
+.workflowy-daily-notes-container .workflowy-content.is-flashing,
+.workflowy-daily-notes-container .workflowy-content-display.is-flashing,
+.workflowy-daily-notes-container .workflowy-content-editor.is-flashing,
+.workflowy-daily-notes-container h1.is-flashing,
+.workflowy-daily-notes-container h2.is-flashing,
+.workflowy-daily-notes-container h3.is-flashing,
+.workflowy-daily-notes-container h4.is-flashing,
+.workflowy-daily-notes-container h5.is-flashing,
+.workflowy-daily-notes-container h6.is-flashing {
+    animation: workflowy-target-flash 2s ease-out !important;
+    background: rgba(var(--color-yellow-rgb), 0.35) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb), 0.28) inset !important;
+}
+
+@keyframes workflowy-target-flash {
+    0% {
+        background: rgba(var(--color-yellow-rgb), 0.75);
+        box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.45) inset;
+    }
+    55% {
+        background: rgba(var(--color-yellow-rgb), 0.35);
+        box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb), 0.28) inset;
+    }
+    100% {
+        background: rgba(var(--color-yellow-rgb), 0);
+        box-shadow: 0 0 0 0 rgba(var(--color-accent-rgb), 0) inset;
+    }
 }
 
 /* 移除自动动画以防止重新渲染时所有内容抖动 */
@@ -497,13 +605,15 @@
 @media (max-width: 768px) {
     .workflowy-container {
         padding: 12px;
+        /* 移动端跟随 Obsidian 设置，不再单独设置字体大小 */
     }
 
     .workflowy-container .workflowy-content {
-        font-size: 16px;
+        font-size: var(--font-text-size);
         padding: 6px 8px;
     }
 }
+
 /* 多选功能样式 */
 .workflowy-container .workflowy-selection-box {
     position: absolute;
@@ -556,6 +666,7 @@
 .workflowy-selection-counter.visible {
     display: block;
 }
+
 /* 
 拖拽指示线 - 完全复用 obsidian-outliner 的实现 */
 .workflowy-drop-zone {
@@ -762,6 +873,8 @@
 /* 主题 1: 默认（跟随 Obsidian） */
 .workflowy-container.workflowy-theme-default {
     /* 使用 Obsidian 原生变量，无需额外定义 */
+    /* 添加透明属性避免空规则集警告 */
+    --theme-default-marker: 1;
 }
 
 /* 主题 2: 经典白 */
@@ -796,7 +909,8 @@
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #3498db !important; /* 蓝色光标 */
+    caret-color: #3498db !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-bullet {
@@ -847,7 +961,8 @@
 
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #ff9500 !important; /* 橙色光标，与主题文字颜色一致 */
+    caret-color: #ff9500 !important;
+    /* 橙色光标，与主题文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-bullet {
@@ -899,7 +1014,8 @@
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #8b7355 !important; /* 棕色光标 */
+    caret-color: #8b7355 !important;
+    /* 棕色光标 */
 }
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-bullet {
@@ -950,7 +1066,8 @@
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #9b59b6 !important; /* 紫色光标 */
+    caret-color: #9b59b6 !important;
+    /* 紫色光标 */
 }
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-bullet {
@@ -1001,7 +1118,8 @@
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #5dade2 !important; /* 亮蓝色光标，与主题强调色一致 */
+    caret-color: #5dade2 !important;
+    /* 亮蓝色光标，与主题强调色一致 */
 }
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-bullet {
@@ -1053,7 +1171,8 @@
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #e0e0e0 !important; /* 浅灰色光标，与文字颜色一致 */
+    caret-color: #e0e0e0 !important;
+    /* 浅灰色光标，与文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-bullet {
@@ -1105,7 +1224,8 @@
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #4caf50 !important; /* 绿色光标 */
+    caret-color: #4caf50 !important;
+    /* 绿色光标 */
 }
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-bullet {
@@ -1156,7 +1276,8 @@
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #2196f3 !important; /* 蓝色光标 */
+    caret-color: #2196f3 !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-bullet {
@@ -1207,7 +1328,8 @@
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #ff9800 !important; /* 橙色光标 */
+    caret-color: #ff9800 !important;
+    /* 橙色光标 */
 }
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-bullet {
@@ -1258,7 +1380,8 @@
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #e91e63 !important; /* 粉色光标 */
+    caret-color: #e91e63 !important;
+    /* 粉色光标 */
 }
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-bullet {
@@ -1309,7 +1432,8 @@
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #ffffff !important; /* 纯白光标，与文字颜色一致 */
+    caret-color: #ffffff !important;
+    /* 纯白光标，与文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-bullet {
@@ -1334,36 +1458,44 @@
 
 /* 暗色主题光标颜色优化 */
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-content {
-    caret-color: #ff9500 !important; /* 橙色光标，与主题文字颜色一致 */
+    caret-color: #ff9500 !important;
+    /* 橙色光标，与主题文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-content {
-    caret-color: #5dade2 !important; /* 亮蓝色光标，与主题强调色一致 */
+    caret-color: #5dade2 !important;
+    /* 亮蓝色光标，与主题强调色一致 */
 }
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-content {
-    caret-color: #e0e0e0 !important; /* 浅灰色光标，与文字颜色一致 */
+    caret-color: #e0e0e0 !important;
+    /* 浅灰色光标，与文字颜色一致 */
 }
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-content {
-    caret-color: #ffffff !important; /* 纯白光标，与文字颜色一致 */
+    caret-color: #ffffff !important;
+    /* 纯白光标，与文字颜色一致 */
 }
 
 /* 暗色主题折叠节点阴影优化 */
 .workflowy-container.workflowy-theme-dark-orange-green .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(76, 217, 100, 0.3) !important; /* 绿色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(76, 217, 100, 0.3) !important;
+    /* 绿色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-deep-blue .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(93, 173, 226, 0.35) !important; /* 蓝色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(93, 173, 226, 0.35) !important;
+    /* 蓝色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-dark-gray .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(192, 192, 192, 0.3) !important; /* 浅灰半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(192, 192, 192, 0.3) !important;
+    /* 浅灰半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-midnight-black .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25) !important; /* 白色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25) !important;
+    /* 白色半透明阴影 */
 }
 
 /* 暗色主题的主题配色定义 */
@@ -1512,68 +1644,84 @@
 
 /* 亮色主题光标颜色优化 */
 .workflowy-container.workflowy-theme-default .workflowy-content {
-    caret-color: var(--text-accent) !important; /* 跟随 Obsidian 强调色 */
+    caret-color: var(--text-accent) !important;
+    /* 跟随 Obsidian 强调色 */
 }
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-content {
-    caret-color: #3498db !important; /* 蓝色光标 */
+    caret-color: #3498db !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-content {
-    caret-color: #8b7355 !important; /* 棕色光标 */
+    caret-color: #8b7355 !important;
+    /* 棕色光标 */
 }
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-content {
-    caret-color: #9b59b6 !important; /* 紫色光标 */
+    caret-color: #9b59b6 !important;
+    /* 紫色光标 */
 }
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-content {
-    caret-color: #4caf50 !important; /* 绿色光标 */
+    caret-color: #4caf50 !important;
+    /* 绿色光标 */
 }
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-content {
-    caret-color: #2196f3 !important; /* 蓝色光标 */
+    caret-color: #2196f3 !important;
+    /* 蓝色光标 */
 }
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-content {
-    caret-color: #ff9800 !important; /* 橙色光标 */
+    caret-color: #ff9800 !important;
+    /* 橙色光标 */
 }
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-content {
-    caret-color: #e91e63 !important; /* 粉色光标 */
+    caret-color: #e91e63 !important;
+    /* 粉色光标 */
 }
 
 /* 亮色主题折叠节点阴影优化 */
 .workflowy-container.workflowy-theme-default .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.2) !important; /* 中性灰色阴影 */
+    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.2) !important;
+    /* 中性灰色阴影 */
 }
 
 .workflowy-container.workflowy-theme-classic-white .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.25) !important; /* 蓝色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.25) !important;
+    /* 蓝色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-warm-beige .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(139, 115, 85, 0.3) !important; /* 棕色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(139, 115, 85, 0.3) !important;
+    /* 棕色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-soft-purple .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(155, 89, 182, 0.3) !important; /* 紫色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(155, 89, 182, 0.3) !important;
+    /* 紫色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-forest-green .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.3) !important; /* 绿色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.3) !important;
+    /* 绿色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-ocean-blue .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.3) !important; /* 蓝色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.3) !important;
+    /* 蓝色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-sunset-orange .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.3) !important; /* 橙色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.3) !important;
+    /* 橙色半透明阴影 */
 }
 
 .workflowy-container.workflowy-theme-cherry-pink .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(233, 30, 99, 0.3) !important; /* 粉色半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(233, 30, 99, 0.3) !important;
+    /* 粉色半透明阴影 */
 }
 
 /* 亮色主题的主题配色定义 */
@@ -1832,7 +1980,8 @@
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-content {
     color: var(--theme-text-normal) !important;
-    caret-color: #fbbf24 !important; /* 黄色光标 */
+    caret-color: #fbbf24 !important;
+    /* 黄色光标 */
 }
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-content-display {
@@ -1849,7 +1998,8 @@
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #fbbf24 !important; /* 黄色光标 */
+    caret-color: #fbbf24 !important;
+    /* 黄色光标 */
 }
 
 .workflowy-container.workflowy-theme-element-dark .workflowy-bullet {
@@ -1871,7 +2021,8 @@
 
 /* Element 深灰主题折叠节点阴影 */
 .workflowy-container.workflowy-theme-element-dark .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(232, 234, 237, 0.3) !important; /* 浅灰半透明阴影 */
+    box-shadow: 0 0 0 4px rgba(232, 234, 237, 0.3) !important;
+    /* 浅灰半透明阴影 */
 }
 
 /* Element 深灰主题预览 */
@@ -1896,34 +2047,42 @@
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content {
     color: var(--theme-text-normal) !important;
-    caret-color: #00ff00 !important; /* 荧光绿光标 */
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5); /* 荧光效果 */
+    caret-color: #00ff00 !important;
+    /* 荧光绿光标 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-display {
     color: var(--theme-text-normal) !important;
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3); /* 荧光效果 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-display p {
     color: var(--theme-text-normal) !important;
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3); /* 荧光效果 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-display em {
     color: var(--theme-text-muted) !important;
-    text-shadow: 0 0 3px rgba(0, 255, 0, 0.2); /* 荧光效果 */
+    text-shadow: 0 0 3px rgba(0, 255, 0, 0.2);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-content-editor {
     color: var(--theme-text-normal) !important;
-    caret-color: #00ff00 !important; /* 荧光绿光标 */
-    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5); /* 荧光效果 */
+    caret-color: #00ff00 !important;
+    /* 荧光绿光标 */
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    /* 荧光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-bullet {
     background: var(--theme-bullet) !important;
-    box-shadow: 0 0 8px rgba(0, 255, 0, 0.6); /* 荧光发光效果 */
+    box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
+    /* 荧光发光效果 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-collapse {
@@ -1932,7 +2091,8 @@
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-vertical-line {
     border-left-color: var(--theme-line) !important;
-    box-shadow: 0 0 3px rgba(0, 255, 0, 0.3); /* 垂直线发光 */
+    box-shadow: 0 0 3px rgba(0, 255, 0, 0.3);
+    /* 垂直线发光 */
 }
 
 .workflowy-container.workflowy-theme-matrix-green .workflowy-navigation-header {
@@ -1942,7 +2102,8 @@
 
 /* Matrix 黑绿主题折叠节点阴影 */
 .workflowy-container.workflowy-theme-matrix-green .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
-    box-shadow: 0 0 0 4px rgba(0, 255, 0, 0.4), 0 0 12px rgba(0, 255, 0, 0.6) !important; /* 荧光绿阴影 + 发光 */
+    box-shadow: 0 0 0 4px rgba(0, 255, 0, 0.4), 0 0 12px rgba(0, 255, 0, 0.6) !important;
+    /* 荧光绿阴影 + 发光 */
 }
 
 /* Matrix 黑绿主题预览 */
@@ -2649,7 +2810,6 @@
     color: var(--link-color);
     cursor: pointer;
     pointer-events: auto !important;
-}
     text-decoration: var(--link-decoration);
 }
 
@@ -3349,7 +3509,8 @@
 /* 搜索输入框 */
 .workflowy-container .workflowy-search-container .workflowy-search {
     flex: 1;
-    padding-right: 32px;  /* 为清除按钮留出空间 */
+    padding-right: 32px;
+    /* 为清除按钮留出空间 */
 }
 
 /* 清除按钮 */
@@ -3397,7 +3558,8 @@
 
 /* 搜索过滤模式：匹配节点的折叠指示器和圆点 */
 .workflowy-container .workflowy-item.search-matched-node .workflowy-collapse {
-    transform: rotate(-90deg) !important;  /* 向右 ▶ */
+    transform: rotate(-90deg) !important;
+    /* 向右 ▶ */
 }
 
 /* 搜索模式下：覆盖折叠状态的阴影规则 */
@@ -3419,7 +3581,8 @@
 
 /* 搜索过滤模式：父节点（非匹配但可见）的折叠指示器和圆点 */
 .workflowy-container .workflowy-item.search-parent-node .workflowy-collapse {
-    transform: rotate(-45deg) !important;  /* 向右下斜 45 度 ▼ */
+    transform: rotate(-45deg) !important;
+    /* 向右下斜 45 度 ▼ */
 }
 
 /* 只有有真正折叠指示器（有子节点）的父节点才显示圆圈阴影 */
@@ -3526,13 +3689,17 @@
 }
 
 /* 显示层（MarkdownRenderer 渲染结果） - 与源码模式完全一致 */
+/* 显示层（MarkdownRenderer 渲染结果） - 与源码模式完全一致 */
 .workflowy-content-display {
-    /* 与 .workflowy-content 保持一致 */
+    /* 与 .workflowy-content 和 .workflowy-content-editor 保持一致 */
+    box-sizing: border-box;
+    /* 统一为 border-box，与 editor 一致 */
     outline: none;
     border: none;
     background: transparent;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: var(--font-text-size);
+    line-height: var(--line-height-normal);
+    font-family: var(--workflowy-font-family, inherit);
     padding: 4px 8px;
     margin: 0;
     color: var(--text-normal);
@@ -3543,6 +3710,7 @@
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+/* ... existing hover styles ... */
 .workflowy-content-display:hover {
     background: rgba(var(--color-accent-rgb), 0.05);
     box-shadow: 0 0 0 1px rgba(var(--color-accent-rgb), 0.2);
@@ -3555,8 +3723,8 @@
     outline: none !important;
     border: none !important;
     background: transparent !important;
-    font-size: 14px !important;
-    line-height: 1.5 !important;
+    font-size: var(--font-text-size) !important;
+    line-height: var(--line-height-normal) !important;
     padding: 4px 8px !important;
     margin: 0 !important;
     color: var(--text-normal) !important;
@@ -3567,8 +3735,8 @@
     border-radius: 3px !important;
     resize: none !important;
     box-sizing: border-box !important;
-    /* 字体设置 - 与源码模式完全一致 */
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+    /* 字体设置 - 使用 CSS 变量 */
+    font-family: var(--workflowy-font-family, inherit) !important;
     font-weight: 400 !important;
     font-style: normal !important;
     letter-spacing: normal !important;
@@ -3595,9 +3763,14 @@
 }
 
 /* 显示层中的 Markdown 元素 */
-.workflowy-content-display p {
-    margin: 0;
-    display: inline;
+.workflowy-content-display p,
+.workflowy-content-display div {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: inherit !important;
+    /* display: inline;  移除 display: inline，因为这可能会破坏多行文本的正常流布局，
+       但我们需要确保它表现得像纯文本一样紧凑 */
+    display: block;
 }
 
 .workflowy-content-display strong {
@@ -3652,27 +3825,370 @@
 /* 列表样式 */
 .workflowy-content-display ul,
 .workflowy-content-display ol {
-    margin: 0;
+    margin: 0.2em 0;
     padding-left: 1.5em;
-    display: inline-block;
+    display: block;
 }
 
 .workflowy-content-display li {
     margin: 0;
+    display: list-item;
 }
 
 /* 块引用 */
 .workflowy-content-display blockquote {
-    margin: 0;
+    margin: 0.2em 0;
     padding-left: 1em;
     border-left: 3px solid var(--quote-opening-modifier);
     color: var(--text-muted);
-    display: inline-block;
+    display: block;
+}
+
+/* 表格样式 - 支持 Live Preview 模式下的 Markdown 表格渲染 */
+.workflowy-content-display table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5em 0;
+    display: table;
+    font-size: inherit;
+    line-height: inherit;
+}
+
+.workflowy-content-display thead {
+    background-color: var(--table-header-background);
+    border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.workflowy-content-display th {
+    padding: 6px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-content-display td {
+    padding: 6px 12px;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+}
+
+.workflowy-content-display tbody tr:nth-child(even) {
+    background-color: var(--table-row-even-background);
+}
+
+.workflowy-content-display tbody tr:hover {
+    background-color: var(--table-row-hover-background);
+}
+
+/* 表格内的文本对齐 */
+.workflowy-content-display th[align="left"],
+.workflowy-content-display td[align="left"] {
+    text-align: left;
+}
+
+.workflowy-content-display th[align="center"],
+.workflowy-content-display td[align="center"] {
+    text-align: center;
+}
+
+.workflowy-content-display th[align="right"],
+.workflowy-content-display td[align="right"] {
+    text-align: right;
+}
+
+/* ==================== 主题特定的表格样式 ==================== */
+
+/* 主题 1: 默认（跟随 Obsidian） - 使用 Obsidian 原生变量 */
+.workflowy-container.workflowy-theme-default .workflowy-content-display table {
+    /* 使用 Obsidian 原生变量，带 fallback */
+    border-color: var(--background-modifier-border, rgba(0, 0, 0, 0.1));
+}
+
+.workflowy-container.workflowy-theme-default .workflowy-content-display thead {
+    background-color: var(--table-header-background, rgba(0, 0, 0, 0.05));
+    border-bottom-color: var(--background-modifier-border, rgba(0, 0, 0, 0.1));
+}
+
+.workflowy-container.workflowy-theme-default .workflowy-content-display th,
+.workflowy-container.workflowy-theme-default .workflowy-content-display td {
+    border-color: var(--background-modifier-border, rgba(0, 0, 0, 0.1));
+    color: var(--text-normal);
+}
+
+.workflowy-container.workflowy-theme-default .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: var(--table-row-even-background, rgba(0, 0, 0, 0.02));
+}
+
+.workflowy-container.workflowy-theme-default .workflowy-content-display tbody tr:hover {
+    background-color: var(--table-row-hover-background, rgba(0, 0, 0, 0.04));
+}
+
+/* 主题 2: 经典白 */
+.workflowy-container.workflowy-theme-classic-white .workflowy-content-display thead {
+    background-color: #f5f5f5;
+    border-bottom-color: #ecf0f1;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-content-display th,
+.workflowy-container.workflowy-theme-classic-white .workflowy-content-display td {
+    border-color: #ecf0f1;
+    color: #2c3e50;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+.workflowy-container.workflowy-theme-classic-white .workflowy-content-display tbody tr:hover {
+    background-color: #e8f4f8;
+}
+
+/* 主题 3: 暗夜橙绿 */
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-content-display thead {
+    background-color: #1a1a1a;
+    border-bottom-color: #2a2a2a;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-content-display th,
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-content-display td {
+    border-color: #2a2a2a;
+    color: #ff9500;
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: rgba(255, 149, 0, 0.05);
+}
+
+.workflowy-container.workflowy-theme-dark-orange-green .workflowy-content-display tbody tr:hover {
+    background-color: rgba(255, 149, 0, 0.1);
+}
+
+/* 主题 4: 米白灰 */
+.workflowy-container.workflowy-theme-warm-beige .workflowy-content-display thead {
+    background-color: #e8e8e0;
+    border-bottom-color: #d8d8d0;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-content-display th,
+.workflowy-container.workflowy-theme-warm-beige .workflowy-content-display td {
+    border-color: #d8d8d0;
+    color: #4a4a4a;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: #f0f0e8;
+}
+
+.workflowy-container.workflowy-theme-warm-beige .workflowy-content-display tbody tr:hover {
+    background-color: #e0e0d8;
+}
+
+/* 主题 5: 淡紫 */
+.workflowy-container.workflowy-theme-soft-purple .workflowy-content-display thead {
+    background-color: #e6d9f0;
+    border-bottom-color: #d9c9e6;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-content-display th,
+.workflowy-container.workflowy-theme-soft-purple .workflowy-content-display td {
+    border-color: #d9c9e6;
+    color: #5b4a6b;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: #f5f0f8;
+}
+
+.workflowy-container.workflowy-theme-soft-purple .workflowy-content-display tbody tr:hover {
+    background-color: #ebe0f2;
+}
+
+/* 主题 6: 深蓝 */
+.workflowy-container.workflowy-theme-deep-blue .workflowy-content-display thead {
+    background-color: #2a3a4a;
+    border-bottom-color: #3a4a5a;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-content-display th,
+.workflowy-container.workflowy-theme-deep-blue .workflowy-content-display td {
+    border-color: #3a4a5a;
+    color: #e0e0e0;
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: rgba(93, 173, 226, 0.1);
+}
+
+.workflowy-container.workflowy-theme-deep-blue .workflowy-content-display tbody tr:hover {
+    background-color: rgba(93, 173, 226, 0.15);
+}
+
+/* 主题 7: 深灰 */
+.workflowy-container.workflowy-theme-dark-gray .workflowy-content-display thead {
+    background-color: #3a3a3a;
+    border-bottom-color: #4a4a4a;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-content-display th,
+.workflowy-container.workflowy-theme-dark-gray .workflowy-content-display td {
+    border-color: #4a4a4a;
+    color: #e0e0e0;
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: rgba(192, 192, 192, 0.1);
+}
+
+.workflowy-container.workflowy-theme-dark-gray .workflowy-content-display tbody tr:hover {
+    background-color: rgba(192, 192, 192, 0.15);
+}
+
+/* 主题 8: 森林绿 */
+.workflowy-container.workflowy-theme-forest-green .workflowy-content-display thead {
+    background-color: #c8e6c9;
+    border-bottom-color: #a5d6a7;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-content-display th,
+.workflowy-container.workflowy-theme-forest-green .workflowy-content-display td {
+    border-color: #a5d6a7;
+    color: #1b5e20;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: #e8f5e9;
+}
+
+.workflowy-container.workflowy-theme-forest-green .workflowy-content-display tbody tr:hover {
+    background-color: #c8e6c9;
+}
+
+/* 主题 9: 海洋蓝 */
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-content-display thead {
+    background-color: #bbdefb;
+    border-bottom-color: #90caf9;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-content-display th,
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-content-display td {
+    border-color: #90caf9;
+    color: #0d47a1;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: #e3f2fd;
+}
+
+.workflowy-container.workflowy-theme-ocean-blue .workflowy-content-display tbody tr:hover {
+    background-color: #bbdefb;
+}
+
+/* 主题 10: 日落橙 */
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-content-display thead {
+    background-color: #ffe0b2;
+    border-bottom-color: #ffcc80;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-content-display th,
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-content-display td {
+    border-color: #ffcc80;
+    color: #e65100;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: #fff3e0;
+}
+
+.workflowy-container.workflowy-theme-sunset-orange .workflowy-content-display tbody tr:hover {
+    background-color: #ffe0b2;
+}
+
+/* 主题 11: 樱花粉 */
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-content-display thead {
+    background-color: #f8bbd0;
+    border-bottom-color: #f48fb1;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-content-display th,
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-content-display td {
+    border-color: #f48fb1;
+    color: #880e4f;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: #fce4ec;
+}
+
+.workflowy-container.workflowy-theme-cherry-pink .workflowy-content-display tbody tr:hover {
+    background-color: #f8bbd0;
+}
+
+/* 主题 12: 午夜黑 */
+.workflowy-container.workflowy-theme-midnight-black .workflowy-content-display thead {
+    background-color: #1a1a1a;
+    border-bottom-color: #2a2a2a;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-content-display th,
+.workflowy-container.workflowy-theme-midnight-black .workflowy-content-display td {
+    border-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.workflowy-container.workflowy-theme-midnight-black .workflowy-content-display tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 主题 13: Space (Element Dark) */
+.workflowy-container.workflowy-theme-element-dark .workflowy-content-display thead {
+    background-color: #3a3f44;
+    border-bottom-color: #4a4f54;
+}
+
+.workflowy-container.workflowy-theme-element-dark .workflowy-content-display th,
+.workflowy-container.workflowy-theme-element-dark .workflowy-content-display td {
+    border-color: #4a4f54;
+    color: #e0e0e0;
+}
+
+.workflowy-container.workflowy-theme-element-dark .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: rgba(251, 191, 36, 0.05);
+}
+
+.workflowy-container.workflowy-theme-element-dark .workflowy-content-display tbody tr:hover {
+    background-color: rgba(251, 191, 36, 0.1);
+}
+
+/* 主题 14: Hacker (Matrix Green) */
+.workflowy-container.workflowy-theme-matrix-green .workflowy-content-display thead {
+    background-color: #0a0a0a;
+    border-bottom-color: #1a1a1a;
+}
+
+.workflowy-container.workflowy-theme-matrix-green .workflowy-content-display th,
+.workflowy-container.workflowy-theme-matrix-green .workflowy-content-display td {
+    border-color: #1a1a1a;
+    color: #00ff00;
+    text-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .workflowy-content-display tbody tr:nth-child(even) {
+    background-color: rgba(0, 255, 0, 0.03);
+}
+
+.workflowy-container.workflowy-theme-matrix-green .workflowy-content-display tbody tr:hover {
+    background-color: rgba(0, 255, 0, 0.08);
 }
 
 /* 确保空内容时有最小高度 */
 .workflowy-content-display:empty::before {
-    content: '\200B'; /* 零宽空格 */
+    content: '\200B';
+    /* 零宽空格 */
     display: inline-block;
 }
 
@@ -3682,7 +4198,8 @@
 /* 移动端容器优化 */
 .is-mobile .workflowy-container {
     padding: 12px;
-    font-size: 16px; /* 移动端使用更大的字体 */
+    font-size: 16px;
+    /* 移动端使用更大的字体 */
 }
 
 /* 移动端工具栏优化 */
@@ -3695,99 +4212,285 @@
 .is-mobile .workflowy-btn {
     padding: 10px 14px;
     font-size: 14px;
-    min-height: 44px; /* iOS 推荐的最小触摸目标 */
+    min-height: 44px;
+    /* iOS 推荐的最小触摸目标 */
 }
 
 .is-mobile .workflowy-search {
     width: 100%;
-    font-size: 16px; /* 防止 iOS 自动缩放 */
+    font-size: 16px;
+    /* 防止 iOS 自动缩放 */
     min-height: 44px;
 }
 
 /* 移动端内容项优化 */
 .is-mobile .workflowy-item {
-    margin: 2px 0;
+    margin: 0 !important;
+    /* 减少节点间距 */
+    position: relative;
 }
 
 .is-mobile .workflowy-content,
 .is-mobile .workflowy-content-display,
 .is-mobile .workflowy-content-editor {
     font-size: 15px !important;
-    line-height: 1.5 !important;
-    padding: 6px 8px !important;
-    min-height: 36px !important;
+    line-height: 1.4 !important;
+    /* 稍微减小行高 */
+    padding: 4px 8px !important;
+    /* 减少内边距 */
+    min-height: 28px !important;
+    /* 减小最小高度 */
 }
 
-/* 移动端内容行优化 */
+/* 移动端内容行优化 - 参考幕布布局 */
 .is-mobile .workflowy-content-line {
-    min-height: 36px;
-    display: flex;
-    align-items: center;
+    min-height: 1.7em !important;
+    /* 使用 em 单位，随字体缩放 */
+    display: flex !important;
+    align-items: flex-start !important;
+    /* 顶部对齐：确保多行内容时圆点/checkbox 与第一行对齐 */
+    position: relative;
+    padding-right: 24px !important;
+    /* 为右侧折叠指示器区域留出空间 */
 }
 
-/* 移动端圆点和折叠指示器优化 */
-.is-mobile .workflowy-bullet {
-    width: 8px;
-    height: 8px;
-    margin-right: 8px;
-    /* 触摸区域通过 padding 扩展 */
-    padding: 18px;
-    margin: -18px 8px -18px -18px;
+/* 右侧折叠指示器背景区域 - 仅对有子节点的项显示（参考幕布） */
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 2px;
+    /* 上下留出间隔 */
+    bottom: 2px;
+    /* 上下留出间隔 */
+    width: 20px;
+    background: rgba(245, 245, 245, 0.95);
+    /* 浅灰色背景 */
+    border-radius: 4px;
+    /* 圆角 */
+    pointer-events: none;
+    z-index: 4;
+}
+
+/* 暗色模式下的右侧背景 */
+.theme-dark .is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse)::after {
+    background: rgba(50, 50, 50, 0.95);
+}
+
+/* ==================== 移动端 Bullet 圆点样式 ==================== */
+/* 使用 ::after 伪元素显示圆点，与桌面端视觉效果一致 */
+
+.is-mobile .workflowy-container .workflowy-item .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item:hover .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item.focused .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse) .workflowy-bullet,
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet {
+    /* 触摸区域 */
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    /* 重置样式 */
+    padding: 0 !important;
+    /*
+     * 顶部对齐：让 bullet 中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高 1.4，字号 15px → 第一行中心 ≈ 4px + 0.5 * 1.4 * 15px / 2 ≈ 4px + 10.5px
+     * bullet 高度 24px，中心在 12px
+     * margin-top = (4px + 10.5px) - 12px ≈ 2.5px → 用 2px 即可
+     */
+    margin: 2px 4px 0 0 !important;
+    /* 背景透明 */
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    /* Flexbox 居中 */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    /* 圆点放在最前面（order 默认为 0） */
+    order: 0 !important;
 }
 
-.is-mobile .workflowy-collapse {
-    width: 16px;
-    height: 16px;
-    font-size: 12px;
-    /* 触摸区域通过 padding 扩展 */
-    padding: 14px;
-    margin: -14px 4px -14px -14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* 移动端圆点 - 使用 ::after 伪元素，与桌面端 6px 圆点一致 */
+.is-mobile .workflowy-container .workflowy-item .workflowy-bullet::after {
+    content: '' !important;
+    display: block !important;
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+    background: var(--text-muted) !important;
+    box-shadow: none !important;
+    transform: none !important;
+    position: absolute !important;
 }
 
-/* 移动端复选框优化 */
-.is-mobile .workflowy-checkbox {
-    width: 16px;
-    height: 16px;
-    /* 触摸区域通过 padding 扩展 */
-    padding: 14px;
-    margin: -14px 4px -14px 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* 移动端圆点聚焦状态 */
+.is-mobile .workflowy-container .workflowy-item.focused .workflowy-bullet::after {
+    background: var(--text-accent) !important;
 }
 
-/* 移动端缩进优化 - 减小缩进以节省空间 */
+/* 移动端折叠状态的圆点 - 添加外圈，与桌面端一致 */
+.is-mobile .workflowy-container .workflowy-item:has(.workflowy-collapse.collapsed) .workflowy-bullet::after {
+    box-shadow: 0 0 0 4px rgba(128, 128, 128, 0.15) !important;
+}
+
+/* ==================== 移动端折叠指示器 - 放置在右侧（参考幕布） ==================== */
+
+.is-mobile .workflowy-container .workflowy-collapse {
+    /* 绝对定位到右侧背景块中心 */
+    position: absolute !important;
+    right: 0 !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    /* 尺寸和样式 - 适配 20px 背景块 */
+    width: 20px !important;
+    height: 24px !important;
+    min-width: 20px !important;
+    min-height: 24px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: var(--text-muted) !important;
+    z-index: 6;
+    /* 高于背景层 */
+}
+
+/* 移动端折叠指示器 - 折叠状态三角指向左侧 ◀ */
+.is-mobile .workflowy-container .workflowy-collapse.collapsed {
+    /* 使用 CSS 旋转，让 ▶ 变成 ◀ */
+    transform: translateY(-50%) rotate(180deg) !important;
+}
+
+/* 移动端折叠指示器悬停状态 */
+.is-mobile .workflowy-container .workflowy-collapse:hover {
+    color: var(--text-normal) !important;
+    background: var(--background-modifier-hover) !important;
+    border-radius: 4px !important;
+}
+
+/* 移动端折叠占位符 - 不再需要，隐藏 */
+.is-mobile .workflowy-container .workflowy-collapse-placeholder {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* ==================== 移动端复选框 ==================== */
+
+.is-mobile .workflowy-container .workflowy-checkbox {
+    width: 1.6em !important;
+    height: 1.6em !important;
+    min-width: 1.6em !important;
+    min-height: 1.6em !important;
+    padding: 0 !important;
+    /*
+     * 顶部对齐：让 checkbox 中心与文字第一行中心对齐
+     * 文字 padding-top: 4px，行高 1.4，字号 15px → 第一行中心 ≈ 14.5px
+     * checkbox 高度 1.6em ≈ 24px，中心在 12px
+     * margin-top ≈ 2.5px → 用 2px
+     */
+    margin: 2px 0.3em 0 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    flex-shrink: 0;
+    border: none !important;
+    background: transparent !important;
+    position: relative;
+    /* 复选框保持在圆点后面，不使用绝对定位 */
+    order: 0 !important;
+}
+
+/* 移动端复选框内部方框 - 使用 em 单位 */
+.is-mobile .workflowy-container .workflowy-checkbox::before {
+    content: '' !important;
+    display: block !important;
+    width: 1.1em !important;
+    height: 1.1em !important;
+    border: 2px solid var(--text-muted) !important;
+    border-radius: 4px !important;
+    background: var(--background-primary) !important;
+}
+
+/* 移动端复选框已完成状态 */
+.is-mobile .workflowy-container .workflowy-checkbox.completed::before {
+    background: var(--text-accent) !important;
+    border-color: var(--text-accent) !important;
+}
+
+/* 移动端复选框内部图标 */
+.is-mobile .workflowy-container .workflowy-checkbox svg {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    color: var(--text-on-accent);
+}
+
+/* 移动端有序列表序号 - 顶部对齐 */
+.is-mobile .workflowy-container .workflowy-order-number {
+    /*
+     * 让序号与 bullet 圆点视觉中心对齐
+     * bullet: margin-top 2px, 高度 24px, ::after 圆点在中心 → 圆点中心在 14px
+     * 序号: 字号 15px, line-height 1 → 高度 15px, 中心在 margin-top + 7.5px
+     * margin-top = 14 - 7.5 = 6.5px ≈ 6px
+     */
+    margin-top: 6px !important;
+    margin-right: 0 !important;
+    margin-bottom: 0 !important;
+    margin-left: 0 !important;
+    line-height: 1 !important;
+}
+
+/* ==================== 移动端缩进和垂直线 ==================== */
+
+/* 移动端缩进优化 - 使用 20px 缩进（折叠指示器已移到右侧，左侧更紧凑） */
+.is-mobile .workflowy-item[data-level="0"] {
+    padding-left: 0 !important;
+}
+
 .is-mobile .workflowy-item[data-level="1"] {
-    padding-left: 24px !important;
+    padding-left: 20px !important;
 }
 
 .is-mobile .workflowy-item[data-level="2"] {
-    padding-left: 48px !important;
+    padding-left: 40px !important;
 }
 
 .is-mobile .workflowy-item[data-level="3"] {
-    padding-left: 72px !important;
+    padding-left: 60px !important;
 }
 
 .is-mobile .workflowy-item[data-level="4"] {
-    padding-left: 96px !important;
+    padding-left: 80px !important;
 }
 
 .is-mobile .workflowy-item[data-level="5"] {
-    padding-left: 120px !important;
+    padding-left: 100px !important;
 }
 
 .is-mobile .workflowy-item[data-level="6"] {
-    padding-left: 144px !important;
+    padding-left: 120px !important;
 }
 
 /* 移动端拖拽指示器优化 */
 .is-mobile .workflowy-drop-zone {
-    height: 4px; /* 更粗的指示线 */
+    height: 4px;
+    /* 更粗的指示线 */
 }
 
 /* 移动端选择计数器优化 */
@@ -3807,12 +4510,6 @@
 
 .is-mobile .workflowy-breadcrumb-item {
     padding: 4px 8px;
-}
-
-/* 移动端折叠占位符优化 */
-.is-mobile .workflowy-collapse-placeholder {
-    width: 16px;
-    min-width: 16px;
 }
 
 /* 移动端垂直线优化 */
@@ -3870,5 +4567,1088 @@
     .is-mobile .workflowy-btn {
         padding: 8px 12px;
         font-size: 13px;
+    }
+}
+
+/* ==================== 移动端底部工具栏 ==================== */
+
+/* 工具栏容器 */
+.is-mobile .workflowy-mobile-toolbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    background: var(--background-secondary);
+    border-top: 1px solid var(--background-modifier-border);
+    padding: 4px 0;
+    z-index: 1000;
+    gap: 0;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    user-select: none;
+}
+
+/* 可滚动的按钮区域 */
+.is-mobile .workflowy-mobile-toolbar-scroll {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+    gap: 0;
+    padding: 0 8px;
+}
+
+.is-mobile .workflowy-mobile-toolbar-scroll::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+}
+
+/* 工具栏按钮 */
+.is-mobile .workflowy-mobile-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+}
+
+.is-mobile .workflowy-mobile-btn:active {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.is-mobile .workflowy-mobile-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2;
+    pointer-events: none;
+}
+
+/* 收起键盘按钮 - 固定在工具栏最右侧 */
+.is-mobile .workflowy-mobile-btn-keyboard {
+    flex-shrink: 0;
+    margin: 0 4px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+}
+
+/* 编辑工具栏容器 */
+.is-mobile .workflowy-mobile-toolbar-editbar {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+/* 功能工具栏（键盘收起时显示） */
+.is-mobile .workflowy-mobile-toolbar-funcbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-evenly;
+    width: 100%;
+    padding: 0 8px;
+}
+
+/* 为工具栏预留底部空间 */
+.is-mobile .workflowy-container {
+    padding-bottom: 50px !important;
+}
+
+/* 编辑器区域也需要预留空间 */
+.is-mobile .workflowy-editor {
+    padding-bottom: 10px;
+}
+
+/* 小屏手机工具栏优化 */
+@media (max-width: 375px) {
+    .is-mobile .workflowy-mobile-toolbar {
+        padding: 3px 0;
+    }
+
+    .is-mobile .workflowy-mobile-toolbar-scroll {
+        padding: 0 4px;
+    }
+
+    .is-mobile .workflowy-mobile-btn {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+    }
+
+    .is-mobile .workflowy-mobile-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* 横屏模式优化 */
+@media (orientation: landscape) and (max-height: 500px) {
+    .is-mobile .workflowy-mobile-toolbar {
+        padding: 4px 0;
+        padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .is-mobile .workflowy-mobile-toolbar-scroll {
+        padding: 0 16px;
+    }
+
+    .is-mobile .workflowy-mobile-btn {
+        height: 36px;
+        min-height: 36px;
+    }
+
+    .is-mobile .workflowy-container {
+        padding-bottom: calc(50px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+}
+
+/* Slash Command Menu */
+.workflowy-slash-menu {
+    position: fixed;
+    z-index: 10000;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    width: 220px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 6px;
+    font-size: 13px;
+    pointer-events: auto;
+}
+
+/* 分组标题 - 简洁风格 */
+.workflowy-slash-menu-group-header {
+    padding: 6px 8px 4px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+.workflowy-slash-menu-group-header:first-child {
+    margin-top: 0;
+}
+
+.workflowy-slash-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    cursor: pointer;
+    color: var(--text-normal);
+    pointer-events: auto;
+    border-radius: 4px;
+    margin: 1px 0;
+    transition: background-color 0.1s ease;
+    position: relative;
+}
+
+.workflowy-slash-menu-item:hover,
+.workflowy-slash-menu-item.is-selected {
+    background-color: var(--background-modifier-hover);
+}
+
+.workflowy-slash-menu-icon {
+    margin-right: 8px;
+    width: 18px;
+    text-align: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.workflowy-slash-menu-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workflowy-slash-menu-empty {
+    padding: 12px 8px;
+    color: var(--text-muted);
+    text-align: center;
+    font-size: 12px;
+}
+
+/* Custom Status Icons */
+.workflowy-checkbox.status-in-progress {
+    color: var(--text-accent);
+}
+
+.workflowy-checkbox.status-cancelled {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+/* Ensure SVG icons are sized correctly */
+.workflowy-checkbox svg {
+    display: block;
+    width: 12px;
+    height: 12px;
+}
+
+/* ==================== Date Picker Styles (New) ==================== */
+
+.workflowy-date-picker {
+    position: fixed;
+    z-index: 1001;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    min-width: 260px;
+}
+
+/* 快捷按钮区域 */
+.workflowy-date-shortcuts {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-date-shortcut-btn {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s ease;
+}
+
+.workflowy-date-shortcut-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--text-accent);
+}
+
+/* 月份导航 */
+.workflowy-date-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.workflowy-date-nav-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.workflowy-date-nav-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-date-month-year {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+/* 星期标题 */
+.workflowy-date-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+}
+
+.workflowy-date-weekday {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    padding: 4px 0;
+}
+
+/* 日期网格 */
+.workflowy-date-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.workflowy-date-cell {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.workflowy-date-cell:hover {
+    background: var(--background-modifier-hover);
+}
+
+.workflowy-date-cell.empty {
+    cursor: default;
+}
+
+.workflowy-date-cell.today {
+    background: var(--text-accent);
+    color: var(--text-on-accent, #fff);
+    font-weight: 600;
+}
+
+.workflowy-date-cell.today:hover {
+    background: var(--interactive-accent-hover, var(--text-accent));
+}
+
+.workflowy-date-cell.selected {
+    background: var(--background-modifier-hover);
+    border: 2px solid var(--text-accent);
+}
+
+
+/* ==================== Tag Suggest Menu Styles ==================== */
+
+.workflowy-tag-suggest-menu {
+    position: fixed;
+    z-index: 10000;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    width: 200px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 4px 0;
+    font-size: 14px;
+    pointer-events: auto;
+}
+
+.workflowy-tag-suggest-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--text-normal);
+    pointer-events: auto;
+    border-radius: 4px;
+    margin: 1px 4px;
+    transition: all 0.15s ease;
+}
+
+.workflowy-tag-suggest-item:hover,
+.workflowy-tag-suggest-item.is-selected {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-tag-suggest-icon {
+    margin-right: 8px;
+    width: 16px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-accent);
+    font-weight: 600;
+}
+
+.workflowy-tag-suggest-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+.workflowy-tag-suggest-empty {
+    padding: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    font-style: italic;
+    font-size: 12px;
+}
+
+
+/* ==================== Time Picker Styles ==================== */
+
+.workflowy-time-picker {
+    position: fixed;
+    z-index: 10001;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    min-width: 200px;
+}
+
+.workflowy-time-picker-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-time-picker-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.workflowy-time-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.workflowy-time-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 40px;
+}
+
+.workflowy-time-input {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.workflowy-time-input:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
+.workflowy-time-shortcuts {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.workflowy-time-shortcut-btn {
+    padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s ease;
+}
+
+.workflowy-time-shortcut-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--text-accent);
+}
+
+.workflowy-time-picker-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.workflowy-time-cancel-btn,
+.workflowy-time-confirm-btn {
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.workflowy-time-cancel-btn {
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.workflowy-time-cancel-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.workflowy-time-confirm-btn {
+    background: var(--interactive-accent);
+    border: none;
+    color: var(--text-on-accent);
+}
+
+.workflowy-time-confirm-btn:hover {
+    background: var(--interactive-accent-hover);
+}
+
+
+/* Slash Menu Tooltip - 使用原生 title 属性，无需自定义样式 */
+
+/* Daily Notes 聚合大纲视图：仅影响聚合容器与其嵌套 section */
+.workflowy-daily-notes-themed-shell {
+    background: var(--theme-bg-primary, var(--background-primary));
+    color: var(--theme-text-normal, var(--text-normal));
+}
+
+.workflowy-daily-notes-themed-shell .view-content,
+.workflowy-daily-notes-themed-shell .workflowy-daily-notes-container {
+    background: var(--theme-bg-primary, var(--background-primary));
+    color: var(--theme-text-normal, var(--text-normal));
+}
+
+.workflowy-daily-notes-container {
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--size-4-2) var(--size-4-4);
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-classic-white {
+    --theme-bg-primary: #ffffff;
+    --theme-bg-secondary: #f5f5f5;
+    --theme-text-normal: #2c3e50;
+    --theme-text-muted: #7f8c8d;
+    --theme-line: #ecf0f1;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-dark-orange-green {
+    --theme-bg-primary: #0a0a0a;
+    --theme-bg-secondary: #1a1a1a;
+    --theme-text-normal: #ff9500;
+    --theme-text-muted: #4cd964;
+    --theme-line: #2ecc71;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-warm-beige {
+    --theme-bg-primary: #f5f5f0;
+    --theme-bg-secondary: #e8e8e0;
+    --theme-text-normal: #4a4a4a;
+    --theme-text-muted: #7a7a7a;
+    --theme-line: #d0d0c8;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-soft-purple {
+    --theme-bg-primary: #f0e6f6;
+    --theme-bg-secondary: #e6d9f0;
+    --theme-text-normal: #5b4a6b;
+    --theme-text-muted: #8b7a9b;
+    --theme-line: #d5c5e5;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-deep-blue {
+    --theme-bg-primary: #1e2a3a;
+    --theme-bg-secondary: #2a3a4a;
+    --theme-text-normal: #e0e0e0;
+    --theme-text-muted: #b0b0b0;
+    --theme-line: #3a4a5a;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-dark-gray {
+    --theme-bg-primary: #2a2a2a;
+    --theme-bg-secondary: #3a3a3a;
+    --theme-text-normal: #e0e0e0;
+    --theme-text-muted: #b0b0b0;
+    --theme-line: #4a4a4a;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-forest-green {
+    --theme-bg-primary: #e8f5e9;
+    --theme-bg-secondary: #c8e6c9;
+    --theme-text-normal: #1b5e20;
+    --theme-text-muted: #2e7d32;
+    --theme-line: #a5d6a7;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-ocean-blue {
+    --theme-bg-primary: #e3f2fd;
+    --theme-bg-secondary: #bbdefb;
+    --theme-text-normal: #0d47a1;
+    --theme-text-muted: #1565c0;
+    --theme-line: #90caf9;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-sunset-orange {
+    --theme-bg-primary: #fff3e0;
+    --theme-bg-secondary: #ffe0b2;
+    --theme-text-normal: #e65100;
+    --theme-text-muted: #ef6c00;
+    --theme-line: #ffcc80;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-cherry-pink {
+    --theme-bg-primary: #fce4ec;
+    --theme-bg-secondary: #f8bbd0;
+    --theme-text-normal: #880e4f;
+    --theme-text-muted: #ad1457;
+    --theme-line: #f48fb1;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-midnight-black {
+    --theme-bg-primary: #000000;
+    --theme-bg-secondary: #1a1a1a;
+    --theme-text-normal: #ffffff;
+    --theme-text-muted: #bdbdbd;
+    --theme-line: #2a2a2a;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-element-dark {
+    --theme-bg-primary: #282c34;
+    --theme-bg-secondary: #3a3f44;
+    --theme-text-normal: #e0e0e0;
+    --theme-text-muted: #fbbf24;
+    --theme-line: #4a4f54;
+}
+
+.workflowy-daily-notes-themed-shell.workflowy-theme-matrix-green {
+    --theme-bg-primary: #000000;
+    --theme-bg-secondary: #0a0a0a;
+    --theme-text-normal: #00ff00;
+    --theme-text-muted: #00cc00;
+    --theme-line: #1a1a1a;
+}
+
+.workflowy-daily-notes-themed-shell .view-header {
+    background: var(--theme-bg-primary, var(--background-primary));
+    border-bottom-color: var(--theme-line, var(--background-modifier-border));
+    color: var(--theme-text-normal, var(--text-normal));
+}
+
+.workflowy-daily-notes-themed-shell .view-header-title,
+.workflowy-daily-notes-themed-shell .view-action {
+    color: var(--theme-text-normal, var(--text-normal));
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-section {
+    margin: 0;
+    padding: var(--size-4-4) 0 var(--size-4-3);
+    border-top: 1px solid var(--theme-line, var(--background-modifier-border));
+    overflow: visible;
+    background: var(--theme-bg-primary, var(--background-primary));
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-section:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+    padding: var(--size-4-2) var(--size-4-3);
+    background: var(--theme-bg-secondary, var(--background-secondary));
+    border-bottom: 1px solid var(--theme-line, var(--background-modifier-border));
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-collapse,
+.workflowy-daily-notes-container .workflowy-daily-note-title {
+    border: 0;
+    background: transparent;
+    color: var(--theme-text-normal, var(--text-normal));
+    cursor: pointer;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-collapse {
+    padding: var(--size-4-1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-collapse::before {
+    content: '⌄';
+    display: block;
+    transition: transform 0.2s ease;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-collapse:hover {
+    background: var(--background-modifier-hover);
+    border-radius: var(--radius-s);
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-section.is-collapsed .workflowy-daily-note-collapse::before {
+    transform: rotate(-90deg);
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-title {
+    font-size: var(--font-ui-medium);
+    font-weight: var(--font-semibold);
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-zoom-navigation {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    padding-left: var(--size-4-2);
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-zoom-navigation.is-empty {
+    display: none;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-zoom-item {
+    border: 0;
+    border-radius: var(--radius-s);
+    background: transparent;
+    color: var(--theme-text-muted, var(--text-muted));
+    cursor: pointer;
+    font-size: var(--font-ui-small);
+    max-width: 180px;
+    overflow: hidden;
+    padding: var(--size-4-1) var(--size-4-2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-zoom-item:hover {
+    background: var(--theme-bg-primary, var(--background-modifier-hover));
+    color: var(--theme-text-normal, var(--text-normal));
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-zoom-item.current {
+    color: var(--theme-text-normal, var(--text-accent));
+    font-weight: var(--font-semibold);
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-zoom-delimiter {
+    color: var(--theme-text-muted, var(--text-faint));
+    flex-shrink: 0;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-editor {
+    min-height: 160px;
+    overflow: visible;
+}
+
+.workflowy-daily-notes-container .workflowy-empty-hint {
+    align-items: center;
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    color: var(--theme-text-muted, var(--text-muted));
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    font-style: italic;
+    height: auto;
+    justify-content: flex-start;
+    margin: 0;
+    min-height: 44px;
+    padding: var(--size-4-2) var(--size-4-3) var(--size-4-2) 30px;
+    text-align: left;
+    width: auto;
+}
+
+.workflowy-daily-notes-container .workflowy-empty-hint:hover,
+.workflowy-daily-notes-container .workflowy-empty-hint:focus-visible {
+    color: var(--theme-text-normal, var(--text-normal));
+}
+
+.workflowy-daily-notes-container .workflowy-empty-hint:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+    outline: none;
+}
+
+.workflowy-daily-notes-container .workflowy-empty-hint:disabled {
+    color: var(--theme-text-muted, var(--text-faint));
+    cursor: default;
+    opacity: 0.75;
+}
+
+/* Daily Notes 中的 workflowy-container 使用 auto 高度 */
+.workflowy-daily-notes-container .workflowy-daily-note-editor .workflowy-container {
+    height: auto !important;
+    min-height: 50px !important;
+    overflow: visible !important;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root.workspace-split,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workspace-tabs,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workspace-tab-container,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workspace-leaf,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workspace-leaf-content,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .view-content,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workflowy-container,
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workflowy-editor {
+    display: block !important;
+    position: relative !important;
+    flex: none !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workspace-leaf-content[data-type] {
+    contain: none !important;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workflowy-container {
+    padding: var(--size-4-4);
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .view-header {
+    display: none !important;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workflowy-navigation-header {
+    display: none !important;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workflowy-editor {
+    min-height: 50px !important;
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-placeholder,
+.workflowy-daily-notes-container .workflowy-daily-notes-empty,
+.workflowy-daily-notes-container .workflowy-daily-notes-today-action,
+.workflowy-daily-notes-container .workflowy-daily-note-error {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    padding: var(--size-4-4);
+    color: var(--theme-text-muted, var(--text-muted));
+}
+
+.workflowy-daily-notes-container .workflowy-daily-notes-loader {
+    display: flex;
+    justify-content: center;
+    padding: var(--size-4-6) var(--size-4-4);
+    color: var(--theme-text-muted, var(--text-muted));
+    font-size: var(--font-ui-small);
+}
+
+.workflowy-daily-notes-container .workflowy-daily-notes-loader.is-complete {
+    color: var(--theme-text-muted, var(--text-faint));
+}
+
+.workflowy-daily-notes-container .workflowy-daily-note-section.is-collapsed .workflowy-daily-note-header {
+    border-bottom: 0;
+}
+
+/* Daily Notes Plus 授权页 */
+.workflowy-license-section {
+    margin: var(--size-4-6) 0 var(--size-4-8);
+}
+
+.workflowy-license-panel {
+    padding: var(--size-4-5);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-l);
+    background: var(--background-primary-alt);
+}
+
+.workflowy-license-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    margin-bottom: var(--size-4-5);
+    padding: var(--size-4-2) var(--size-4-4);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    font-weight: 600;
+}
+
+.workflowy-license-status--active {
+    color: var(--text-success);
+    background: rgba(var(--color-green-rgb), 0.12);
+    border-color: rgba(var(--color-green-rgb), 0.28);
+}
+
+.workflowy-license-status--trial {
+    color: var(--text-accent);
+    background: rgba(var(--color-accent-rgb), 0.12);
+    border-color: rgba(var(--color-accent-rgb), 0.28);
+}
+
+.workflowy-license-status--expired {
+    color: var(--text-error);
+    background: rgba(var(--color-red-rgb), 0.12);
+    border-color: rgba(var(--color-red-rgb), 0.28);
+}
+
+.workflowy-license-status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.2em;
+    height: 1.2em;
+}
+
+.workflowy-license-label {
+    display: block;
+    margin: var(--size-4-4) 0 var(--size-4-2);
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.workflowy-license-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--size-4-2);
+    align-items: center;
+}
+
+.workflowy-license-input {
+    width: 100%;
+    min-height: 40px;
+    padding: var(--size-4-2) var(--size-4-3);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    color: var(--text-normal);
+    background: var(--background-primary);
+}
+
+.workflowy-license-btn {
+    min-height: 40px;
+    padding: 0 var(--size-4-5);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    color: var(--text-normal);
+    background: var(--interactive-normal);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.workflowy-license-btn:hover,
+.workflowy-license-btn:focus-visible {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+
+.workflowy-license-btn--validate {
+    border-color: rgba(var(--color-green-rgb), 0.35);
+}
+
+.workflowy-license-desc {
+    margin-top: var(--size-4-5);
+    color: var(--text-muted);
+    line-height: var(--line-height-normal);
+}
+
+.workflowy-license-desc strong {
+    display: block;
+    margin-bottom: var(--size-4-2);
+    color: var(--text-normal);
+}
+
+.workflowy-license-desc ol {
+    margin: 0;
+    padding-left: var(--size-4-6);
+}
+
+.workflowy-license-desc li {
+    margin: var(--size-2-3) 0;
+}
+
+.workflowy-license-qr-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 280px) minmax(280px, 1fr);
+    gap: var(--size-4-6);
+    align-items: end;
+    margin-top: var(--size-4-6);
+}
+
+.workflowy-license-qr-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.workflowy-license-qr-title {
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.workflowy-license-qr-img {
+    display: block;
+    max-width: 100%;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    background: var(--background-primary);
+    object-fit: contain;
+}
+
+.workflowy-license-qr-img--appreciation {
+    width: 220px;
+    height: 220px;
+}
+
+.workflowy-license-qr-img--wechat {
+    width: 420px;
+    height: 154px;
+}
+
+.workflowy-license-qr-img.is-hidden {
+    display: none;
+}
+
+.workflowy-license-qr-error {
+    padding: var(--size-4-3);
+    color: var(--text-error);
+    border: 1px solid rgba(var(--color-red-rgb), 0.25);
+    border-radius: var(--radius-s);
+    background: rgba(var(--color-red-rgb), 0.08);
+}
+
+@media (max-width: 720px) {
+    .workflowy-license-row,
+    .workflowy-license-qr-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .workflowy-license-btn {
+        width: 100%;
+    }
+
+    .workflowy-license-qr-img--wechat {
+        width: 100%;
+        height: auto;
     }
 }

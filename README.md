@@ -11,6 +11,26 @@ A powerful Obsidian plugin that transforms your Markdown notes into a Workflowy-
 - **Block-Level Operations**: Hierarchical structure with intuitive block manipulation and atomic undo/redo
 - **Anti-Race Condition Sync**: Bulletproof save queue enforces stable real-time synchronization under high-frequency typing
 - **Zero Interference**: 5-layer isolation architecture ensures no impact on native Obsidian Markdown experience
+- **Daily Notes Plus** ⭐: Brand new Daily Notes aggregated outline view (license required, 7-day trial)
+
+### 📅 Daily Notes Plus Features (New)
+- **Aggregated Outline View**: Display and edit multiple Daily Notes in a single unified view
+- **Flexible Filtering**:
+  - Note sources: Daily Notes mode / Folder mode / Tag mode
+  - Time ranges: this week/month/year, last week/month/year, this/last quarter, custom
+  - Sorting: date/creation time/modification time/file name (ascending/descending)
+- **Efficient Editing**:
+  - Each Daily Note as independent section with collapse/expand
+  - Click title to open as standalone outline view
+  - Zoom navigation: click bullet to focus on child content with breadcrumb navigation
+  - Cross-section block dragging (normal drag or Alt+drag for block references)
+- **Smart Optimization**:
+  - On-demand loading: configurable initial batch size, dynamic mount on scroll
+  - Delayed unloading: prevent frequent re-renders when scrolling
+- **Quick Actions**:
+  - Auto-create today's note (toolbar button + optional startup creation)
+  - Date picker for quick navigation
+  - Preset management for common configurations
 
 ### ⌨️ Keyboard Shortcuts
 | Shortcut | Action |
@@ -87,9 +107,10 @@ Supports four todo states, compatible with obsidian-tasks plugin:
 - Internal links (`[[note]]`) with click navigation
 - Heading links (`[[note#heading]]`) with scroll and highlight
 - Block references (`[[note#^blockid]]`) with precise navigation
-- Embed links (`![[note]]`) with click-to-navigate
+- Embed links (`![[note]]`) with click-to-navigate button
 - Ctrl+hover for preview popup
 - Ctrl+Alt+click or Shift+click for split view
+- Smart navigation in Daily Notes aggregated view (auto-expands corresponding section)
 
 ### 📎 Link Suggestions
 Type `[[` or `![[` to trigger link suggestions:
@@ -103,6 +124,7 @@ Type `[[` or `![[` to trigger link suggestions:
 - **Alt+drag**: Create block references (`![[file#^blockid]]`)
 - Auto-generates Obsidian-compliant block IDs
 - Supports multi-select batch dragging
+- Supports cross-section dragging in Daily Notes view
 
 ### 📝 Thino Compatibility (New)
 Compatible with Thino/Memos plugin format:
@@ -232,6 +254,18 @@ Fixed bottom toolbar on mobile with quick actions:
 - **Enable Thino Mode**: Support Tab-indented continuation lines for first-level list items
 - **Auto Timestamp**: Automatically add timestamps when creating new blocks
 - **Timestamp Format**: Choose between `HH:mm` or `HH:mm:ss` format
+
+### Daily Notes Plus Settings
+- **Show Ribbon Icon**: Display Daily Notes quick icon in left sidebar
+- **Initial Batch Size**: Control number of sections loaded initially (1-10)
+- **Unload Delay**: Delay time (milliseconds) before unloading off-screen sections
+- **Create Today on Startup**: Auto-create today's Daily Note when plugin loads
+- **Open on Startup**: Auto-open Daily Notes aggregated view when plugin loads
+- **Fallback Configuration**: Used when core Daily Notes plugin unavailable
+  - Daily Notes folder path
+  - Date format (default YYYY-MM-DD)
+  - Template path
+- **Preset Management**: Save and manage common source configuration presets
 
 ## 🏗️ Architecture
 
