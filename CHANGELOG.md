@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## v3.0
+
+### ✨ New Features
+
+#### UI & Experience
+- **Native Readable Line Width**: Fully supports Obsidian's core "Readable Line Length" setting. In both the Outline and Daily Notes views, editor content automatically centers and limits its width while keeping backgrounds full-width, providing optimal reading comfort.
+- **Breadcrumb Markdown Tooltips**: Hovering over breadcrumb navigation paths now displays a fully rendered Markdown tooltip of that node's complete content.
+- **Context Menu "Insert Double Link"**: Added a quick "Insert double link" action in Live Preview. Wraps selected text in `[[]]` with the cursor at the end, or inserts `[[]]` with the cursor inside if no text is selected.
+
+#### Interaction Enhancements
+- **Precision Cursor Restoration for Keyboard Zoom**: Introduced a cursor history stack for keyboard zooming. When zooming out of a child node, your cursor will **restore precisely to its previous character position** instead of falling back to the end of the node.
+- **Live Preview Multi-Select Revolution**: Completely resolved the conflict between text selection and block selection. You can now normally select text inside a block; only when dragging **outside the block's boundaries**, or while holding `Alt`, does it seamlessly upgrade to block multi-selection. Added an invisible "selection rail" for easier bulk selection.
+- **Smart Arrow Key Navigation**: Refactored Up/Down arrow key navigation to rely on the actual rendered DOM tree. It now perfectly skips filtered, hidden, or collapsed nodes, eliminating unexpected cursor jumps.
+
+### 🐛 Bug Fixes
+- **Live Preview Memory Leak Fix**: Refactored the event lifecycle management of the editor component, fixing a memory leak and performance degradation caused by stacking event listeners during frequent focus or view switches.
+
+---
+
 ## v2.9
 
 ### ✨ New Features

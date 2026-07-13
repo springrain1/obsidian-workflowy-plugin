@@ -57,11 +57,13 @@ A powerful Obsidian plugin that transforms your Markdown notes into a Workflowy-
 
 ### 🎨 UI Features
 - **Workflowy-Style Interface**: Clean bullet points with hierarchical indentation lines
+- **Native Readable Line Width**: Fully supports Obsidian's core readable line length setting for optimal reading comfort (New)
+- **Breadcrumb Markdown Tooltips**: Hover over zoom paths to preview fully rendered Markdown content (New)
 - **Collapse/Expand**: Hide/show child blocks (click triangle, vertical line, or press `Alt+Enter`)
-- **Zoom Focus**: Click bullet to zoom into a specific block for focused editing
+- **Zoom Focus**: Click bullet to zoom into a specific block for focused editing (with precise cursor restoration)
 - **Real-Time Search**: Quick search with highlighting (highlight or filter mode)
 - **Drag & Drop**: Intuitive block reordering via drag and drop
-- **Multi-Selection**: Select multiple blocks for batch operations (via left-click drag or Ctrl+click)
+- **Multi-Selection**: Select multiple blocks for batch operations (perfectly isolates text selection, supports cross-boundary drag multi-select)
 - **Theme Support**: Multiple built-in themes with light/dark mode support
 - **Responsive Design**: Works perfectly on desktop and mobile devices
 
@@ -141,7 +143,7 @@ Markdown shortcuts in Live Preview mode:
 | `Ctrl+I` | Italic |
 | `Ctrl+K` | Insert link |
 | `Ctrl+Shift+H` | Highlight |
-| Right-click | More formatting options |
+| Right-click | More formatting options, insert double link |
 
 ### 📱 Mobile Toolbar
 Fixed bottom toolbar on mobile with quick actions:
