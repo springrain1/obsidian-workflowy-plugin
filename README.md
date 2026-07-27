@@ -13,6 +13,11 @@ A powerful Obsidian plugin that transforms your Markdown notes into a Workflowy-
 - **Zero Interference**: 5-layer isolation architecture ensures no impact on native Obsidian Markdown experience
 - **Daily Notes Plus** ⭐: Brand new Daily Notes aggregated outline view (license required, 7-day trial)
 
+### 🚀 v3.1 Major Upgrades (New)
+- **Virtual Scrolling Architecture**: A completely rebuilt foundation featuring a global `Virtual Outline Window` and `Render Scheduler`, delivering buttery-smooth scrolling and zero layout thrashing even in ultra-long notes with thousands of blocks.
+- **Native CodeMirror 6 Engine**: The Live Preview engine was entirely rewritten to fully integrate with the CodeMirror 6 ecosystem, parsing Markdown syntax internally just like Obsidian's core editor for unprecedented precision and native feel.
+- **Ultimate Interaction Polish**: Break the limits of virtualization with cross-screen drag multi-select! Alongside precision-positioned floating menus (`/`, `#`, `[[`) and deeply enhanced mobile incremental updates, the editing experience is smoother than ever.
+
 ### 📅 Daily Notes Plus Features (New)
 - **Aggregated Outline View**: Display and edit multiple Daily Notes in a single unified view
 - **Flexible Filtering**:

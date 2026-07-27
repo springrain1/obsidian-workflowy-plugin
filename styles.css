@@ -170,6 +170,34 @@
     min-height: 400px;
 }
 
+.workflowy-container .workflowy-virtual-content {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+}
+
+.workflowy-container .workflowy-virtual-content > .workflowy-item {
+    position: absolute;
+    left: 0;
+    right: 0;
+    width: auto;
+    box-sizing: border-box;
+}
+
+.workflowy-container .workflowy-virtual-content > .workflowy-vertical-lines-scroller {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+.workflowy-container.is-readable-line-width > .workflowy-navigation-header,
+.workflowy-container.is-readable-line-width > .workflowy-editor {
+    box-sizing: border-box;
+    margin-inline: auto;
+    max-width: var(--file-line-width, 700px);
+    width: 100%;
+}
+
 .workflowy-container .workflowy-item {
     position: relative;
     margin: 0;
@@ -612,6 +640,7 @@
         font-size: var(--font-text-size);
         padding: 6px 8px;
     }
+
 }
 
 /* 多选功能样式 */
@@ -637,6 +666,22 @@
 
 .workflowy-container .workflowy-item.workflowy-selected .workflowy-content {
     background: rgba(66, 165, 245, 0.08);
+}
+
+.workflowy-container .workflowy-item.workflowy-selected .workflowy-content-display,
+.workflowy-container .workflowy-item.workflowy-selected .workflowy-content-editor {
+    background: rgba(66, 165, 245, 0.08);
+    border-radius: 3px;
+}
+
+.workflowy-container.selecting {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.workflowy-container.selecting .workflowy-content-editor {
+    user-select: none;
+    caret-color: transparent;
 }
 
 /* 多选拖拽状态 */
@@ -3682,7 +3727,7 @@
 
 /* ==================== Live Preview 模式样式 ==================== */
 
-/* 双层渲染容器 */
+/* 非活动显示层与共享编辑器挂载容器 */
 .workflowy-content-wrapper {
     position: relative;
     flex: 1;
@@ -3710,13 +3755,18 @@
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.workflowy-container .workflowy-live-preview-placeholder {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 /* ... existing hover styles ... */
 .workflowy-content-display:hover {
     background: rgba(var(--color-accent-rgb), 0.05);
     box-shadow: 0 0 0 1px rgba(var(--color-accent-rgb), 0.2);
 }
 
-/* 编辑层（textarea） - 与源码模式完全一致，无额外边框 */
+/* 共享 CodeMirror 编辑挂载层，与源码模式保持一致且不添加外框 */
 .workflowy-content-editor {
     /* 与 .workflowy-content 保持一致 */
     width: 100% !important;
@@ -5140,6 +5190,25 @@
     padding: var(--size-4-2) var(--size-4-4);
 }
 
+.workflowy-daily-notes-container.is-readable-line-width .workflowy-daily-notes-list {
+    box-sizing: border-box;
+    margin-inline: auto;
+    max-width: var(--file-line-width, 700px);
+    width: 100%;
+}
+
+.workflowy-daily-notes-container.is-readable-line-width .workflowy-daily-note-section.is-readable-line-width > .workflowy-daily-note-header,
+.workflowy-daily-notes-container.is-readable-line-width .workflowy-daily-note-section.is-readable-line-width > .workflowy-daily-note-editor {
+    box-sizing: border-box;
+    margin-inline: auto;
+    max-width: var(--file-line-width, 700px);
+    width: 100%;
+}
+
+.workflowy-daily-notes-container.is-readable-line-width .workflowy-daily-note-section.is-readable-line-width > .workflowy-daily-note-editor > .workflowy-container {
+    padding-inline: 0;
+}
+
 .workflowy-daily-notes-themed-shell.workflowy-theme-classic-white {
     --theme-bg-primary: #ffffff;
     --theme-bg-secondary: #f5f5f5;
@@ -5405,6 +5474,11 @@
     overflow: visible !important;
 }
 
+.workflowy-daily-notes-container .workflowy-daily-note-editor .workflowy-editor {
+    min-height: 0;
+    overflow: visible;
+}
+
 .workflowy-daily-notes-container .workflowy-daily-note-embedded-root,
 .workflowy-daily-notes-container .workflowy-daily-note-embedded-root.workspace-split,
 .workflowy-daily-notes-container .workflowy-daily-note-embedded-root .workspace-tabs,
@@ -5651,4 +5725,116 @@
         width: 100%;
         height: auto;
     }
+}
+
+/* View-scoped CodeMirror live preview editor. One .cm-editor is moved between active rows. */
+.workflowy-container .workflowy-content-editor {
+    width: 100%;
+    min-width: 0;
+    position: relative;
+}
+
+.workflowy-container .workflowy-content-editor > .cm-editor {
+    width: 100%;
+    min-height: var(--line-height-normal);
+    background: transparent;
+    color: var(--text-normal);
+    font-family: var(--font-text);
+    font-size: inherit;
+    line-height: inherit;
+}
+
+.workflowy-container .workflowy-content-editor .cm-scroller {
+    overflow-x: hidden;
+    overflow-y: visible;
+    font-family: inherit;
+    line-height: inherit;
+}
+
+.workflowy-container .workflowy-content-editor .cm-content,
+.workflowy-container .workflowy-content-editor .cm-line {
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.workflowy-container .workflowy-content-editor .cm-content {
+    min-height: var(--line-height-normal);
+    padding: 0;
+    caret-color: var(--text-normal);
+}
+
+.workflowy-container .workflowy-content-editor .cm-line {
+    padding: 0;
+}
+
+.workflowy-container .workflowy-content-editor .cm-focused {
+    outline: none;
+}
+
+.workflowy-container .workflowy-content-editor .cm-selectionBackground,
+.workflowy-container .workflowy-content-editor .cm-content ::selection {
+    background: var(--text-selection);
+}
+
+.workflowy-container .workflowy-content-editor .cm-strong {
+    font-weight: var(--font-bold);
+}
+
+.workflowy-container .workflowy-content-editor .cm-em {
+    font-style: italic;
+}
+
+.workflowy-container .workflowy-content-editor .cm-strikethrough {
+    text-decoration: line-through;
+}
+
+.workflowy-container .workflowy-content-editor .cm-highlight {
+    background: var(--text-highlight-bg);
+}
+
+.workflowy-container .workflowy-content-editor .cm-inline-code {
+    color: var(--code-normal);
+    background: var(--code-background);
+    border-radius: var(--radius-s);
+    font-family: var(--font-monospace);
+}
+
+.workflowy-container .workflowy-content-editor .cm-link,
+.workflowy-container .workflowy-content-editor .cm-hmd-internal-link,
+.workflowy-container .workflowy-content-editor .cm-tag {
+    color: var(--link-color);
+    text-decoration: var(--link-decoration);
+}
+
+.workflowy-container .workflowy-content-editor .cm-live-preview-source-revealed {
+    color: var(--text-muted);
+}
+
+.workflowy-container .workflowy-content-editor .cm-live-preview-source-revealed.cm-link,
+.workflowy-container .workflowy-content-editor .cm-live-preview-source-revealed.cm-hmd-internal-link {
+    color: var(--link-color);
+    text-decoration: var(--link-decoration);
+}
+
+.workflowy-container .workflowy-content-editor .cm-live-preview-block-widget {
+    color: var(--text-normal);
+    overflow-wrap: anywhere;
+}
+
+.workflowy-container .workflowy-content-editor .cm-live-preview-block-widget[data-live-preview-block-layout=inline] {
+    display: inline;
+}
+
+.workflowy-container .workflowy-content-editor .cm-live-preview-block-widget[data-live-preview-block-layout=inline] > p,
+.workflowy-container .workflowy-content-editor .cm-live-preview-block-widget[data-live-preview-block-layout=inline] > div {
+    display: inline;
+    margin: 0;
+}
+
+.workflowy-container .workflowy-content-editor .cm-live-preview-source-fallback {
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    white-space: pre-wrap;
 }

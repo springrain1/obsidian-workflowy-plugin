@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => WorkflowyPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian19 = require("obsidian");
+var import_obsidian22 = require("obsidian");
 
 // src/constants.ts
 var WORKFLOWY_VIEW_TYPE = "workflowy-view";
@@ -78,7 +78,7 @@ var UI_CONFIG = {
 };
 
 // src/workflowy-view.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/utils.ts
 function generateId() {
@@ -159,9 +159,6 @@ function getAllBlocks(blocks) {
   }
   traverse(blocks);
   return result;
-}
-function getFlatBlockIds(blocks) {
-  return getAllBlocks(blocks).map((block) => block.id);
 }
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -269,22 +266,6 @@ function getCursorDegradationCandidates(targetBlockId, referenceBlocks) {
   }
   return candidates;
 }
-function computeOrderedListIndex(blockId, blocks) {
-  const parent = findParentBlock(blocks, blockId);
-  const siblings = parent ? parent.children : blocks;
-  let orderedListCounter = 0;
-  for (const sibling of siblings) {
-    if (sibling.isOrderedList) {
-      orderedListCounter++;
-    } else {
-      orderedListCounter = 0;
-    }
-    if (sibling.id === blockId) {
-      return sibling.isOrderedList ? orderedListCounter : 1;
-    }
-  }
-  return 1;
-}
 function areBlocksEquivalentForRender(left, right, options = {}) {
   const {
     ignoreContent = false,
@@ -292,6 +273,56 @@ function areBlocksEquivalentForRender(left, right, options = {}) {
     ignoreChildren = false
   } = options;
   return left.id === right.id && (ignoreContent || left.content === right.content) && (ignoreLevel || left.level === right.level) && (ignoreChildren || left.children.length === right.children.length) && left.type === right.type && left.isTodo === right.isTodo && left.todoCompleted === right.todoCompleted && left.todoStatus === right.todoStatus && left.listMarker === right.listMarker && left.isOrderedList === right.isOrderedList && left.continuationIndentType === right.continuationIndentType && left.headingLevel === right.headingLevel && left.codeLanguage === right.codeLanguage && left.quoteLevel === right.quoteLevel && left.editable === right.editable && left.useObsidianRenderer === right.useObsidianRenderer;
+}
+function flattenVisibleBlocks(roots, isCollapsed, options = {}) {
+  const { zoomRootId, isBlockVisible, initialParentCompletedTodo = false } = options;
+  const rows = [];
+  const visit = (block, displayLevel, parentId, parentCompletedTodo, orderIndex) => {
+    if (isBlockVisible && !isBlockVisible(block))
+      return;
+    const collapsed = isCollapsed(block.id);
+    const rowIndex = rows.length;
+    const row = {
+      blockId: block.id,
+      block,
+      level: displayLevel,
+      orderIndex,
+      parentId,
+      hasChildren: block.children.length > 0,
+      isCollapsed: collapsed,
+      parentCompletedTodo,
+      rowIndex,
+      lastDescendantIndex: rowIndex
+    };
+    rows.push(row);
+    if (block.children.length > 0 && !collapsed) {
+      const childCompletedTodo = parentCompletedTodo || !!(block.isTodo && block.todoCompleted);
+      visitChildren(block.children, displayLevel + 1, block.id, childCompletedTodo);
+    }
+    row.lastDescendantIndex = rows.length - 1;
+  };
+  const visitChildren = (siblings, displayLevel, parentId, parentCompletedTodo) => {
+    let orderedListCounter = 0;
+    for (const child of siblings) {
+      let orderIndex = 1;
+      if (child.isOrderedList) {
+        orderedListCounter++;
+        orderIndex = orderedListCounter;
+      } else {
+        orderedListCounter = 0;
+      }
+      visit(child, displayLevel, parentId, parentCompletedTodo, orderIndex);
+    }
+  };
+  if (zoomRootId) {
+    const zoomRoot = findBlockById(roots, zoomRootId);
+    if (!zoomRoot)
+      return rows;
+    visit(zoomRoot, 0, null, initialParentCompletedTodo, 1);
+    return rows;
+  }
+  visitChildren(roots, 0, null, initialParentCompletedTodo);
+  return rows;
 }
 
 // src/outline-parser.ts
@@ -408,7 +439,7 @@ var OutlineParser = class {
         const spaceCount = (indent.match(/ /g) || []).length;
         const level = tabCount > 0 ? tabCount : Math.floor(spaceCount / 2);
         maxLevel = Math.max(maxLevel, level);
-        const isOrderedList = /^\d+\.$/.test(marker);
+        const isOrderedList2 = /^\d+\.$/.test(marker);
         let isTodo = false;
         let todoCompleted = false;
         let todoStatus = void 0;
@@ -524,7 +555,7 @@ var OutlineParser = class {
           todoStatus,
           listMarker: marker,
           // 保存原始列表标记
-          isOrderedList,
+          isOrderedList: isOrderedList2,
           // 是否有序列表
           continuationIndentType,
           // 保存续行的原始缩进类型
@@ -1270,6 +1301,10 @@ var BlockEditor = class {
   updateBlockContent(blockId, content) {
     if (this.undoManager.isInProgress()) {
       console.warn("[BlockEditor] Rejecting content mutation during undo/redo");
+      return;
+    }
+    const currentBlock = findBlockById(this.state.blocks, blockId);
+    if (!currentBlock || currentBlock.content === content) {
       return;
     }
     const blocksBefore = this.state.blocks;
@@ -2374,7 +2409,8 @@ var ui = {
   nav: {
     searchPlaceholder: "Search...",
     switchTheme: "Switch theme",
-    jumpToLevel: "Jump to this level"
+    jumpToLevel: "Jump to this level",
+    jumpToLevelWithTitle: "Jump to: {{title}}"
   },
   // 标签建议菜单
   tagSuggest: {
@@ -2496,6 +2532,7 @@ var features = {
     italic: "Italic",
     highlight: "Highlight",
     insertLink: "Insert link",
+    insertDoubleLink: "Insert double link",
     insertExternalLink: "Insert external link",
     cut: "Cut",
     copy: "Copy",
@@ -3001,7 +3038,8 @@ var ui2 = {
   nav: {
     searchPlaceholder: "\u641C\u7D22...",
     switchTheme: "\u5207\u6362\u4E3B\u9898",
-    jumpToLevel: "\u8DF3\u8F6C\u5230\u6B64\u5C42\u7EA7"
+    jumpToLevel: "\u8DF3\u8F6C\u5230\u6B64\u5C42\u7EA7",
+    jumpToLevelWithTitle: "\u8DF3\u8F6C\u5230\uFF1A{{title}}"
   },
   // 标签建议菜单
   tagSuggest: {
@@ -3123,6 +3161,7 @@ var features2 = {
     italic: "\u659C\u4F53",
     highlight: "\u9AD8\u4EAE",
     insertLink: "\u63D2\u5165\u94FE\u63A5",
+    insertDoubleLink: "\u63D2\u5165\u53CC\u94FE",
     insertExternalLink: "\u63D2\u5165\u5916\u90E8\u94FE\u63A5",
     cut: "\u526A\u5207",
     copy: "\u590D\u5236",
@@ -3448,297 +3487,4187 @@ var ObsidianBlockRenderer = class extends import_obsidian2.Component {
 };
 
 // src/ui/outline-item.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
-// src/features/live-preview-editor.ts
-var import_obsidian3 = require("obsidian");
-var LivePreviewEditor = class {
-  constructor(app, element) {
-    this.app = app;
-    this.element = element;
+// src/live-preview/block-widget.ts
+var LivePreviewBlockWidget = class {
+  constructor(block, options) {
+    this.element = null;
+    this.renderVersion = 0;
+    this.renderComponent = null;
+    this.destroyed = false;
+    this.block = block;
+    this.options = options;
   }
-  /**
-   * 绑定快捷键事件
-   */
-  bindShortcuts() {
-    this.element.addEventListener("keydown", this.handleKeyDown.bind(this));
+  eq(other) {
+    return other instanceof LivePreviewBlockWidget && other.block.id === this.block.id && other.block.source === this.block.source && other.block.sourcePath === this.block.sourcePath && other.block.block === this.block.block;
   }
-  /**
-   * 绑定右键菜单
-   */
-  bindContextMenu() {
-    this.element.addEventListener("contextmenu", this.handleContextMenu.bind(this));
-  }
-  /**
-   * 处理键盘快捷键
-   */
-  handleKeyDown(e) {
-    const isMod = e.ctrlKey || e.metaKey;
-    if (isMod && e.key === "b") {
-      e.preventDefault();
-      e.stopPropagation();
-      this.toggleFormat("**", "**", t("features.placeholder.bold"));
-      return;
-    }
-    if (isMod && e.key === "i") {
-      e.preventDefault();
-      e.stopPropagation();
-      this.toggleFormat("*", "*", t("features.placeholder.italic"));
-      return;
-    }
-    if (isMod && e.key === "k") {
-      e.preventDefault();
-      e.stopPropagation();
-      this.insertLink();
-      return;
-    }
-    if (isMod && e.shiftKey && e.key === "H") {
-      e.preventDefault();
-      e.stopPropagation();
-      this.toggleFormat("==", "==", t("features.placeholder.highlight"));
-      return;
-    }
-  }
-  /**
-   * 处理右键菜单
-   */
-  handleContextMenu(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const menu = new import_obsidian3.Menu();
-    const selection = window.getSelection();
-    const hasSelection = selection && selection.toString().length > 0;
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.bold")).setIcon("bold").onClick(() => this.toggleFormat("**", "**", t("features.placeholder.bold")));
-    });
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.italic")).setIcon("italic").onClick(() => this.toggleFormat("*", "*", t("features.placeholder.italic")));
-    });
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.highlight")).setIcon("highlighter").onClick(() => this.toggleFormat("==", "==", t("features.placeholder.highlight")));
-    });
-    menu.addSeparator();
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.insertLink")).setIcon("link").onClick(() => this.insertLink());
-    });
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.insertExternalLink")).setIcon("external-link").onClick(() => this.insertExternalLink());
-    });
-    menu.addSeparator();
-    if (hasSelection) {
-      menu.addItem((item) => {
-        item.setTitle(t("features.contextMenu.cut")).setIcon("scissors").onClick(() => {
-          document.execCommand("cut");
-        });
-      });
-      menu.addItem((item) => {
-        item.setTitle(t("features.contextMenu.copy")).setIcon("copy").onClick(() => {
-          document.execCommand("copy");
-        });
-      });
-    }
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.paste")).setIcon("clipboard").onClick(() => {
-        document.execCommand("paste");
-      });
-    });
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.pasteAsPlainText")).setIcon("clipboard-paste").onClick(() => {
-        navigator.clipboard.readText().then((text) => {
-          this.insertText(text);
-        });
-      });
-    });
-    menu.addSeparator();
-    menu.addItem((item) => {
-      item.setTitle(t("features.contextMenu.selectAll")).setIcon("select-all").onClick(() => {
-        const range = document.createRange();
-        range.selectNodeContents(this.element);
-        const sel = window.getSelection();
-        if (sel) {
-          sel.removeAllRanges();
-          sel.addRange(range);
+  toDOM(view) {
+    const ownerDocument = view ? view.dom.ownerDocument : document;
+    const element = ownerDocument.createElement(getLivePreviewWidgetTagName(this.block));
+    element.className = "cm-live-preview-block-widget";
+    element.setAttribute("data-live-preview-block-kind", this.block.kind || "markdown");
+    element.setAttribute("data-live-preview-block-layout", this.block.block === false ? "inline" : "block");
+    if (view) {
+      element.addEventListener("pointerdown", (event) => {
+        if (getRenderedLinkTarget(event.target) && shouldOpenRenderedLink(event.target, event)) {
+          event.stopPropagation();
+          return;
         }
+        if (event.button !== 0 || event.ctrlKey || event.metaKey)
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        view.dispatch({
+          selection: { ranges: [{ anchor: this.block.from, head: this.block.from }], mainIndex: 0 },
+          scrollIntoView: true,
+          userEvent: "select.pointer"
+        });
+        view.focus();
       });
+      element.addEventListener("click", (event) => {
+        const target = getRenderedLinkTarget(event.target);
+        if (!target)
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!this.options.onOpenLink || !shouldOpenRenderedLink(event.target, event))
+          return;
+        this.options.onOpenLink(target, this.block.sourcePath, getOpenState(event));
+      });
+    }
+    this.element = element;
+    this.destroyed = false;
+    void this.render(element);
+    return element;
+  }
+  updateDOM(dom) {
+    if (dom.tagName.toLowerCase() !== getLivePreviewWidgetTagName(this.block))
+      return false;
+    this.element = dom;
+    this.destroyed = false;
+    void this.render(dom);
+    return true;
+  }
+  destroy(dom) {
+    if (this.element === dom)
+      this.element = null;
+    this.destroyed = true;
+    this.renderVersion += 1;
+    this.unloadRenderComponent();
+  }
+  async render(container) {
+    const version = this.renderVersion + 1;
+    this.renderVersion = version;
+    this.unloadRenderComponent();
+    const renderer = this.options.renderer;
+    if (!renderer) {
+      this.renderSourceFallback(container);
+      return;
+    }
+    const staging = container.ownerDocument.createElement("div");
+    staging.className = "cm-live-preview-block-render-staging";
+    const component = renderer.createComponent();
+    this.renderComponent = component;
+    try {
+      await renderer.renderMarkdown({
+        markdown: this.block.source,
+        container: staging,
+        sourcePath: this.block.sourcePath,
+        component
+      });
+      if (!this.isCurrentRender(container, version, component)) {
+        component.unload();
+        return;
+      }
+      clearElement(container);
+      moveRenderedContent(staging, container, this.block.block !== false);
+      container.classList.remove("cm-live-preview-source-fallback");
+    } catch (error) {
+      if (this.isCurrentRender(container, version, component)) {
+        component.unload();
+        this.renderComponent = null;
+        this.renderSourceFallback(container);
+        if (this.options.onRenderError)
+          this.options.onRenderError(error, this.block);
+      } else {
+        component.unload();
+      }
+    }
+  }
+  isCurrentRender(container, version, component) {
+    return !this.destroyed && this.element === container && this.renderVersion === version && this.renderComponent === component;
+  }
+  renderSourceFallback(container) {
+    clearElement(container);
+    container.classList.add("cm-live-preview-source-fallback");
+    container.textContent = this.block.source;
+  }
+  unloadRenderComponent() {
+    if (!this.renderComponent)
+      return;
+    this.renderComponent.unload();
+    this.renderComponent = null;
+  }
+};
+function getRenderedLinkTarget(eventTarget) {
+  var _a;
+  const target = eventTarget;
+  if (!target || typeof target.closest !== "function")
+    return null;
+  const link = target.closest("a.internal-link, a.markdown-embed-link");
+  if (!link)
+    return null;
+  const embed = target.closest(".internal-embed");
+  const isEmbedNavigation = ((_a = link.classList) == null ? void 0 : _a.contains("markdown-embed-link")) === true;
+  return (isEmbedNavigation ? embed == null ? void 0 : embed.getAttribute("src") : null) || (isEmbedNavigation ? embed == null ? void 0 : embed.getAttribute("alt") : null) || link.getAttribute("data-href") || (link == null ? void 0 : link.getAttribute("href")) || (embed == null ? void 0 : embed.getAttribute("src")) || (embed == null ? void 0 : embed.getAttribute("alt")) || null;
+}
+function shouldOpenRenderedLink(eventTarget, event) {
+  const target = eventTarget;
+  const embedLink = target && typeof target.closest === "function" ? target.closest("a.markdown-embed-link") : null;
+  return !!embedLink || event.ctrlKey || event.metaKey;
+}
+function getOpenState(event) {
+  return (event.ctrlKey || event.metaKey) && event.altKey || event.shiftKey ? "split" : false;
+}
+function clearElement(element) {
+  while (element.firstChild)
+    element.removeChild(element.firstChild);
+}
+function getLivePreviewWidgetTagName(block) {
+  return block.block === false ? "span" : "div";
+}
+function moveRenderedContent(staging, container, block) {
+  if (block) {
+    while (staging.firstChild)
+      container.appendChild(staging.firstChild);
+    return;
+  }
+  let source = staging;
+  while (source.childNodes.length === 1) {
+    const child = source.firstElementChild;
+    if (!child || child.tagName !== "P" && child.tagName !== "DIV")
+      break;
+    source = child;
+  }
+  while (source.firstChild)
+    container.appendChild(source.firstChild);
+}
+
+// src/live-preview/selection.ts
+var DEFAULT_SELECTION = {
+  ranges: [{ anchor: 0, head: 0 }],
+  mainIndex: 0
+};
+function clampSelection(selection, documentLength) {
+  if (!selection || selection.ranges.length === 0)
+    return DEFAULT_SELECTION;
+  const ranges = selection.ranges.map((range) => clampRange(range, documentLength));
+  const requestedMainIndex = selection.mainIndex === void 0 ? 0 : selection.mainIndex;
+  const mainIndex = Math.max(0, Math.min(requestedMainIndex, ranges.length - 1));
+  return { ranges, mainIndex };
+}
+function selectionEquals(left, right) {
+  if (left.ranges.length !== right.ranges.length)
+    return false;
+  if ((left.mainIndex || 0) !== (right.mainIndex || 0))
+    return false;
+  for (let index = 0; index < left.ranges.length; index += 1) {
+    const leftRange = left.ranges[index];
+    const rightRange = right.ranges[index];
+    if (leftRange.anchor !== rightRange.anchor || leftRange.head !== rightRange.head)
+      return false;
+  }
+  return true;
+}
+function normalizedRange(range) {
+  return { from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head) };
+}
+function clampRange(range, documentLength) {
+  return {
+    anchor: clampPosition(range.anchor, documentLength),
+    head: clampPosition(range.head, documentLength)
+  };
+}
+function clampPosition(position, documentLength) {
+  return Math.max(0, Math.min(position, documentLength));
+}
+
+// src/live-preview/markdown-scanner.ts
+function findClosingParenthesis(value, from) {
+  let depth = 0;
+  for (let position = from; position < value.length; position += 1) {
+    const character = value.charAt(position);
+    if (character === "\\")
+      position += 1;
+    else if (character === "(")
+      depth += 1;
+    else if (character === ")") {
+      if (depth === 0)
+        return position;
+      depth -= 1;
+    }
+  }
+  return -1;
+}
+
+// src/live-preview/markdown-decorations.ts
+var OBSIDIAN_TAG_CHARACTER_CLASS = String.raw`[\p{L}\p{M}\p{N}\p{S}_\/-]`;
+var CLASS_BY_KIND = {
+  emphasis: "cm-em",
+  strong: "cm-strong",
+  strikethrough: "cm-strikethrough",
+  "inline-code": "cm-inline-code",
+  link: "cm-link",
+  wikilink: "cm-hmd-internal-link",
+  highlight: "cm-highlight",
+  comment: "cm-comment",
+  tag: "cm-tag",
+  "block-ref": "cm-block-ref"
+};
+function buildInlineMarkdownDecorationsFromTokens(tokens, selection) {
+  const revealed = getRevealedTokens(tokens, selection);
+  const decorations = [];
+  tokens.forEach((token, index) => {
+    if (revealed.has(index)) {
+      decorations.push({
+        kind: "mark",
+        from: token.from,
+        to: token.to,
+        className: revealedClassName(token)
+      });
+      return;
+    }
+    if (token.kind === "comment" || token.kind === "block-ref") {
+      decorations.push({
+        kind: "replace",
+        from: token.from,
+        to: token.to,
+        className: "cm-live-preview-hidden-comment"
+      });
+      return;
+    }
+    if (token.contentFrom < token.contentTo) {
+      decorations.push({
+        kind: "mark",
+        from: token.contentFrom,
+        to: token.contentTo,
+        className: CLASS_BY_KIND[token.kind]
+      });
+    }
+    token.markers.forEach((marker) => decorations.push({
+      kind: "replace",
+      from: marker.from,
+      to: marker.to,
+      className: "cm-live-preview-formatting-marker"
+    }));
+  });
+  return decorations.sort(compareDecorations);
+}
+function parseInlineMarkdown(document2) {
+  const candidates = [];
+  collectCodeSpans(document2, candidates);
+  collectSimpleOpaquePair(document2, "%%", "comment", 0, candidates);
+  collectWikiLinks(document2, candidates);
+  collectMarkdownLinks(document2, candidates);
+  collectBlockReference(document2, candidates);
+  collectTags(document2, candidates);
+  const opaqueRanges = candidates.filter((candidate) => candidate.opaque);
+  collectDelimited(document2, "**", "strong", 30, candidates, opaqueRanges);
+  collectDelimited(document2, "__", "strong", 30, candidates, opaqueRanges);
+  collectDelimited(document2, "~~", "strikethrough", 30, candidates, opaqueRanges);
+  collectDelimited(document2, "==", "highlight", 30, candidates, opaqueRanges);
+  collectDelimited(document2, "*", "emphasis", 40, candidates, opaqueRanges);
+  collectDelimited(document2, "_", "emphasis", 40, candidates, opaqueRanges);
+  const sorted = candidates.sort(compareCandidates);
+  return sorted.filter((candidate, index) => !isDuplicate(candidate, index, sorted)).map(stripCandidateMetadata);
+}
+function matchObsidianTagQueryAtEnd(document2) {
+  const match = new RegExp(`(?:^|\\s)#(${OBSIDIAN_TAG_CHARACTER_CLASS}*)$`, "u").exec(document2);
+  return match ? { matchLength: match[0].length, query: match[1] } : null;
+}
+function collectBlockReference(document2, candidates) {
+  const match = /(?:^|\s)(\^[A-Za-z0-9-]+)\s*$/.exec(document2);
+  if (!match || match.index === void 0)
+    return;
+  const from = match.index + match[0].indexOf(match[1]);
+  const to = from + match[1].length;
+  candidates.push({
+    kind: "block-ref",
+    from,
+    to,
+    contentFrom: to,
+    contentTo: to,
+    markers: [{ from, to }],
+    priority: 1,
+    opaque: true
+  });
+}
+function collectTags(document2, candidates) {
+  const pattern = new RegExp(`(^|[\\s(])#(${OBSIDIAN_TAG_CHARACTER_CLASS}+)`, "gu");
+  let match;
+  while ((match = pattern.exec(document2)) !== null) {
+    const from = match.index + match[1].length;
+    const to = match.index + match[0].length;
+    if (isInsideOpaque(from, candidates) || !/[^\p{N}]/u.test(match[2]))
+      continue;
+    candidates.push({
+      kind: "tag",
+      from,
+      to,
+      contentFrom: from,
+      contentTo: to,
+      markers: [],
+      priority: 25
     });
-    menu.showAtMouseEvent(e);
   }
-  /**
-   * 切换格式（加粗、斜体、高亮等）
-   */
-  toggleFormat(prefix, suffix, placeholder) {
-    if (this.element instanceof HTMLTextAreaElement) {
-      this.toggleFormatTextarea(prefix, suffix, placeholder);
-      return;
+}
+function collectCodeSpans(document2, candidates) {
+  let position = 0;
+  while (position < document2.length) {
+    if (document2.charAt(position) !== "`") {
+      position += 1;
+      continue;
     }
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0)
+    const markerLength = countRepeated(document2, position, "`");
+    const marker = repeatCharacter("`", markerLength);
+    const close = document2.indexOf(marker, position + markerLength);
+    if (close < 0 || containsLineBreak(document2, position, close + markerLength)) {
+      position += markerLength;
+      continue;
+    }
+    candidates.push({
+      kind: "inline-code",
+      from: position,
+      to: close + markerLength,
+      contentFrom: position + markerLength,
+      contentTo: close,
+      markers: [{ from: position, to: position + markerLength }, { from: close, to: close + markerLength }],
+      priority: 10,
+      opaque: true
+    });
+    position = close + markerLength;
+  }
+}
+function collectWikiLinks(document2, candidates) {
+  let position = 0;
+  while (position < document2.length - 1) {
+    const embedded = document2.charAt(position) === "!" && document2.substr(position + 1, 2) === "[[";
+    const start = embedded ? position + 1 : position;
+    const escaped = isEscaped(document2, embedded ? position : start);
+    if (document2.substr(start, 2) !== "[[" || isInsideOpaque(start, candidates) || escaped) {
+      position += escaped && embedded ? 3 : 1;
+      continue;
+    }
+    const close = document2.indexOf("]]", start + 2);
+    if (close < 0 || containsLineBreak(document2, start, close + 2)) {
+      position += 2;
+      continue;
+    }
+    const pipe = document2.lastIndexOf("|", close);
+    const hasAlias = pipe >= start + 2;
+    const from = embedded ? position : start;
+    const contentFrom = hasAlias ? pipe + 1 : start + 2;
+    const markers = hasAlias ? [{ from, to: pipe + 1 }, { from: close, to: close + 2 }] : [{ from, to: start + 2 }, { from: close, to: close + 2 }];
+    candidates.push({
+      kind: "wikilink",
+      from,
+      to: close + 2,
+      contentFrom,
+      contentTo: close,
+      markers,
+      priority: 20,
+      opaque: true
+    });
+    position = close + 2;
+  }
+}
+function collectMarkdownLinks(document2, candidates) {
+  let position = 0;
+  while (position < document2.length) {
+    if (document2.charAt(position) !== "[" || isInsideOpaque(position, candidates)) {
+      position += 1;
+      continue;
+    }
+    const labelEnd = findUnescaped(document2, "]", position + 1);
+    if (labelEnd < 0 || document2.charAt(labelEnd + 1) !== "(") {
+      position += 1;
+      continue;
+    }
+    const destinationEnd = findClosingParenthesis(document2, labelEnd + 2);
+    if (destinationEnd < 0 || containsLineBreak(document2, position, destinationEnd + 1)) {
+      position += 1;
+      continue;
+    }
+    candidates.push({
+      kind: "link",
+      from: position,
+      to: destinationEnd + 1,
+      contentFrom: position + 1,
+      contentTo: labelEnd,
+      markers: [{ from: position, to: position + 1 }, { from: labelEnd, to: destinationEnd + 1 }],
+      priority: 20,
+      opaque: true
+    });
+    position = destinationEnd + 1;
+  }
+}
+function collectDelimited(document2, delimiter, kind, priority, candidates, opaqueRanges) {
+  let open = -1;
+  let position = 0;
+  while (position <= document2.length - delimiter.length) {
+    if (document2.substr(position, delimiter.length) !== delimiter || isInsideOpaque(position, opaqueRanges)) {
+      position += 1;
+      continue;
+    }
+    if (delimiter.length === 1 && isPartOfDoubleDelimiter(document2, position, delimiter)) {
+      position += 1;
+      continue;
+    }
+    if (open < 0) {
+      if (canOpenDelimiter(document2, position, delimiter.length))
+        open = position;
+    } else if (canCloseDelimiter(document2, position)) {
+      candidates.push({
+        kind,
+        from: open,
+        to: position + delimiter.length,
+        contentFrom: open + delimiter.length,
+        contentTo: position,
+        markers: [{ from: open, to: open + delimiter.length }, { from: position, to: position + delimiter.length }],
+        priority
+      });
+      open = -1;
+    }
+    position += delimiter.length;
+  }
+}
+function collectSimpleOpaquePair(document2, delimiter, kind, priority, candidates) {
+  let position = 0;
+  while (position <= document2.length - delimiter.length) {
+    const open = findDelimiterOutsideOpaque(document2, delimiter, position, candidates);
+    if (open < 0)
       return;
-    const range = selection.getRangeAt(0);
-    const selectedText = selection.toString();
-    if (selectedText) {
-      const container = range.commonAncestorContainer;
-      const textContent = container.textContent || "";
-      const startOffset = range.startOffset;
-      const endOffset = range.endOffset;
-      const beforeText = textContent.substring(Math.max(0, startOffset - prefix.length), startOffset);
-      const afterText = textContent.substring(endOffset, Math.min(textContent.length, endOffset + suffix.length));
-      if (beforeText === prefix && afterText === suffix) {
-        const newRange = document.createRange();
-        newRange.setStart(container, startOffset - prefix.length);
-        newRange.setEnd(container, endOffset + suffix.length);
-        newRange.deleteContents();
-        newRange.insertNode(document.createTextNode(selectedText));
-      } else {
-        range.deleteContents();
-        range.insertNode(document.createTextNode(prefix + selectedText + suffix));
-      }
+    const close = findDelimiterOutsideOpaque(document2, delimiter, open + delimiter.length, candidates);
+    if (close < 0)
+      return;
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      if (open <= candidates[index].from && candidates[index].to <= close + delimiter.length)
+        candidates.splice(index, 1);
+    }
+    candidates.push({
+      kind,
+      from: open,
+      to: close + delimiter.length,
+      contentFrom: open + delimiter.length,
+      contentTo: close,
+      markers: [{ from: open, to: open + delimiter.length }, { from: close, to: close + delimiter.length }],
+      priority,
+      opaque: true
+    });
+    position = close + delimiter.length;
+  }
+}
+function findDelimiterOutsideOpaque(document2, delimiter, start, candidates) {
+  let position = document2.indexOf(delimiter, start);
+  while (position >= 0 && isInsideOpaque(position, candidates)) {
+    position = document2.indexOf(delimiter, position + delimiter.length);
+  }
+  return position;
+}
+function getRevealedTokens(tokens, selection) {
+  const revealed = /* @__PURE__ */ new Set();
+  selection.ranges.forEach((selectionRange) => {
+    const range = normalizedRange(selectionRange);
+    const containing = [];
+    tokens.forEach((token, index) => {
+      if (containsSelection(token, range.from, range.to))
+        containing.push(index);
+    });
+    if (containing.length > 0) {
+      containing.sort((left, right) => tokenLength(tokens[left]) - tokenLength(tokens[right]));
+      revealed.add(containing[0]);
     } else {
-      range.insertNode(document.createTextNode(prefix + placeholder + suffix));
+      tokens.forEach((token, index) => {
+        if (rangesOverlap(token.from, token.to, range.from, range.to))
+          revealed.add(index);
+      });
     }
-    this.element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  return revealed;
+}
+function containsSelection(token, from, to) {
+  if (from === to) {
+    const includeTrailingBoundary = token.kind === "link" || token.kind === "wikilink";
+    return token.from < from && (includeTrailingBoundary ? from <= token.to : from < token.to);
+  }
+  return token.from <= from && to <= token.to;
+}
+function revealedClassName(token) {
+  if (token.kind === "link" || token.kind === "wikilink") {
+    return `cm-live-preview-source-revealed ${CLASS_BY_KIND[token.kind]}`;
+  }
+  return "cm-live-preview-source-revealed";
+}
+function rangesOverlap(leftFrom, leftTo, rightFrom, rightTo) {
+  if (rightFrom === rightTo)
+    return false;
+  return leftFrom < rightTo && rightFrom < leftTo;
+}
+function tokenLength(token) {
+  return token.to - token.from;
+}
+function compareCandidates(left, right) {
+  if (left.from !== right.from)
+    return left.from - right.from;
+  if (left.to !== right.to)
+    return right.to - left.to;
+  return left.priority - right.priority;
+}
+function compareDecorations(left, right) {
+  if (left.from !== right.from)
+    return left.from - right.from;
+  if (left.to !== right.to)
+    return left.to - right.to;
+  return left.kind.localeCompare(right.kind);
+}
+function isDuplicate(candidate, index, sorted) {
+  if (index === 0)
+    return false;
+  const previous = sorted[index - 1];
+  return previous.from === candidate.from && previous.to === candidate.to && previous.kind === candidate.kind;
+}
+function stripCandidateMetadata(candidate) {
+  return {
+    kind: candidate.kind,
+    from: candidate.from,
+    to: candidate.to,
+    contentFrom: candidate.contentFrom,
+    contentTo: candidate.contentTo,
+    markers: candidate.markers
+  };
+}
+function isInsideOpaque(position, ranges) {
+  return ranges.some((range) => range.from <= position && position < range.to);
+}
+function isEscaped(document2, position) {
+  let backslashes = 0;
+  for (let index = position - 1; index >= 0 && document2.charAt(index) === "\\"; index -= 1)
+    backslashes += 1;
+  return backslashes % 2 === 1;
+}
+function isPartOfDoubleDelimiter(document2, position, delimiter) {
+  return document2.charAt(position - 1) === delimiter || document2.charAt(position + 1) === delimiter;
+}
+function canOpenDelimiter(document2, position, delimiterLength) {
+  const next = document2.charAt(position + delimiterLength);
+  return next.length > 0 && !isWhitespace(next);
+}
+function canCloseDelimiter(document2, position) {
+  const previous = document2.charAt(position - 1);
+  return previous.length > 0 && !isWhitespace(previous);
+}
+function isWhitespace(character) {
+  return /\s/.test(character);
+}
+function countRepeated(document2, position, character) {
+  let count2 = 0;
+  while (document2.charAt(position + count2) === character)
+    count2 += 1;
+  return count2;
+}
+function repeatCharacter(character, count2) {
+  let result = "";
+  for (let index = 0; index < count2; index += 1)
+    result += character;
+  return result;
+}
+function containsLineBreak(document2, from, to) {
+  const text = document2.slice(from, to);
+  return text.indexOf("\n") >= 0 || text.indexOf("\r") >= 0;
+}
+function findUnescaped(document2, character, from) {
+  for (let position = from; position < document2.length; position += 1) {
+    if (document2.charAt(position) === character && document2.charAt(position - 1) !== "\\")
+      return position;
+  }
+  return -1;
+}
+
+// src/live-preview/markdown-formatting.ts
+function createMarkdownToggleEdit(document2, selection, prefix, suffix = prefix) {
+  const range = normalizedRange(selection.ranges[selection.mainIndex || 0]);
+  const selected = document2.slice(range.from, range.to);
+  const outsideFrom = range.from - prefix.length;
+  const outsideTo = range.to + suffix.length;
+  if (outsideFrom >= 0 && document2.slice(outsideFrom, range.from) === prefix && document2.slice(range.to, outsideTo) === suffix) {
+    return {
+      from: outsideFrom,
+      to: outsideTo,
+      insert: selected,
+      selection: { ranges: [{ anchor: outsideFrom, head: outsideFrom + selected.length }], mainIndex: 0 }
+    };
+  }
+  if (selected.startsWith(prefix) && selected.endsWith(suffix) && selected.length >= prefix.length + suffix.length) {
+    const insert = selected.slice(prefix.length, selected.length - suffix.length);
+    return {
+      from: range.from,
+      to: range.to,
+      insert,
+      selection: { ranges: [{ anchor: range.from, head: range.from + insert.length }], mainIndex: 0 }
+    };
+  }
+  return {
+    from: range.from,
+    to: range.to,
+    insert: prefix + selected + suffix,
+    selection: {
+      ranges: [{ anchor: range.from + prefix.length, head: range.from + prefix.length + selected.length }],
+      mainIndex: 0
+    }
+  };
+}
+
+// src/live-preview/view-lifecycle.ts
+function syncLivePreviewController(current, enabled, create) {
+  if (enabled)
+    return current || create();
+  current == null ? void 0 : current.destroy();
+  return null;
+}
+function discardLivePreviewForExternalReload(controller, activeEdit, unpin) {
+  controller == null ? void 0 : controller.discardActiveEdit();
+  if (activeEdit)
+    unpin(activeEdit.blockId);
+  return null;
+}
+
+// src/live-preview/codemirror-adapter.ts
+var import_view2 = require("@codemirror/view");
+var import_state2 = require("@codemirror/state");
+
+// node_modules/@codemirror/lang-markdown/dist/index.js
+var import_state = require("@codemirror/state");
+var import_view = require("@codemirror/view");
+var import_language = require("@codemirror/language");
+var import_autocomplete = require("@codemirror/autocomplete");
+
+// node_modules/@lezer/markdown/dist/index.js
+var import_common3 = require("@lezer/common");
+var import_highlight = require("@lezer/highlight");
+var CompositeBlock = class {
+  static create(type, value, from, parentHash, end) {
+    let hash = parentHash + (parentHash << 8) + type + (value << 4) | 0;
+    return new CompositeBlock(type, value, from, hash, end, [], []);
+  }
+  constructor(type, value, from, hash, end, children, positions) {
+    this.type = type;
+    this.value = value;
+    this.from = from;
+    this.hash = hash;
+    this.end = end;
+    this.children = children;
+    this.positions = positions;
+    this.hashProp = [[import_common3.NodeProp.contextHash, hash]];
+  }
+  addChild(child, pos) {
+    if (child.prop(import_common3.NodeProp.contextHash) != this.hash)
+      child = new import_common3.Tree(child.type, child.children, child.positions, child.length, this.hashProp);
+    this.children.push(child);
+    this.positions.push(pos);
+  }
+  toTree(nodeSet, end = this.end) {
+    let last = this.children.length - 1;
+    if (last >= 0)
+      end = Math.max(end, this.positions[last] + this.children[last].length + this.from);
+    return new import_common3.Tree(nodeSet.types[this.type], this.children, this.positions, end - this.from).balance({
+      makeTree: (children, positions, length) => new import_common3.Tree(import_common3.NodeType.none, children, positions, length, this.hashProp)
+    });
+  }
+};
+var Type;
+(function(Type2) {
+  Type2[Type2["Document"] = 1] = "Document";
+  Type2[Type2["CodeBlock"] = 2] = "CodeBlock";
+  Type2[Type2["FencedCode"] = 3] = "FencedCode";
+  Type2[Type2["Blockquote"] = 4] = "Blockquote";
+  Type2[Type2["HorizontalRule"] = 5] = "HorizontalRule";
+  Type2[Type2["BulletList"] = 6] = "BulletList";
+  Type2[Type2["OrderedList"] = 7] = "OrderedList";
+  Type2[Type2["ListItem"] = 8] = "ListItem";
+  Type2[Type2["ATXHeading1"] = 9] = "ATXHeading1";
+  Type2[Type2["ATXHeading2"] = 10] = "ATXHeading2";
+  Type2[Type2["ATXHeading3"] = 11] = "ATXHeading3";
+  Type2[Type2["ATXHeading4"] = 12] = "ATXHeading4";
+  Type2[Type2["ATXHeading5"] = 13] = "ATXHeading5";
+  Type2[Type2["ATXHeading6"] = 14] = "ATXHeading6";
+  Type2[Type2["SetextHeading1"] = 15] = "SetextHeading1";
+  Type2[Type2["SetextHeading2"] = 16] = "SetextHeading2";
+  Type2[Type2["HTMLBlock"] = 17] = "HTMLBlock";
+  Type2[Type2["LinkReference"] = 18] = "LinkReference";
+  Type2[Type2["Paragraph"] = 19] = "Paragraph";
+  Type2[Type2["CommentBlock"] = 20] = "CommentBlock";
+  Type2[Type2["ProcessingInstructionBlock"] = 21] = "ProcessingInstructionBlock";
+  Type2[Type2["Escape"] = 22] = "Escape";
+  Type2[Type2["Entity"] = 23] = "Entity";
+  Type2[Type2["HardBreak"] = 24] = "HardBreak";
+  Type2[Type2["Emphasis"] = 25] = "Emphasis";
+  Type2[Type2["StrongEmphasis"] = 26] = "StrongEmphasis";
+  Type2[Type2["Link"] = 27] = "Link";
+  Type2[Type2["Image"] = 28] = "Image";
+  Type2[Type2["InlineCode"] = 29] = "InlineCode";
+  Type2[Type2["HTMLTag"] = 30] = "HTMLTag";
+  Type2[Type2["Comment"] = 31] = "Comment";
+  Type2[Type2["ProcessingInstruction"] = 32] = "ProcessingInstruction";
+  Type2[Type2["Autolink"] = 33] = "Autolink";
+  Type2[Type2["HeaderMark"] = 34] = "HeaderMark";
+  Type2[Type2["QuoteMark"] = 35] = "QuoteMark";
+  Type2[Type2["ListMark"] = 36] = "ListMark";
+  Type2[Type2["LinkMark"] = 37] = "LinkMark";
+  Type2[Type2["EmphasisMark"] = 38] = "EmphasisMark";
+  Type2[Type2["CodeMark"] = 39] = "CodeMark";
+  Type2[Type2["CodeText"] = 40] = "CodeText";
+  Type2[Type2["CodeInfo"] = 41] = "CodeInfo";
+  Type2[Type2["LinkTitle"] = 42] = "LinkTitle";
+  Type2[Type2["LinkLabel"] = 43] = "LinkLabel";
+  Type2[Type2["URL"] = 44] = "URL";
+})(Type || (Type = {}));
+var LeafBlock = class {
+  /**
+  @internal
+  */
+  constructor(start, content) {
+    this.start = start;
+    this.content = content;
+    this.marks = [];
+    this.parsers = [];
+  }
+};
+var Line = class {
+  constructor() {
+    this.text = "";
+    this.baseIndent = 0;
+    this.basePos = 0;
+    this.depth = 0;
+    this.markers = [];
+    this.pos = 0;
+    this.indent = 0;
+    this.next = -1;
   }
   /**
-   * 为 textarea 元素切换格式
-   */
-  toggleFormatTextarea(prefix, suffix, placeholder) {
-    const textarea = this.element;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = textarea.value.substring(start, end);
-    const beforeText = textarea.value.substring(0, start);
-    const afterText = textarea.value.substring(end);
-    let newText;
-    let newCursorPos;
-    if (selectedText) {
-      const hasPrefixBefore = beforeText.endsWith(prefix);
-      const hasSuffixAfter = afterText.startsWith(suffix);
-      if (hasPrefixBefore && hasSuffixAfter) {
-        newText = beforeText.slice(0, -prefix.length) + selectedText + afterText.slice(suffix.length);
-        newCursorPos = start - prefix.length;
+  @internal
+  */
+  forward() {
+    if (this.basePos > this.pos)
+      this.forwardInner();
+  }
+  /**
+  @internal
+  */
+  forwardInner() {
+    let newPos = this.skipSpace(this.basePos);
+    this.indent = this.countIndent(newPos, this.pos, this.indent);
+    this.pos = newPos;
+    this.next = newPos == this.text.length ? -1 : this.text.charCodeAt(newPos);
+  }
+  /**
+  Skip whitespace after the given position, return the position of
+  the next non-space character or the end of the line if there's
+  only space after `from`.
+  */
+  skipSpace(from) {
+    return skipSpace(this.text, from);
+  }
+  /**
+  @internal
+  */
+  reset(text) {
+    this.text = text;
+    this.baseIndent = this.basePos = this.pos = this.indent = 0;
+    this.forwardInner();
+    this.depth = 1;
+    while (this.markers.length)
+      this.markers.pop();
+  }
+  /**
+  Move the line's base position forward to the given position.
+  This should only be called by composite [block
+  parsers](#BlockParser.parse) or [markup skipping
+  functions](#NodeSpec.composite).
+  */
+  moveBase(to) {
+    this.basePos = to;
+    this.baseIndent = this.countIndent(to, this.pos, this.indent);
+  }
+  /**
+  Move the line's base position forward to the given _column_.
+  */
+  moveBaseColumn(indent) {
+    this.baseIndent = indent;
+    this.basePos = this.findColumn(indent);
+  }
+  /**
+  Store a composite-block-level marker. Should be called from
+  [markup skipping functions](#NodeSpec.composite) when they
+  consume any non-whitespace characters.
+  */
+  addMarker(elt2) {
+    this.markers.push(elt2);
+  }
+  /**
+  Find the column position at `to`, optionally starting at a given
+  position and column.
+  */
+  countIndent(to, from = 0, indent = 0) {
+    for (let i = from; i < to; i++)
+      indent += this.text.charCodeAt(i) == 9 ? 4 - indent % 4 : 1;
+    return indent;
+  }
+  /**
+  Find the position corresponding to the given column.
+  */
+  findColumn(goal) {
+    let i = 0;
+    for (let indent = 0; i < this.text.length && indent < goal; i++)
+      indent += this.text.charCodeAt(i) == 9 ? 4 - indent % 4 : 1;
+    return i;
+  }
+  /**
+  @internal
+  */
+  scrub() {
+    if (!this.baseIndent)
+      return this.text;
+    let result = "";
+    for (let i = 0; i < this.basePos; i++)
+      result += " ";
+    return result + this.text.slice(this.basePos);
+  }
+};
+function skipForList(bl, cx, line) {
+  if (line.pos == line.text.length || bl != cx.block && line.indent >= cx.stack[line.depth + 1].value + line.baseIndent)
+    return true;
+  if (line.indent >= line.baseIndent + 4)
+    return false;
+  let size = (bl.type == Type.OrderedList ? isOrderedList : isBulletList)(line, cx, false);
+  return size > 0 && (bl.type != Type.BulletList || isHorizontalRule(line, cx, false) < 0) && line.text.charCodeAt(line.pos + size - 1) == bl.value;
+}
+var DefaultSkipMarkup = {
+  [Type.Blockquote](bl, cx, line) {
+    if (line.next != 62)
+      return false;
+    line.markers.push(elt(Type.QuoteMark, cx.lineStart + line.pos, cx.lineStart + line.pos + 1));
+    line.moveBase(line.pos + (space(line.text.charCodeAt(line.pos + 1)) ? 2 : 1));
+    bl.end = cx.lineStart + line.text.length;
+    return true;
+  },
+  [Type.ListItem](bl, _cx, line) {
+    if (line.indent < line.baseIndent + bl.value && line.next > -1)
+      return false;
+    line.moveBaseColumn(line.baseIndent + bl.value);
+    return true;
+  },
+  [Type.OrderedList]: skipForList,
+  [Type.BulletList]: skipForList,
+  [Type.Document]() {
+    return true;
+  }
+};
+function space(ch) {
+  return ch == 32 || ch == 9 || ch == 10 || ch == 13;
+}
+function skipSpace(line, i = 0) {
+  while (i < line.length && space(line.charCodeAt(i)))
+    i++;
+  return i;
+}
+function skipSpaceBack(line, i, to) {
+  while (i > to && space(line.charCodeAt(i - 1)))
+    i--;
+  return i;
+}
+function isFencedCode(line) {
+  if (line.next != 96 && line.next != 126)
+    return -1;
+  let pos = line.pos + 1;
+  while (pos < line.text.length && line.text.charCodeAt(pos) == line.next)
+    pos++;
+  if (pos < line.pos + 3)
+    return -1;
+  if (line.next == 96) {
+    for (let i = pos; i < line.text.length; i++)
+      if (line.text.charCodeAt(i) == 96)
+        return -1;
+  }
+  return pos;
+}
+function isBlockquote(line) {
+  return line.next != 62 ? -1 : line.text.charCodeAt(line.pos + 1) == 32 ? 2 : 1;
+}
+function isHorizontalRule(line, cx, breaking) {
+  if (line.next != 42 && line.next != 45 && line.next != 95)
+    return -1;
+  let count2 = 1;
+  for (let pos = line.pos + 1; pos < line.text.length; pos++) {
+    let ch = line.text.charCodeAt(pos);
+    if (ch == line.next)
+      count2++;
+    else if (!space(ch))
+      return -1;
+  }
+  if (breaking && line.next == 45 && isSetextUnderline(line) > -1 && line.depth == cx.stack.length && cx.parser.leafBlockParsers.indexOf(DefaultLeafBlocks.SetextHeading) > -1)
+    return -1;
+  return count2 < 3 ? -1 : 1;
+}
+function inList(cx, type) {
+  for (let i = cx.stack.length - 1; i >= 0; i--)
+    if (cx.stack[i].type == type)
+      return true;
+  return false;
+}
+function isBulletList(line, cx, breaking) {
+  return (line.next == 45 || line.next == 43 || line.next == 42) && (line.pos == line.text.length - 1 || space(line.text.charCodeAt(line.pos + 1))) && (!breaking || inList(cx, Type.BulletList) || line.skipSpace(line.pos + 2) < line.text.length) ? 1 : -1;
+}
+function isOrderedList(line, cx, breaking) {
+  let pos = line.pos, next = line.next;
+  for (; ; ) {
+    if (next >= 48 && next <= 57)
+      pos++;
+    else
+      break;
+    if (pos == line.text.length)
+      return -1;
+    next = line.text.charCodeAt(pos);
+  }
+  if (pos == line.pos || pos > line.pos + 9 || next != 46 && next != 41 || pos < line.text.length - 1 && !space(line.text.charCodeAt(pos + 1)) || breaking && !inList(cx, Type.OrderedList) && (line.skipSpace(pos + 1) == line.text.length || pos > line.pos + 1 || line.next != 49))
+    return -1;
+  return pos + 1 - line.pos;
+}
+function isAtxHeading(line) {
+  if (line.next != 35)
+    return -1;
+  let pos = line.pos + 1;
+  while (pos < line.text.length && line.text.charCodeAt(pos) == 35)
+    pos++;
+  if (pos < line.text.length && line.text.charCodeAt(pos) != 32)
+    return -1;
+  let size = pos - line.pos;
+  return size > 6 ? -1 : size;
+}
+function isSetextUnderline(line) {
+  if (line.next != 45 && line.next != 61 || line.indent >= line.baseIndent + 4)
+    return -1;
+  let pos = line.pos + 1;
+  while (pos < line.text.length && line.text.charCodeAt(pos) == line.next)
+    pos++;
+  let end = pos;
+  while (pos < line.text.length && space(line.text.charCodeAt(pos)))
+    pos++;
+  return pos == line.text.length ? end : -1;
+}
+var EmptyLine = /^[ \t]*$/;
+var CommentEnd = /-->/;
+var ProcessingEnd = /\?>/;
+var HTMLBlockStyle = [
+  [/^<(?:script|pre|style)(?:\s|>|$)/i, /<\/(?:script|pre|style)>/i],
+  [/^\s*<!--/, CommentEnd],
+  [/^\s*<\?/, ProcessingEnd],
+  [/^\s*<![A-Z]/, />/],
+  [/^\s*<!\[CDATA\[/, /\]\]>/],
+  [/^\s*<\/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|\/?>|$)/i, EmptyLine],
+  [/^\s*(?:<\/[a-z][\w-]*\s*>|<[a-z][\w-]*(\s+[a-z:_][\w-.]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*>)\s*$/i, EmptyLine]
+];
+function isHTMLBlock(line, _cx, breaking) {
+  if (line.next != 60)
+    return -1;
+  let rest = line.text.slice(line.pos);
+  for (let i = 0, e = HTMLBlockStyle.length - (breaking ? 1 : 0); i < e; i++)
+    if (HTMLBlockStyle[i][0].test(rest))
+      return i;
+  return -1;
+}
+function getListIndent(line, pos) {
+  let indentAfter = line.countIndent(pos, line.pos, line.indent);
+  let skipped = line.skipSpace(pos);
+  let indented = line.countIndent(skipped, pos, indentAfter);
+  return indented >= indentAfter + 5 || skipped == line.text.length ? indentAfter + 1 : indented;
+}
+function addCodeText(marks, from, to) {
+  let last = marks.length - 1;
+  if (last >= 0 && marks[last].to == from && marks[last].type == Type.CodeText)
+    marks[last].to = to;
+  else
+    marks.push(elt(Type.CodeText, from, to));
+}
+var DefaultBlockParsers = {
+  LinkReference: void 0,
+  IndentedCode(cx, line) {
+    let base = line.baseIndent + 4;
+    if (line.indent < base)
+      return false;
+    let start = line.findColumn(base);
+    let from = cx.lineStart + start, to = cx.lineStart + line.text.length;
+    let marks = [], pendingMarks = [];
+    addCodeText(marks, from, to);
+    while (cx.nextLine() && line.depth >= cx.stack.length) {
+      if (line.pos == line.text.length) {
+        addCodeText(pendingMarks, cx.lineStart - 1, cx.lineStart);
+        for (let m of line.markers)
+          pendingMarks.push(m);
+      } else if (line.indent < base) {
+        break;
       } else {
-        newText = beforeText + prefix + selectedText + suffix + afterText;
-        newCursorPos = start + prefix.length + selectedText.length + suffix.length;
+        if (pendingMarks.length) {
+          for (let m of pendingMarks) {
+            if (m.type == Type.CodeText)
+              addCodeText(marks, m.from, m.to);
+            else
+              marks.push(m);
+          }
+          pendingMarks = [];
+        }
+        addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+        for (let m of line.markers)
+          marks.push(m);
+        to = cx.lineStart + line.text.length;
+        let codeStart = cx.lineStart + line.findColumn(line.baseIndent + 4);
+        if (codeStart < to)
+          addCodeText(marks, codeStart, to);
       }
+    }
+    if (pendingMarks.length) {
+      pendingMarks = pendingMarks.filter((m) => m.type != Type.CodeText);
+      if (pendingMarks.length)
+        line.markers = pendingMarks.concat(line.markers);
+    }
+    cx.addNode(cx.buffer.writeElements(marks, -from).finish(Type.CodeBlock, to - from), from);
+    return true;
+  },
+  FencedCode(cx, line) {
+    let fenceEnd = isFencedCode(line);
+    if (fenceEnd < 0)
+      return false;
+    let from = cx.lineStart + line.pos, ch = line.next, len = fenceEnd - line.pos;
+    let infoFrom = line.skipSpace(fenceEnd), infoTo = skipSpaceBack(line.text, line.text.length, infoFrom);
+    let marks = [elt(Type.CodeMark, from, from + len)];
+    if (infoFrom < infoTo)
+      marks.push(elt(Type.CodeInfo, cx.lineStart + infoFrom, cx.lineStart + infoTo));
+    for (let first = true, empty = true, hasLine = false; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
+      let i = line.pos;
+      if (line.indent - line.baseIndent < 4)
+        while (i < line.text.length && line.text.charCodeAt(i) == ch)
+          i++;
+      if (i - line.pos >= len && line.skipSpace(i) == line.text.length) {
+        for (let m of line.markers)
+          marks.push(m);
+        if (empty && hasLine)
+          addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+        marks.push(elt(Type.CodeMark, cx.lineStart + line.pos, cx.lineStart + i));
+        cx.nextLine();
+        break;
+      } else {
+        hasLine = true;
+        if (!first) {
+          addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+          empty = false;
+        }
+        for (let m of line.markers)
+          marks.push(m);
+        let textStart = cx.lineStart + line.basePos, textEnd = cx.lineStart + line.text.length;
+        if (textStart < textEnd) {
+          addCodeText(marks, textStart, textEnd);
+          empty = false;
+        }
+      }
+    }
+    cx.addNode(cx.buffer.writeElements(marks, -from).finish(Type.FencedCode, cx.prevLineEnd() - from), from);
+    return true;
+  },
+  Blockquote(cx, line) {
+    let size = isBlockquote(line);
+    if (size < 0)
+      return false;
+    cx.startContext(Type.Blockquote, line.pos);
+    cx.addNode(Type.QuoteMark, cx.lineStart + line.pos, cx.lineStart + line.pos + 1);
+    line.moveBase(line.pos + size);
+    return null;
+  },
+  HorizontalRule(cx, line) {
+    if (isHorizontalRule(line, cx, false) < 0)
+      return false;
+    let from = cx.lineStart + line.pos;
+    cx.nextLine();
+    cx.addNode(Type.HorizontalRule, from);
+    return true;
+  },
+  BulletList(cx, line) {
+    let size = isBulletList(line, cx, false);
+    if (size < 0)
+      return false;
+    if (cx.block.type != Type.BulletList)
+      cx.startContext(Type.BulletList, line.basePos, line.next);
+    let newBase = getListIndent(line, line.pos + 1);
+    cx.startContext(Type.ListItem, line.basePos, newBase - line.baseIndent);
+    cx.addNode(Type.ListMark, cx.lineStart + line.pos, cx.lineStart + line.pos + size);
+    line.moveBaseColumn(newBase);
+    return null;
+  },
+  OrderedList(cx, line) {
+    let size = isOrderedList(line, cx, false);
+    if (size < 0)
+      return false;
+    if (cx.block.type != Type.OrderedList)
+      cx.startContext(Type.OrderedList, line.basePos, line.text.charCodeAt(line.pos + size - 1));
+    let newBase = getListIndent(line, line.pos + size);
+    cx.startContext(Type.ListItem, line.basePos, newBase - line.baseIndent);
+    cx.addNode(Type.ListMark, cx.lineStart + line.pos, cx.lineStart + line.pos + size);
+    line.moveBaseColumn(newBase);
+    return null;
+  },
+  ATXHeading(cx, line) {
+    let size = isAtxHeading(line);
+    if (size < 0)
+      return false;
+    let off = line.pos, from = cx.lineStart + off;
+    let endOfSpace = skipSpaceBack(line.text, line.text.length, off), after = endOfSpace;
+    while (after > off && line.text.charCodeAt(after - 1) == line.next)
+      after--;
+    if (after == endOfSpace || after == off || !space(line.text.charCodeAt(after - 1)))
+      after = line.text.length;
+    let buf = cx.buffer.write(Type.HeaderMark, 0, size).writeElements(cx.parser.parseInline(line.text.slice(off + size + 1, after), from + size + 1), -from);
+    if (after < line.text.length)
+      buf.write(Type.HeaderMark, after - off, endOfSpace - off);
+    let node = buf.finish(Type.ATXHeading1 - 1 + size, line.text.length - off);
+    cx.nextLine();
+    cx.addNode(node, from);
+    return true;
+  },
+  HTMLBlock(cx, line) {
+    let type = isHTMLBlock(line, cx, false);
+    if (type < 0)
+      return false;
+    let from = cx.lineStart + line.pos, end = HTMLBlockStyle[type][1];
+    let marks = [], trailing = end != EmptyLine;
+    while (!end.test(line.text) && cx.nextLine()) {
+      if (line.depth < cx.stack.length) {
+        trailing = false;
+        break;
+      }
+      for (let m of line.markers)
+        marks.push(m);
+    }
+    if (trailing)
+      cx.nextLine();
+    let nodeType = end == CommentEnd ? Type.CommentBlock : end == ProcessingEnd ? Type.ProcessingInstructionBlock : Type.HTMLBlock;
+    let to = cx.prevLineEnd();
+    cx.addNode(cx.buffer.writeElements(marks, -from).finish(nodeType, to - from), from);
+    return true;
+  },
+  SetextHeading: void 0
+  // Specifies relative precedence for block-continue function
+};
+var LinkReferenceParser = class {
+  constructor(leaf) {
+    this.stage = 0;
+    this.elts = [];
+    this.pos = 0;
+    this.start = leaf.start;
+    this.advance(leaf.content);
+  }
+  nextLine(cx, line, leaf) {
+    if (this.stage == -1)
+      return false;
+    let content = leaf.content + "\n" + line.scrub();
+    let finish = this.advance(content);
+    if (finish > -1 && finish < content.length)
+      return this.complete(cx, leaf, finish);
+    return false;
+  }
+  finish(cx, leaf) {
+    if ((this.stage == 2 || this.stage == 3) && skipSpace(leaf.content, this.pos) == leaf.content.length)
+      return this.complete(cx, leaf, leaf.content.length);
+    return false;
+  }
+  complete(cx, leaf, len) {
+    cx.addLeafElement(leaf, elt(Type.LinkReference, this.start, this.start + len, this.elts));
+    return true;
+  }
+  nextStage(elt2) {
+    if (elt2) {
+      this.pos = elt2.to - this.start;
+      this.elts.push(elt2);
+      this.stage++;
+      return true;
+    }
+    if (elt2 === false)
+      this.stage = -1;
+    return false;
+  }
+  advance(content) {
+    for (; ; ) {
+      if (this.stage == -1) {
+        return -1;
+      } else if (this.stage == 0) {
+        if (!this.nextStage(parseLinkLabel(content, this.pos, this.start, true)))
+          return -1;
+        if (content.charCodeAt(this.pos) != 58)
+          return this.stage = -1;
+        this.elts.push(elt(Type.LinkMark, this.pos + this.start, this.pos + this.start + 1));
+        this.pos++;
+      } else if (this.stage == 1) {
+        if (!this.nextStage(parseURL(content, skipSpace(content, this.pos), this.start)))
+          return -1;
+      } else if (this.stage == 2) {
+        let skip = skipSpace(content, this.pos), end = 0;
+        if (skip > this.pos) {
+          let title = parseLinkTitle(content, skip, this.start);
+          if (title) {
+            let titleEnd = lineEnd(content, title.to - this.start);
+            if (titleEnd > 0) {
+              this.nextStage(title);
+              end = titleEnd;
+            }
+          }
+        }
+        if (!end)
+          end = lineEnd(content, this.pos);
+        return end > 0 && end < content.length ? end : -1;
+      } else {
+        return lineEnd(content, this.pos);
+      }
+    }
+  }
+};
+function lineEnd(text, pos) {
+  for (; pos < text.length; pos++) {
+    let next = text.charCodeAt(pos);
+    if (next == 10)
+      break;
+    if (!space(next))
+      return -1;
+  }
+  return pos;
+}
+var SetextHeadingParser = class {
+  nextLine(cx, line, leaf) {
+    let underline = line.depth < cx.stack.length ? -1 : isSetextUnderline(line);
+    let next = line.next;
+    if (underline < 0)
+      return false;
+    let underlineMark = elt(Type.HeaderMark, cx.lineStart + line.pos, cx.lineStart + underline);
+    cx.nextLine();
+    cx.addLeafElement(leaf, elt(next == 61 ? Type.SetextHeading1 : Type.SetextHeading2, leaf.start, cx.prevLineEnd(), [
+      ...cx.parser.parseInline(leaf.content, leaf.start),
+      underlineMark
+    ]));
+    return true;
+  }
+  finish() {
+    return false;
+  }
+};
+var DefaultLeafBlocks = {
+  LinkReference(_, leaf) {
+    return leaf.content.charCodeAt(0) == 91 ? new LinkReferenceParser(leaf) : null;
+  },
+  SetextHeading() {
+    return new SetextHeadingParser();
+  }
+};
+var DefaultEndLeaf = [
+  (_, line) => isAtxHeading(line) >= 0,
+  (_, line) => isFencedCode(line) >= 0,
+  (_, line) => isBlockquote(line) >= 0,
+  (p, line) => isBulletList(line, p, true) >= 0,
+  (p, line) => isOrderedList(line, p, true) >= 0,
+  (p, line) => isHorizontalRule(line, p, true) >= 0,
+  (p, line) => isHTMLBlock(line, p, true) >= 0
+];
+var scanLineResult = { text: "", end: 0 };
+var BlockContext = class {
+  /**
+  @internal
+  */
+  constructor(parser2, input, fragments, ranges) {
+    this.parser = parser2;
+    this.input = input;
+    this.ranges = ranges;
+    this.line = new Line();
+    this.atEnd = false;
+    this.reusePlaceholders = /* @__PURE__ */ new Map();
+    this.stoppedAt = null;
+    this.rangeI = 0;
+    this.to = ranges[ranges.length - 1].to;
+    this.lineStart = this.absoluteLineStart = this.absoluteLineEnd = ranges[0].from;
+    this.block = CompositeBlock.create(Type.Document, 0, this.lineStart, 0, 0);
+    this.stack = [this.block];
+    this.fragments = fragments.length ? new FragmentCursor(fragments, input) : null;
+    this.readLine();
+  }
+  get parsedPos() {
+    return this.absoluteLineStart;
+  }
+  advance() {
+    if (this.stoppedAt != null && this.absoluteLineStart > this.stoppedAt)
+      return this.finish();
+    let { line } = this;
+    for (; ; ) {
+      for (let markI = 0; ; ) {
+        let next = line.depth < this.stack.length ? this.stack[this.stack.length - 1] : null;
+        while (markI < line.markers.length && (!next || line.markers[markI].from < next.end)) {
+          let mark = line.markers[markI++];
+          this.addNode(mark.type, mark.from, mark.to);
+        }
+        if (!next)
+          break;
+        this.finishContext();
+      }
+      if (line.pos < line.text.length)
+        break;
+      if (!this.nextLine())
+        return this.finish();
+    }
+    if (this.fragments && this.reuseFragment(line.basePos))
+      return null;
+    start:
+      for (; ; ) {
+        for (let type of this.parser.blockParsers)
+          if (type) {
+            let result = type(this, line);
+            if (result != false) {
+              if (result == true)
+                return null;
+              line.forward();
+              continue start;
+            }
+          }
+        break;
+      }
+    if (line.pos == line.text.length)
+      return this.nextLine() ? null : this.finish();
+    let leaf = new LeafBlock(this.lineStart + line.pos, line.text.slice(line.pos));
+    for (let parse of this.parser.leafBlockParsers)
+      if (parse) {
+        let parser2 = parse(this, leaf);
+        if (parser2)
+          leaf.parsers.push(parser2);
+      }
+    lines:
+      while (this.nextLine()) {
+        if (line.pos == line.text.length)
+          break;
+        if (line.indent < line.baseIndent + 4) {
+          for (let stop of this.parser.endLeafBlock)
+            if (stop(this, line, leaf))
+              break lines;
+        }
+        for (let parser2 of leaf.parsers)
+          if (parser2.nextLine(this, line, leaf))
+            return null;
+        leaf.content += "\n" + line.scrub();
+        for (let m of line.markers)
+          leaf.marks.push(m);
+      }
+    this.finishLeaf(leaf);
+    return null;
+  }
+  stopAt(pos) {
+    if (this.stoppedAt != null && this.stoppedAt < pos)
+      throw new RangeError("Can't move stoppedAt forward");
+    this.stoppedAt = pos;
+  }
+  reuseFragment(start) {
+    if (!this.fragments.moveTo(this.absoluteLineStart + start, this.absoluteLineStart) || !this.fragments.matches(this.block.hash))
+      return false;
+    let taken = this.fragments.takeNodes(this);
+    if (!taken)
+      return false;
+    this.absoluteLineStart += taken;
+    this.lineStart = toRelative(this.absoluteLineStart, this.ranges);
+    this.moveRangeI();
+    if (this.absoluteLineStart < this.to) {
+      this.lineStart++;
+      this.absoluteLineStart++;
+      this.readLine();
     } else {
-      newText = beforeText + prefix + placeholder + suffix + afterText;
-      newCursorPos = start + prefix.length + placeholder.length + suffix.length;
+      this.atEnd = true;
+      this.readLine();
     }
-    textarea.value = newText;
-    textarea.setSelectionRange(newCursorPos, newCursorPos);
-    textarea.focus();
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
   }
   /**
-   * 插入内部链接
-   */
-  insertLink() {
-    if (this.element instanceof HTMLTextAreaElement) {
-      this.insertLinkTextarea();
+  The number of parent blocks surrounding the current block.
+  */
+  get depth() {
+    return this.stack.length;
+  }
+  /**
+  Get the type of the parent block at the given depth. When no
+  depth is passed, return the type of the innermost parent.
+  */
+  parentType(depth = this.depth - 1) {
+    return this.parser.nodeSet.types[this.stack[depth].type];
+  }
+  /**
+  Move to the next input line. This should only be called by
+  (non-composite) [block parsers](#BlockParser.parse) that consume
+  the line directly, or leaf block parser
+  [`nextLine`](#LeafBlockParser.nextLine) methods when they
+  consume the current line (and return true).
+  */
+  nextLine() {
+    this.lineStart += this.line.text.length;
+    if (this.absoluteLineEnd >= this.to) {
+      this.absoluteLineStart = this.absoluteLineEnd;
+      this.atEnd = true;
+      this.readLine();
+      return false;
+    } else {
+      this.lineStart++;
+      this.absoluteLineStart = this.absoluteLineEnd + 1;
+      this.moveRangeI();
+      this.readLine();
+      return true;
+    }
+  }
+  /**
+  Retrieve the text of the line after the current one, without
+  actually moving the context's current line forward.
+  */
+  peekLine() {
+    return this.scanLine(this.absoluteLineEnd + 1).text;
+  }
+  moveRangeI() {
+    while (this.rangeI < this.ranges.length - 1 && this.absoluteLineStart >= this.ranges[this.rangeI].to) {
+      this.rangeI++;
+      this.absoluteLineStart = Math.max(this.absoluteLineStart, this.ranges[this.rangeI].from);
+    }
+  }
+  /**
+  @internal
+  Collect the text for the next line.
+  */
+  scanLine(start) {
+    let r = scanLineResult;
+    r.end = start;
+    if (start >= this.to) {
+      r.text = "";
+    } else {
+      r.text = this.lineChunkAt(start);
+      r.end += r.text.length;
+      if (this.ranges.length > 1) {
+        let textOffset = this.absoluteLineStart, rangeI = this.rangeI;
+        while (this.ranges[rangeI].to < r.end) {
+          rangeI++;
+          let nextFrom = this.ranges[rangeI].from;
+          let after = this.lineChunkAt(nextFrom);
+          r.end = nextFrom + after.length;
+          r.text = r.text.slice(0, this.ranges[rangeI - 1].to - textOffset) + after;
+          textOffset = r.end - r.text.length;
+        }
+      }
+    }
+    return r;
+  }
+  /**
+  @internal
+  Populate this.line with the content of the next line. Skip
+  leading characters covered by composite blocks.
+  */
+  readLine() {
+    let { line } = this, { text, end } = this.scanLine(this.absoluteLineStart);
+    this.absoluteLineEnd = end;
+    line.reset(text);
+    for (; line.depth < this.stack.length; line.depth++) {
+      let cx = this.stack[line.depth], handler = this.parser.skipContextMarkup[cx.type];
+      if (!handler)
+        throw new Error("Unhandled block context " + Type[cx.type]);
+      let marks = this.line.markers.length;
+      if (!handler(cx, this, line)) {
+        if (this.line.markers.length > marks)
+          cx.end = this.line.markers[this.line.markers.length - 1].to;
+        line.forward();
+        break;
+      }
+      line.forward();
+    }
+  }
+  lineChunkAt(pos) {
+    let next = this.input.chunk(pos), text;
+    if (!this.input.lineChunks) {
+      let eol = next.indexOf("\n");
+      text = eol < 0 ? next : next.slice(0, eol);
+    } else {
+      text = next == "\n" ? "" : next;
+    }
+    return pos + text.length > this.to ? text.slice(0, this.to - pos) : text;
+  }
+  /**
+  The end position of the previous line.
+  */
+  prevLineEnd() {
+    return this.atEnd ? this.lineStart : this.lineStart - 1;
+  }
+  /**
+  @internal
+  */
+  startContext(type, start, value = 0) {
+    this.block = CompositeBlock.create(type, value, this.lineStart + start, this.block.hash, this.lineStart + this.line.text.length);
+    this.stack.push(this.block);
+  }
+  /**
+  Start a composite block. Should only be called from [block
+  parser functions](#BlockParser.parse) that return null.
+  */
+  startComposite(type, start, value = 0) {
+    this.startContext(this.parser.getNodeType(type), start, value);
+  }
+  /**
+  @internal
+  */
+  addNode(block, from, to) {
+    if (typeof block == "number")
+      block = new import_common3.Tree(this.parser.nodeSet.types[block], none, none, (to !== null && to !== void 0 ? to : this.prevLineEnd()) - from);
+    this.block.addChild(block, from - this.block.from);
+  }
+  /**
+  Add a block element. Can be called by [block
+  parsers](#BlockParser.parse).
+  */
+  addElement(elt2) {
+    this.block.addChild(elt2.toTree(this.parser.nodeSet), elt2.from - this.block.from);
+  }
+  /**
+  Add a block element from a [leaf parser](#LeafBlockParser). This
+  makes sure any extra composite block markup (such as blockquote
+  markers) inside the block are also added to the syntax tree.
+  */
+  addLeafElement(leaf, elt2) {
+    this.addNode(this.buffer.writeElements(injectMarks(elt2.children, leaf.marks), -elt2.from).finish(elt2.type, elt2.to - elt2.from), elt2.from);
+  }
+  /**
+  @internal
+  */
+  finishContext() {
+    let cx = this.stack.pop();
+    let top = this.stack[this.stack.length - 1];
+    top.addChild(cx.toTree(this.parser.nodeSet), cx.from - top.from);
+    this.block = top;
+  }
+  finish() {
+    while (this.stack.length > 1)
+      this.finishContext();
+    return this.addGaps(this.block.toTree(this.parser.nodeSet, this.lineStart));
+  }
+  addGaps(tree) {
+    return this.ranges.length > 1 ? injectGaps(this.ranges, 0, tree.topNode, this.ranges[0].from, this.reusePlaceholders) : tree;
+  }
+  /**
+  @internal
+  */
+  finishLeaf(leaf) {
+    for (let parser2 of leaf.parsers)
+      if (parser2.finish(this, leaf))
+        return;
+    let inline = injectMarks(this.parser.parseInline(leaf.content, leaf.start), leaf.marks);
+    this.addNode(this.buffer.writeElements(inline, -leaf.start).finish(Type.Paragraph, leaf.content.length), leaf.start);
+  }
+  elt(type, from, to, children) {
+    if (typeof type == "string")
+      return elt(this.parser.getNodeType(type), from, to, children);
+    return new TreeElement(type, from);
+  }
+  /**
+  @internal
+  */
+  get buffer() {
+    return new Buffer2(this.parser.nodeSet);
+  }
+};
+function injectGaps(ranges, rangeI, tree, offset, dummies) {
+  let rangeEnd = ranges[rangeI].to;
+  let children = [], positions = [], start = tree.from + offset;
+  function movePastNext(upto, inclusive) {
+    while (inclusive ? upto >= rangeEnd : upto > rangeEnd) {
+      let size = ranges[rangeI + 1].from - rangeEnd;
+      offset += size;
+      upto += size;
+      rangeI++;
+      rangeEnd = ranges[rangeI].to;
+    }
+  }
+  for (let ch = tree.firstChild; ch; ch = ch.nextSibling) {
+    movePastNext(ch.from + offset, true);
+    let from = ch.from + offset, node, reuse = dummies.get(ch.tree);
+    if (reuse) {
+      node = reuse;
+    } else if (ch.to + offset > rangeEnd) {
+      node = injectGaps(ranges, rangeI, ch, offset, dummies);
+      movePastNext(ch.to + offset, false);
+    } else {
+      node = ch.toTree();
+    }
+    children.push(node);
+    positions.push(from - start);
+  }
+  movePastNext(tree.to + offset, false);
+  return new import_common3.Tree(tree.type, children, positions, tree.to + offset - start, tree.tree ? tree.tree.propValues : void 0);
+}
+var MarkdownParser = class extends import_common3.Parser {
+  /**
+  @internal
+  */
+  constructor(nodeSet, blockParsers, leafBlockParsers, blockNames, endLeafBlock, skipContextMarkup, inlineParsers, inlineNames, wrappers) {
+    super();
+    this.nodeSet = nodeSet;
+    this.blockParsers = blockParsers;
+    this.leafBlockParsers = leafBlockParsers;
+    this.blockNames = blockNames;
+    this.endLeafBlock = endLeafBlock;
+    this.skipContextMarkup = skipContextMarkup;
+    this.inlineParsers = inlineParsers;
+    this.inlineNames = inlineNames;
+    this.wrappers = wrappers;
+    this.nodeTypes = /* @__PURE__ */ Object.create(null);
+    for (let t2 of nodeSet.types)
+      this.nodeTypes[t2.name] = t2.id;
+  }
+  createParse(input, fragments, ranges) {
+    let parse = new BlockContext(this, input, fragments, ranges);
+    for (let w of this.wrappers)
+      parse = w(parse, input, fragments, ranges);
+    return parse;
+  }
+  /**
+  Reconfigure the parser.
+  */
+  configure(spec) {
+    let config = resolveConfig(spec);
+    if (!config)
+      return this;
+    let { nodeSet, skipContextMarkup } = this;
+    let blockParsers = this.blockParsers.slice(), leafBlockParsers = this.leafBlockParsers.slice(), blockNames = this.blockNames.slice(), inlineParsers = this.inlineParsers.slice(), inlineNames = this.inlineNames.slice(), endLeafBlock = this.endLeafBlock.slice(), wrappers = this.wrappers;
+    if (nonEmpty(config.defineNodes)) {
+      skipContextMarkup = Object.assign({}, skipContextMarkup);
+      let nodeTypes2 = nodeSet.types.slice(), styles;
+      for (let s of config.defineNodes) {
+        let { name, block, composite, style } = typeof s == "string" ? { name: s } : s;
+        if (nodeTypes2.some((t2) => t2.name == name))
+          continue;
+        if (composite)
+          skipContextMarkup[nodeTypes2.length] = (bl, cx, line) => composite(cx, line, bl.value);
+        let id = nodeTypes2.length;
+        let group = composite ? ["Block", "BlockContext"] : !block ? void 0 : id >= Type.ATXHeading1 && id <= Type.SetextHeading2 ? ["Block", "LeafBlock", "Heading"] : ["Block", "LeafBlock"];
+        nodeTypes2.push(import_common3.NodeType.define({
+          id,
+          name,
+          props: group && [[import_common3.NodeProp.group, group]]
+        }));
+        if (style) {
+          if (!styles)
+            styles = {};
+          if (Array.isArray(style) || style instanceof import_highlight.Tag)
+            styles[name] = style;
+          else
+            Object.assign(styles, style);
+        }
+      }
+      nodeSet = new import_common3.NodeSet(nodeTypes2);
+      if (styles)
+        nodeSet = nodeSet.extend((0, import_highlight.styleTags)(styles));
+    }
+    if (nonEmpty(config.props))
+      nodeSet = nodeSet.extend(...config.props);
+    if (nonEmpty(config.remove)) {
+      for (let rm of config.remove) {
+        let block = this.blockNames.indexOf(rm), inline = this.inlineNames.indexOf(rm);
+        if (block > -1)
+          blockParsers[block] = leafBlockParsers[block] = void 0;
+        if (inline > -1)
+          inlineParsers[inline] = void 0;
+      }
+    }
+    if (nonEmpty(config.parseBlock)) {
+      for (let spec2 of config.parseBlock) {
+        let found = blockNames.indexOf(spec2.name);
+        if (found > -1) {
+          blockParsers[found] = spec2.parse;
+          leafBlockParsers[found] = spec2.leaf;
+        } else {
+          let pos = spec2.before ? findName(blockNames, spec2.before) : spec2.after ? findName(blockNames, spec2.after) + 1 : blockNames.length - 1;
+          blockParsers.splice(pos, 0, spec2.parse);
+          leafBlockParsers.splice(pos, 0, spec2.leaf);
+          blockNames.splice(pos, 0, spec2.name);
+        }
+        if (spec2.endLeaf)
+          endLeafBlock.push(spec2.endLeaf);
+      }
+    }
+    if (nonEmpty(config.parseInline)) {
+      for (let spec2 of config.parseInline) {
+        let found = inlineNames.indexOf(spec2.name);
+        if (found > -1) {
+          inlineParsers[found] = spec2.parse;
+        } else {
+          let pos = spec2.before ? findName(inlineNames, spec2.before) : spec2.after ? findName(inlineNames, spec2.after) + 1 : inlineNames.length - 1;
+          inlineParsers.splice(pos, 0, spec2.parse);
+          inlineNames.splice(pos, 0, spec2.name);
+        }
+      }
+    }
+    if (config.wrap)
+      wrappers = wrappers.concat(config.wrap);
+    return new MarkdownParser(nodeSet, blockParsers, leafBlockParsers, blockNames, endLeafBlock, skipContextMarkup, inlineParsers, inlineNames, wrappers);
+  }
+  /**
+  @internal
+  */
+  getNodeType(name) {
+    let found = this.nodeTypes[name];
+    if (found == null)
+      throw new RangeError(`Unknown node type '${name}'`);
+    return found;
+  }
+  /**
+  Parse the given piece of inline text at the given offset,
+  returning an array of [`Element`](#Element) objects representing
+  the inline content.
+  */
+  parseInline(text, offset) {
+    let cx = new InlineContext(this, text, offset);
+    outer:
+      for (let pos = offset; pos < cx.end; ) {
+        let next = cx.char(pos);
+        for (let token of this.inlineParsers)
+          if (token) {
+            let result = token(cx, next, pos);
+            if (result >= 0) {
+              pos = result;
+              continue outer;
+            }
+          }
+        pos++;
+      }
+    return cx.resolveMarkers(0);
+  }
+};
+function nonEmpty(a) {
+  return a != null && a.length > 0;
+}
+function resolveConfig(spec) {
+  if (!Array.isArray(spec))
+    return spec;
+  if (spec.length == 0)
+    return null;
+  let conf = resolveConfig(spec[0]);
+  if (spec.length == 1)
+    return conf;
+  let rest = resolveConfig(spec.slice(1));
+  if (!rest || !conf)
+    return conf || rest;
+  let conc = (a, b) => (a || none).concat(b || none);
+  let wrapA = conf.wrap, wrapB = rest.wrap;
+  return {
+    props: conc(conf.props, rest.props),
+    defineNodes: conc(conf.defineNodes, rest.defineNodes),
+    parseBlock: conc(conf.parseBlock, rest.parseBlock),
+    parseInline: conc(conf.parseInline, rest.parseInline),
+    remove: conc(conf.remove, rest.remove),
+    wrap: !wrapA ? wrapB : !wrapB ? wrapA : (inner, input, fragments, ranges) => wrapA(wrapB(inner, input, fragments, ranges), input, fragments, ranges)
+  };
+}
+function findName(names, name) {
+  let found = names.indexOf(name);
+  if (found < 0)
+    throw new RangeError(`Position specified relative to unknown parser ${name}`);
+  return found;
+}
+var nodeTypes = [import_common3.NodeType.none];
+for (let i = 1, name; name = Type[i]; i++) {
+  nodeTypes[i] = import_common3.NodeType.define({
+    id: i,
+    name,
+    props: i >= Type.Escape ? [] : [[import_common3.NodeProp.group, i in DefaultSkipMarkup ? ["Block", "BlockContext"] : ["Block", "LeafBlock"]]],
+    top: name == "Document"
+  });
+}
+var none = [];
+var Buffer2 = class {
+  constructor(nodeSet) {
+    this.nodeSet = nodeSet;
+    this.content = [];
+    this.nodes = [];
+  }
+  write(type, from, to, children = 0) {
+    this.content.push(type, from, to, 4 + children * 4);
+    return this;
+  }
+  writeElements(elts, offset = 0) {
+    for (let e of elts)
+      e.writeTo(this, offset);
+    return this;
+  }
+  finish(type, length) {
+    return import_common3.Tree.build({
+      buffer: this.content,
+      nodeSet: this.nodeSet,
+      reused: this.nodes,
+      topID: type,
+      length
+    });
+  }
+};
+var Element = class {
+  /**
+  @internal
+  */
+  constructor(type, from, to, children = none) {
+    this.type = type;
+    this.from = from;
+    this.to = to;
+    this.children = children;
+  }
+  /**
+  @internal
+  */
+  writeTo(buf, offset) {
+    let startOff = buf.content.length;
+    buf.writeElements(this.children, offset);
+    buf.content.push(this.type, this.from + offset, this.to + offset, buf.content.length + 4 - startOff);
+  }
+  /**
+  @internal
+  */
+  toTree(nodeSet) {
+    return new Buffer2(nodeSet).writeElements(this.children, -this.from).finish(this.type, this.to - this.from);
+  }
+};
+var TreeElement = class {
+  constructor(tree, from) {
+    this.tree = tree;
+    this.from = from;
+  }
+  get to() {
+    return this.from + this.tree.length;
+  }
+  get type() {
+    return this.tree.type.id;
+  }
+  get children() {
+    return none;
+  }
+  writeTo(buf, offset) {
+    buf.nodes.push(this.tree);
+    buf.content.push(buf.nodes.length - 1, this.from + offset, this.to + offset, -1);
+  }
+  toTree() {
+    return this.tree;
+  }
+};
+function elt(type, from, to, children) {
+  return new Element(type, from, to, children);
+}
+var EmphasisUnderscore = { resolve: "Emphasis", mark: "EmphasisMark" };
+var EmphasisAsterisk = { resolve: "Emphasis", mark: "EmphasisMark" };
+var LinkStart = {};
+var ImageStart = {};
+var InlineDelimiter = class {
+  constructor(type, from, to, side) {
+    this.type = type;
+    this.from = from;
+    this.to = to;
+    this.side = side;
+  }
+};
+var Escapable = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+var Punctuation = /[!"#$%&'()*+,\-.\/:;<=>?@\[\\\]^_`{|}~\xA1\u2010-\u2027]/;
+try {
+  Punctuation = new RegExp("[\\p{S}|\\p{P}]", "u");
+} catch (_) {
+}
+var DefaultInline = {
+  Escape(cx, next, start) {
+    if (next != 92 || start == cx.end - 1)
+      return -1;
+    let escaped = cx.char(start + 1);
+    for (let i = 0; i < Escapable.length; i++)
+      if (Escapable.charCodeAt(i) == escaped)
+        return cx.append(elt(Type.Escape, start, start + 2));
+    return -1;
+  },
+  Entity(cx, next, start) {
+    if (next != 38)
+      return -1;
+    let m = /^(?:#\d+|#x[a-f\d]+|\w+);/i.exec(cx.slice(start + 1, start + 31));
+    return m ? cx.append(elt(Type.Entity, start, start + 1 + m[0].length)) : -1;
+  },
+  InlineCode(cx, next, start) {
+    if (next != 96 || start && cx.char(start - 1) == 96)
+      return -1;
+    let pos = start + 1;
+    while (pos < cx.end && cx.char(pos) == 96)
+      pos++;
+    let size = pos - start, curSize = 0;
+    for (; pos < cx.end; pos++) {
+      if (cx.char(pos) == 96) {
+        curSize++;
+        if (curSize == size && cx.char(pos + 1) != 96)
+          return cx.append(elt(Type.InlineCode, start, pos + 1, [
+            elt(Type.CodeMark, start, start + size),
+            elt(Type.CodeMark, pos + 1 - size, pos + 1)
+          ]));
+      } else {
+        curSize = 0;
+      }
+    }
+    return -1;
+  },
+  HTMLTag(cx, next, start) {
+    if (next != 60 || start == cx.end - 1)
+      return -1;
+    let after = cx.slice(start + 1, cx.end);
+    let url = /^(?:[a-z][-\w+.]+:[^\s>]+|[a-z\d.!#$%&'*+/=?^_`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*)>/i.exec(after);
+    if (url) {
+      return cx.append(elt(Type.Autolink, start, start + 1 + url[0].length, [
+        elt(Type.LinkMark, start, start + 1),
+        // url[0] includes the closing bracket, so exclude it from this slice
+        elt(Type.URL, start + 1, start + url[0].length),
+        elt(Type.LinkMark, start + url[0].length, start + 1 + url[0].length)
+      ]));
+    }
+    let comment = /^!--[^>](?:-[^-]|[^-])*?-->/i.exec(after);
+    if (comment)
+      return cx.append(elt(Type.Comment, start, start + 1 + comment[0].length));
+    let procInst = /^\?[^]*?\?>/.exec(after);
+    if (procInst)
+      return cx.append(elt(Type.ProcessingInstruction, start, start + 1 + procInst[0].length));
+    let m = /^(?:![A-Z][^]*?>|!\[CDATA\[[^]*?\]\]>|\/\s*[a-zA-Z][\w-]*\s*>|\s*[a-zA-Z][\w-]*(\s+[a-zA-Z:_][\w-.:]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*(\/\s*)?>)/.exec(after);
+    if (!m)
+      return -1;
+    return cx.append(elt(Type.HTMLTag, start, start + 1 + m[0].length));
+  },
+  Emphasis(cx, next, start) {
+    if (next != 95 && next != 42)
+      return -1;
+    let pos = start + 1;
+    while (cx.char(pos) == next)
+      pos++;
+    let before = cx.slice(start - 1, start), after = cx.slice(pos, pos + 1);
+    let pBefore = Punctuation.test(before), pAfter = Punctuation.test(after);
+    let sBefore = /\s|^$/.test(before), sAfter = /\s|^$/.test(after);
+    let leftFlanking = !sAfter && (!pAfter || sBefore || pBefore);
+    let rightFlanking = !sBefore && (!pBefore || sAfter || pAfter);
+    let canOpen = leftFlanking && (next == 42 || !rightFlanking || pBefore);
+    let canClose = rightFlanking && (next == 42 || !leftFlanking || pAfter);
+    return cx.append(new InlineDelimiter(next == 95 ? EmphasisUnderscore : EmphasisAsterisk, start, pos, (canOpen ? 1 : 0) | (canClose ? 2 : 0)));
+  },
+  HardBreak(cx, next, start) {
+    if (next == 92 && cx.char(start + 1) == 10)
+      return cx.append(elt(Type.HardBreak, start, start + 2));
+    if (next == 32) {
+      let pos = start + 1;
+      while (cx.char(pos) == 32)
+        pos++;
+      if (cx.char(pos) == 10 && pos >= start + 2)
+        return cx.append(elt(Type.HardBreak, start, pos + 1));
+    }
+    return -1;
+  },
+  Link(cx, next, start) {
+    return next == 91 ? cx.append(new InlineDelimiter(
+      LinkStart,
+      start,
+      start + 1,
+      1
+      /* Mark.Open */
+    )) : -1;
+  },
+  Image(cx, next, start) {
+    return next == 33 && cx.char(start + 1) == 91 ? cx.append(new InlineDelimiter(
+      ImageStart,
+      start,
+      start + 2,
+      1
+      /* Mark.Open */
+    )) : -1;
+  },
+  LinkEnd(cx, next, start) {
+    if (next != 93)
+      return -1;
+    for (let i = cx.parts.length - 1; i >= 0; i--) {
+      let part = cx.parts[i];
+      if (part instanceof InlineDelimiter && (part.type == LinkStart || part.type == ImageStart)) {
+        if (!part.side || cx.skipSpace(part.to) == start && !/[(\[]/.test(cx.slice(start + 1, start + 2))) {
+          cx.parts[i] = null;
+          return -1;
+        }
+        let content = cx.takeContent(i);
+        let link = cx.parts[i] = finishLink(cx, content, part.type == LinkStart ? Type.Link : Type.Image, part.from, start + 1);
+        if (part.type == LinkStart)
+          for (let j = 0; j < i; j++) {
+            let p = cx.parts[j];
+            if (p instanceof InlineDelimiter && p.type == LinkStart)
+              p.side = 0;
+          }
+        return link.to;
+      }
+    }
+    return -1;
+  }
+};
+function finishLink(cx, content, type, start, startPos) {
+  let { text } = cx, next = cx.char(startPos), endPos = startPos;
+  content.unshift(elt(Type.LinkMark, start, start + (type == Type.Image ? 2 : 1)));
+  content.push(elt(Type.LinkMark, startPos - 1, startPos));
+  if (next == 40) {
+    let pos = cx.skipSpace(startPos + 1);
+    let dest = parseURL(text, pos - cx.offset, cx.offset), title;
+    if (dest) {
+      pos = cx.skipSpace(dest.to);
+      if (pos != dest.to) {
+        title = parseLinkTitle(text, pos - cx.offset, cx.offset);
+        if (title)
+          pos = cx.skipSpace(title.to);
+      }
+    }
+    if (cx.char(pos) == 41) {
+      content.push(elt(Type.LinkMark, startPos, startPos + 1));
+      endPos = pos + 1;
+      if (dest)
+        content.push(dest);
+      if (title)
+        content.push(title);
+      content.push(elt(Type.LinkMark, pos, endPos));
+    }
+  } else if (next == 91) {
+    let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
+    if (label) {
+      content.push(label);
+      endPos = label.to;
+    }
+  }
+  return elt(type, start, endPos, content);
+}
+function parseURL(text, start, offset) {
+  let next = text.charCodeAt(start);
+  if (next == 60) {
+    for (let pos = start + 1; pos < text.length; pos++) {
+      let ch = text.charCodeAt(pos);
+      if (ch == 62)
+        return elt(Type.URL, start + offset, pos + 1 + offset);
+      if (ch == 60 || ch == 10)
+        return false;
+    }
+    return null;
+  } else {
+    let depth = 0, pos = start;
+    for (let escaped = false; pos < text.length; pos++) {
+      let ch = text.charCodeAt(pos);
+      if (space(ch)) {
+        break;
+      } else if (escaped) {
+        escaped = false;
+      } else if (ch == 40) {
+        depth++;
+      } else if (ch == 41) {
+        if (!depth)
+          break;
+        depth--;
+      } else if (ch == 92) {
+        escaped = true;
+      }
+    }
+    return pos > start ? elt(Type.URL, start + offset, pos + offset) : pos == text.length ? null : false;
+  }
+}
+function parseLinkTitle(text, start, offset) {
+  let next = text.charCodeAt(start);
+  if (next != 39 && next != 34 && next != 40)
+    return false;
+  let end = next == 40 ? 41 : next;
+  for (let pos = start + 1, escaped = false; pos < text.length; pos++) {
+    let ch = text.charCodeAt(pos);
+    if (escaped)
+      escaped = false;
+    else if (ch == end)
+      return elt(Type.LinkTitle, start + offset, pos + 1 + offset);
+    else if (ch == 92)
+      escaped = true;
+  }
+  return null;
+}
+function parseLinkLabel(text, start, offset, requireNonWS) {
+  for (let escaped = false, pos = start + 1, end = Math.min(text.length, pos + 999); pos < end; pos++) {
+    let ch = text.charCodeAt(pos);
+    if (escaped)
+      escaped = false;
+    else if (ch == 93)
+      return requireNonWS ? false : elt(Type.LinkLabel, start + offset, pos + 1 + offset);
+    else {
+      if (requireNonWS && !space(ch))
+        requireNonWS = false;
+      if (ch == 91)
+        return false;
+      else if (ch == 92)
+        escaped = true;
+    }
+  }
+  return null;
+}
+var InlineContext = class {
+  /**
+  @internal
+  */
+  constructor(parser2, text, offset) {
+    this.parser = parser2;
+    this.text = text;
+    this.offset = offset;
+    this.parts = [];
+  }
+  /**
+  Get the character code at the given (document-relative)
+  position.
+  */
+  char(pos) {
+    return pos >= this.end ? -1 : this.text.charCodeAt(pos - this.offset);
+  }
+  /**
+  The position of the end of this inline section.
+  */
+  get end() {
+    return this.offset + this.text.length;
+  }
+  /**
+  Get a substring of this inline section. Again uses
+  document-relative positions.
+  */
+  slice(from, to) {
+    return this.text.slice(from - this.offset, to - this.offset);
+  }
+  /**
+  @internal
+  */
+  append(elt2) {
+    this.parts.push(elt2);
+    return elt2.to;
+  }
+  /**
+  Add a [delimiter](#DelimiterType) at this given position. `open`
+  and `close` indicate whether this delimiter is opening, closing,
+  or both. Returns the end of the delimiter, for convenient
+  returning from [parse functions](#InlineParser.parse).
+  */
+  addDelimiter(type, from, to, open, close) {
+    return this.append(new InlineDelimiter(type, from, to, (open ? 1 : 0) | (close ? 2 : 0)));
+  }
+  /**
+  Returns true when there is an unmatched link or image opening
+  token before the current position.
+  */
+  get hasOpenLink() {
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      let part = this.parts[i];
+      if (part instanceof InlineDelimiter && (part.type == LinkStart || part.type == ImageStart))
+        return true;
+    }
+    return false;
+  }
+  /**
+  Add an inline element. Returns the end of the element.
+  */
+  addElement(elt2) {
+    return this.append(elt2);
+  }
+  /**
+  Resolve markers between this.parts.length and from, wrapping matched markers in the
+  appropriate node and updating the content of this.parts. @internal
+  */
+  resolveMarkers(from) {
+    for (let i = from; i < this.parts.length; i++) {
+      let close = this.parts[i];
+      if (!(close instanceof InlineDelimiter && close.type.resolve && close.side & 2))
+        continue;
+      let emp = close.type == EmphasisUnderscore || close.type == EmphasisAsterisk;
+      let closeSize = close.to - close.from;
+      let open, j = i - 1;
+      for (; j >= from; j--) {
+        let part = this.parts[j];
+        if (part instanceof InlineDelimiter && part.side & 1 && part.type == close.type && // Ignore emphasis delimiters where the character count doesn't match
+        !(emp && (close.side & 1 || part.side & 2) && (part.to - part.from + closeSize) % 3 == 0 && ((part.to - part.from) % 3 || closeSize % 3))) {
+          open = part;
+          break;
+        }
+      }
+      if (!open)
+        continue;
+      let type = close.type.resolve, content = [];
+      let start = open.from, end = close.to;
+      if (emp) {
+        let size = Math.min(2, open.to - open.from, closeSize);
+        start = open.to - size;
+        end = close.from + size;
+        type = size == 1 ? "Emphasis" : "StrongEmphasis";
+      }
+      if (open.type.mark)
+        content.push(this.elt(open.type.mark, start, open.to));
+      for (let k = j + 1; k < i; k++) {
+        if (this.parts[k] instanceof Element)
+          content.push(this.parts[k]);
+        this.parts[k] = null;
+      }
+      if (close.type.mark)
+        content.push(this.elt(close.type.mark, close.from, end));
+      let element = this.elt(type, start, end, content);
+      this.parts[j] = emp && open.from != start ? new InlineDelimiter(open.type, open.from, start, open.side) : null;
+      let keep = this.parts[i] = emp && close.to != end ? new InlineDelimiter(close.type, end, close.to, close.side) : null;
+      if (keep)
+        this.parts.splice(i, 0, element);
+      else
+        this.parts[i] = element;
+    }
+    let result = [];
+    for (let i = from; i < this.parts.length; i++) {
+      let part = this.parts[i];
+      if (part instanceof Element)
+        result.push(part);
+    }
+    return result;
+  }
+  /**
+  Find an opening delimiter of the given type. Returns `null` if
+  no delimiter is found, or an index that can be passed to
+  [`takeContent`](#InlineContext.takeContent) otherwise.
+  */
+  findOpeningDelimiter(type) {
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      let part = this.parts[i];
+      if (part instanceof InlineDelimiter && part.type == type && part.side & 1)
+        return i;
+    }
+    return null;
+  }
+  /**
+  Remove all inline elements and delimiters starting from the
+  given index (which you should get from
+  [`findOpeningDelimiter`](#InlineContext.findOpeningDelimiter),
+  resolve delimiters inside of them, and return them as an array
+  of elements.
+  */
+  takeContent(startIndex) {
+    let content = this.resolveMarkers(startIndex);
+    this.parts.length = startIndex;
+    return content;
+  }
+  /**
+  Return the delimiter at the given index. Mostly useful to get
+  additional info out of a delimiter index returned by
+  [`findOpeningDelimiter`](#InlineContext.findOpeningDelimiter).
+  Returns null if there is no delimiter at this index.
+  */
+  getDelimiterAt(index) {
+    let part = this.parts[index];
+    return part instanceof InlineDelimiter ? part : null;
+  }
+  /**
+  Skip space after the given (document) position, returning either
+  the position of the next non-space character or the end of the
+  section.
+  */
+  skipSpace(from) {
+    return skipSpace(this.text, from - this.offset) + this.offset;
+  }
+  elt(type, from, to, children) {
+    if (typeof type == "string")
+      return elt(this.parser.getNodeType(type), from, to, children);
+    return new TreeElement(type, from);
+  }
+};
+InlineContext.linkStart = LinkStart;
+InlineContext.imageStart = ImageStart;
+function injectMarks(elements, marks) {
+  if (!marks.length)
+    return elements;
+  if (!elements.length)
+    return marks;
+  let elts = elements.slice(), eI = 0;
+  for (let mark of marks) {
+    while (eI < elts.length && elts[eI].to < mark.to)
+      eI++;
+    if (eI < elts.length && elts[eI].from < mark.from) {
+      let e = elts[eI];
+      if (e instanceof Element)
+        elts[eI] = new Element(e.type, e.from, e.to, injectMarks(e.children, [mark]));
+    } else {
+      elts.splice(eI++, 0, mark);
+    }
+  }
+  return elts;
+}
+var NotLast = [Type.CodeBlock, Type.ListItem, Type.OrderedList, Type.BulletList];
+var FragmentCursor = class {
+  constructor(fragments, input) {
+    this.fragments = fragments;
+    this.input = input;
+    this.i = 0;
+    this.fragment = null;
+    this.fragmentEnd = -1;
+    this.cursor = null;
+    if (fragments.length)
+      this.fragment = fragments[this.i++];
+  }
+  nextFragment() {
+    this.fragment = this.i < this.fragments.length ? this.fragments[this.i++] : null;
+    this.cursor = null;
+    this.fragmentEnd = -1;
+  }
+  moveTo(pos, lineStart) {
+    while (this.fragment && this.fragment.to <= pos)
+      this.nextFragment();
+    if (!this.fragment || this.fragment.from > (pos ? pos - 1 : 0))
+      return false;
+    if (this.fragmentEnd < 0) {
+      let end = this.fragment.to;
+      while (end > 0 && this.input.read(end - 1, end) != "\n")
+        end--;
+      this.fragmentEnd = end ? end - 1 : 0;
+    }
+    let c = this.cursor;
+    if (!c) {
+      c = this.cursor = this.fragment.tree.cursor();
+      c.firstChild();
+    }
+    let rPos = pos + this.fragment.offset;
+    while (c.to <= rPos)
+      if (!c.parent())
+        return false;
+    for (; ; ) {
+      if (c.from >= rPos)
+        return this.fragment.from <= lineStart;
+      if (!c.childAfter(rPos))
+        return false;
+    }
+  }
+  matches(hash) {
+    let tree = this.cursor.tree;
+    return tree && tree.prop(import_common3.NodeProp.contextHash) == hash;
+  }
+  takeNodes(cx) {
+    let cur = this.cursor, off = this.fragment.offset, fragEnd = this.fragmentEnd - (this.fragment.openEnd ? 1 : 0);
+    let start = cx.absoluteLineStart, end = start, blockI = cx.block.children.length;
+    let prevEnd = end, prevI = blockI;
+    for (; ; ) {
+      if (cur.to - off > fragEnd) {
+        if (cur.type.isAnonymous && cur.firstChild())
+          continue;
+        break;
+      }
+      let pos = toRelative(cur.from - off, cx.ranges);
+      if (cur.to - off <= cx.ranges[cx.rangeI].to) {
+        cx.addNode(cur.tree, pos);
+      } else {
+        let dummy = new import_common3.Tree(cx.parser.nodeSet.types[Type.Paragraph], [], [], 0, cx.block.hashProp);
+        cx.reusePlaceholders.set(dummy, cur.tree);
+        cx.addNode(dummy, pos);
+      }
+      if (cur.type.is("Block")) {
+        if (NotLast.indexOf(cur.type.id) < 0) {
+          end = cur.to - off;
+          blockI = cx.block.children.length;
+        } else {
+          end = prevEnd;
+          blockI = prevI;
+        }
+        prevEnd = cur.to - off;
+        prevI = cx.block.children.length;
+      }
+      if (!cur.nextSibling())
+        break;
+    }
+    while (cx.block.children.length > blockI) {
+      cx.block.children.pop();
+      cx.block.positions.pop();
+    }
+    return end - start;
+  }
+};
+function toRelative(abs, ranges) {
+  let pos = abs;
+  for (let i = 1; i < ranges.length; i++) {
+    let gapFrom = ranges[i - 1].to, gapTo = ranges[i].from;
+    if (gapFrom < abs)
+      pos -= gapTo - gapFrom;
+  }
+  return pos;
+}
+var markdownHighlighting = (0, import_highlight.styleTags)({
+  "Blockquote/...": import_highlight.tags.quote,
+  HorizontalRule: import_highlight.tags.contentSeparator,
+  "ATXHeading1/... SetextHeading1/...": import_highlight.tags.heading1,
+  "ATXHeading2/... SetextHeading2/...": import_highlight.tags.heading2,
+  "ATXHeading3/...": import_highlight.tags.heading3,
+  "ATXHeading4/...": import_highlight.tags.heading4,
+  "ATXHeading5/...": import_highlight.tags.heading5,
+  "ATXHeading6/...": import_highlight.tags.heading6,
+  "Comment CommentBlock": import_highlight.tags.comment,
+  Escape: import_highlight.tags.escape,
+  Entity: import_highlight.tags.character,
+  "Emphasis/...": import_highlight.tags.emphasis,
+  "StrongEmphasis/...": import_highlight.tags.strong,
+  "Link/... Image/...": import_highlight.tags.link,
+  "OrderedList/... BulletList/...": import_highlight.tags.list,
+  "BlockQuote/...": import_highlight.tags.quote,
+  "InlineCode CodeText": import_highlight.tags.monospace,
+  "URL Autolink": import_highlight.tags.url,
+  "HeaderMark HardBreak QuoteMark ListMark LinkMark EmphasisMark CodeMark": import_highlight.tags.processingInstruction,
+  "CodeInfo LinkLabel": import_highlight.tags.labelName,
+  LinkTitle: import_highlight.tags.string,
+  Paragraph: import_highlight.tags.content
+});
+var parser = new MarkdownParser(new import_common3.NodeSet(nodeTypes).extend(markdownHighlighting), Object.keys(DefaultBlockParsers).map((n) => DefaultBlockParsers[n]), Object.keys(DefaultBlockParsers).map((n) => DefaultLeafBlocks[n]), Object.keys(DefaultBlockParsers), DefaultEndLeaf, DefaultSkipMarkup, Object.keys(DefaultInline).map((n) => DefaultInline[n]), Object.keys(DefaultInline), []);
+var StrikethroughDelim = { resolve: "Strikethrough", mark: "StrikethroughMark" };
+var Strikethrough = {
+  defineNodes: [{
+    name: "Strikethrough",
+    style: { "Strikethrough/...": import_highlight.tags.strikethrough }
+  }, {
+    name: "StrikethroughMark",
+    style: import_highlight.tags.processingInstruction
+  }],
+  parseInline: [{
+    name: "Strikethrough",
+    parse(cx, next, pos) {
+      if (next != 126 || cx.char(pos + 1) != 126 || cx.char(pos + 2) == 126)
+        return -1;
+      let before = cx.slice(pos - 1, pos), after = cx.slice(pos + 2, pos + 3);
+      let sBefore = /\s|^$/.test(before), sAfter = /\s|^$/.test(after);
+      let pBefore = Punctuation.test(before), pAfter = Punctuation.test(after);
+      return cx.addDelimiter(StrikethroughDelim, pos, pos + 2, !sAfter && (!pAfter || sBefore || pBefore), !sBefore && (!pBefore || sAfter || pAfter));
+    },
+    after: "Emphasis"
+  }]
+};
+function parseRow(cx, line, startI = 0, elts, offset = 0) {
+  let count2 = 0, first = true, cellStart = -1, cellEnd = -1, esc = false;
+  let parseCell = () => {
+    elts.push(cx.elt("TableCell", offset + cellStart, offset + cellEnd, cx.parser.parseInline(line.slice(cellStart, cellEnd), offset + cellStart)));
+  };
+  for (let i = startI; i < line.length; i++) {
+    let next = line.charCodeAt(i);
+    if (next == 124 && !esc) {
+      if (!first || cellStart > -1)
+        count2++;
+      first = false;
+      if (elts) {
+        if (cellStart > -1)
+          parseCell();
+        elts.push(cx.elt("TableDelimiter", i + offset, i + offset + 1));
+      }
+      cellStart = cellEnd = -1;
+    } else if (esc || next != 32 && next != 9) {
+      if (cellStart < 0)
+        cellStart = i;
+      cellEnd = i + 1;
+    }
+    esc = !esc && next == 92;
+  }
+  if (cellStart > -1) {
+    count2++;
+    if (elts)
+      parseCell();
+  }
+  return count2;
+}
+function hasPipe(str, start) {
+  for (let i = start; i < str.length; i++) {
+    let next = str.charCodeAt(i);
+    if (next == 124)
+      return true;
+    if (next == 92)
+      i++;
+  }
+  return false;
+}
+var delimiterLine = /^[>\s]*\|?(\s*:?-+:?\s*\|)+(\s*:?-+:?\s*)?$/;
+var TableParser = class {
+  constructor() {
+    this.rows = null;
+  }
+  nextLine(cx, line, leaf) {
+    if (this.rows == null) {
+      this.rows = false;
+      let lineText;
+      if ((line.next == 45 || line.next == 58 || line.next == 124) && delimiterLine.test(lineText = line.text.slice(line.pos))) {
+        let firstRow = [], firstCount = parseRow(cx, leaf.content, 0, firstRow, leaf.start);
+        if (firstCount == parseRow(cx, lineText, 0))
+          this.rows = [
+            cx.elt("TableHeader", leaf.start, leaf.start + leaf.content.length, firstRow),
+            cx.elt("TableDelimiter", cx.lineStart + line.pos, cx.lineStart + line.text.length)
+          ];
+      }
+    } else if (this.rows) {
+      let content = [];
+      parseRow(cx, line.text, line.pos, content, cx.lineStart);
+      this.rows.push(cx.elt("TableRow", cx.lineStart + line.pos, cx.lineStart + line.text.length, content));
+    }
+    return false;
+  }
+  finish(cx, leaf) {
+    if (!this.rows)
+      return false;
+    cx.addLeafElement(leaf, cx.elt("Table", leaf.start, leaf.start + leaf.content.length, this.rows));
+    return true;
+  }
+};
+var Table = {
+  defineNodes: [
+    { name: "Table", block: true },
+    { name: "TableHeader", style: { "TableHeader/...": import_highlight.tags.heading } },
+    "TableRow",
+    { name: "TableCell", style: import_highlight.tags.content },
+    { name: "TableDelimiter", style: import_highlight.tags.processingInstruction }
+  ],
+  parseBlock: [{
+    name: "Table",
+    leaf(_, leaf) {
+      return hasPipe(leaf.content, 0) ? new TableParser() : null;
+    },
+    endLeaf(cx, line, leaf) {
+      if (leaf.parsers.some((p) => p instanceof TableParser) || !hasPipe(line.text, line.basePos))
+        return false;
+      let next = cx.peekLine();
+      return delimiterLine.test(next) && parseRow(cx, line.text, line.basePos) == parseRow(cx, next, line.basePos);
+    },
+    before: "SetextHeading"
+  }]
+};
+var TaskParser = class {
+  nextLine() {
+    return false;
+  }
+  finish(cx, leaf) {
+    cx.addLeafElement(leaf, cx.elt("Task", leaf.start, leaf.start + leaf.content.length, [
+      cx.elt("TaskMarker", leaf.start, leaf.start + 3),
+      ...cx.parser.parseInline(leaf.content.slice(3), leaf.start + 3)
+    ]));
+    return true;
+  }
+};
+var TaskList = {
+  defineNodes: [
+    { name: "Task", block: true, style: import_highlight.tags.list },
+    { name: "TaskMarker", style: import_highlight.tags.atom }
+  ],
+  parseBlock: [{
+    name: "TaskList",
+    leaf(cx, leaf) {
+      return /^\[[ xX]\][ \t]/.test(leaf.content) && cx.parentType().name == "ListItem" ? new TaskParser() : null;
+    },
+    after: "SetextHeading"
+  }]
+};
+var autolinkRE = /(www\.)|(https?:\/\/)|([\w.+-]{1,100}@)|(mailto:|xmpp:)/gy;
+var urlRE = /[\w-]+(\.[\w-]+)+(:\d+)?(\/[^\s<]*)?/gy;
+var lastTwoDomainWords = /[\w-]+\.[\w-]+($|[/:])/;
+var emailRE = /[\w.+-]+@[\w-]+(\.[\w.-]+)+/gy;
+var xmppResourceRE = /\/[a-zA-Z\d@.]+/gy;
+function count(str, from, to, ch) {
+  let result = 0;
+  for (let i = from; i < to; i++)
+    if (str[i] == ch)
+      result++;
+  return result;
+}
+function autolinkURLEnd(text, from) {
+  urlRE.lastIndex = from;
+  let m = urlRE.exec(text);
+  if (!m || lastTwoDomainWords.exec(m[0])[0].indexOf("_") > -1)
+    return -1;
+  let end = from + m[0].length;
+  for (; ; ) {
+    let last = text[end - 1], m2;
+    if (/[?!.,:*_~]/.test(last) || last == ")" && count(text, from, end, ")") > count(text, from, end, "("))
+      end--;
+    else if (last == ";" && (m2 = /&(?:#\d+|#x[a-f\d]+|\w+);$/.exec(text.slice(from, end))))
+      end = from + m2.index;
+    else
+      break;
+  }
+  return end;
+}
+function autolinkEmailEnd(text, from) {
+  emailRE.lastIndex = from;
+  let m = emailRE.exec(text);
+  if (!m)
+    return -1;
+  let last = m[0][m[0].length - 1];
+  return last == "_" || last == "-" ? -1 : from + m[0].length - (last == "." ? 1 : 0);
+}
+var Autolink = {
+  parseInline: [{
+    name: "Autolink",
+    parse(cx, next, absPos) {
+      let pos = absPos - cx.offset;
+      if (pos && /\w/.test(cx.text[pos - 1]))
+        return -1;
+      autolinkRE.lastIndex = pos;
+      let m = autolinkRE.exec(cx.text), end = -1;
+      if (!m)
+        return -1;
+      if (m[1] || m[2]) {
+        end = autolinkURLEnd(cx.text, pos + m[0].length);
+        if (end > -1 && cx.hasOpenLink) {
+          let noBracket = /([^\[\]]|\[[^\]]*\])*/.exec(cx.text.slice(pos, end));
+          end = pos + noBracket[0].length;
+        }
+      } else if (m[3]) {
+        end = autolinkEmailEnd(cx.text, pos);
+      } else {
+        end = autolinkEmailEnd(cx.text, pos + m[0].length);
+        if (end > -1 && m[0] == "xmpp:") {
+          xmppResourceRE.lastIndex = end;
+          m = xmppResourceRE.exec(cx.text);
+          if (m)
+            end = m.index + m[0].length;
+        }
+      }
+      if (end < 0)
+        return -1;
+      cx.addElement(cx.elt("URL", absPos, end + cx.offset));
+      return end + cx.offset;
+    }
+  }]
+};
+var GFM = [Table, TaskList, Strikethrough, Autolink];
+function parseSubSuper(ch, node, mark) {
+  return (cx, next, pos) => {
+    if (next != ch || cx.char(pos + 1) == ch)
+      return -1;
+    let elts = [cx.elt(mark, pos, pos + 1)];
+    for (let i = pos + 1; i < cx.end; i++) {
+      let next2 = cx.char(i);
+      if (next2 == ch)
+        return cx.addElement(cx.elt(node, pos, i + 1, elts.concat(cx.elt(mark, i, i + 1))));
+      if (next2 == 92)
+        elts.push(cx.elt("Escape", i, i++ + 2));
+      if (space(next2))
+        break;
+    }
+    return -1;
+  };
+}
+var Superscript = {
+  defineNodes: [
+    { name: "Superscript", style: import_highlight.tags.special(import_highlight.tags.content) },
+    { name: "SuperscriptMark", style: import_highlight.tags.processingInstruction }
+  ],
+  parseInline: [{
+    name: "Superscript",
+    parse: parseSubSuper(94, "Superscript", "SuperscriptMark")
+  }]
+};
+var Subscript = {
+  defineNodes: [
+    { name: "Subscript", style: import_highlight.tags.special(import_highlight.tags.content) },
+    { name: "SubscriptMark", style: import_highlight.tags.processingInstruction }
+  ],
+  parseInline: [{
+    name: "Subscript",
+    parse: parseSubSuper(126, "Subscript", "SubscriptMark")
+  }]
+};
+var Emoji = {
+  defineNodes: [{ name: "Emoji", style: import_highlight.tags.character }],
+  parseInline: [{
+    name: "Emoji",
+    parse(cx, next, pos) {
+      let match;
+      if (next != 58 || !(match = /^[a-zA-Z_0-9]+:/.exec(cx.slice(pos + 1, cx.end))))
+        return -1;
+      return cx.addElement(cx.elt("Emoji", pos, pos + 1 + match[0].length));
+    }
+  }]
+};
+
+// node_modules/@codemirror/lang-markdown/dist/index.js
+var import_common4 = require("@lezer/common");
+var data = /* @__PURE__ */ (0, import_language.defineLanguageFacet)({ commentTokens: { block: { open: "<!--", close: "-->" } } });
+var headingProp = /* @__PURE__ */ new import_common4.NodeProp();
+var commonmark = /* @__PURE__ */ parser.configure({
+  props: [
+    /* @__PURE__ */ import_language.foldNodeProp.add((type) => {
+      return !type.is("Block") || type.is("Document") || isHeading(type) != null || isList(type) ? void 0 : (tree, state) => ({ from: state.doc.lineAt(tree.from).to, to: tree.to });
+    }),
+    /* @__PURE__ */ headingProp.add(isHeading),
+    /* @__PURE__ */ import_language.indentNodeProp.add({
+      Document: () => null
+    }),
+    /* @__PURE__ */ import_language.languageDataProp.add({
+      Document: data
+    })
+  ]
+});
+function isHeading(type) {
+  let match = /^(?:ATX|Setext)Heading(\d)$/.exec(type.name);
+  return match ? +match[1] : void 0;
+}
+function isList(type) {
+  return type.name == "OrderedList" || type.name == "BulletList";
+}
+function findSectionEnd(headerNode, level) {
+  let last = headerNode;
+  for (; ; ) {
+    let next = last.nextSibling, heading;
+    if (!next || (heading = isHeading(next.type)) != null && heading <= level)
+      break;
+    last = next;
+  }
+  return last.to;
+}
+var headerIndent = /* @__PURE__ */ import_language.foldService.of((state, start, end) => {
+  for (let node = (0, import_language.syntaxTree)(state).resolveInner(end, -1); node; node = node.parent) {
+    if (node.from < start)
+      break;
+    let heading = node.type.prop(headingProp);
+    if (heading == null)
+      continue;
+    let upto = findSectionEnd(node, heading);
+    if (upto > end)
+      return { from: end, to: upto };
+  }
+  return null;
+});
+function mkLang(parser2) {
+  return new import_language.Language(data, parser2, [headerIndent], "markdown");
+}
+var extended = /* @__PURE__ */ commonmark.configure([GFM, Subscript, Superscript, Emoji, {
+  props: [
+    /* @__PURE__ */ import_language.foldNodeProp.add({
+      Table: (tree, state) => ({ from: state.doc.lineAt(tree.from).to, to: tree.to })
+    })
+  ]
+}]);
+var markdownLanguage = /* @__PURE__ */ mkLang(extended);
+
+// src/live-preview/codemirror-adapter.ts
+var import_language2 = require("@codemirror/language");
+var decorationsEffect = import_state2.StateEffect.define();
+var CMWidget = class extends import_view2.WidgetType {
+  constructor(widget) {
+    super();
+    this.widget = widget;
+  }
+  eq(other) {
+    return other instanceof CMWidget && this.widget.eq(other.widget);
+  }
+  toDOM(view) {
+    return this.widget.toDOM(wrapView(view));
+  }
+  updateDOM(dom, view) {
+    return this.widget.updateDOM ? this.widget.updateDOM(dom, wrapView(view)) : false;
+  }
+  destroy(dom) {
+    this.widget.destroy(dom);
+  }
+};
+var decorationField = import_state2.StateField.define({
+  create: () => import_view2.Decoration.none,
+  update(value, transaction) {
+    const effect = transaction.effects.find((item) => item.is(decorationsEffect));
+    return effect ? effect.value : value.map(transaction.changes);
+  },
+  provide: (field) => import_view2.EditorView.decorations.from(field)
+});
+var CMView = class {
+  constructor(editor) {
+    this.editor = editor;
+  }
+  get dom() {
+    return this.editor.dom;
+  }
+  get contentDOM() {
+    return this.editor.contentDOM;
+  }
+  get composing() {
+    return this.editor.composing;
+  }
+  get hasFocus() {
+    return this.editor.hasFocus;
+  }
+  get state() {
+    return { doc: this.editor.state.doc.toString(), selection: fromCMSelection(this.editor.state.selection) };
+  }
+  dispatch(transaction) {
+    const changes = transaction.changes ? transaction.changes.map((change) => ({ from: change.from, to: change.to, insert: change.insert })) : void 0;
+    const spec = { changes, selection: transaction.selection ? toCMSelection(transaction.selection) : void 0, scrollIntoView: transaction.scrollIntoView };
+    if (transaction.userEvent)
+      spec.annotations = import_state2.Transaction.userEvent.of(transaction.userEvent);
+    this.editor.dispatch(spec);
+  }
+  focus() {
+    this.editor.focus();
+  }
+  coordsAtPos(position, side = 1) {
+    return this.editor.coordsAtPos(position, side);
+  }
+  posAtCoords(coordinates, precise = true) {
+    return precise ? this.editor.posAtCoords(coordinates) : this.editor.posAtCoords(coordinates, false);
+  }
+  destroy() {
+    this.editor.destroy();
+  }
+};
+var CodeMirrorLivePreviewAdapter = class {
+  createEditorView(configuration) {
+    let wrapped;
+    const state = import_state2.EditorState.create({
+      doc: configuration.doc,
+      selection: toCMSelection(configuration.selection),
+      extensions: [markdownLanguage, decorationField, import_view2.EditorView.lineWrapping, import_view2.EditorView.domEventHandlers({
+        mousedown: (event, view) => {
+          if (!configuration.onModifierClick || event.button !== 0 || !event.ctrlKey && !event.metaKey)
+            return false;
+          const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+          if (position === null || !configuration.onModifierClick(position, event))
+            return false;
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+      }), import_view2.EditorView.updateListener.of((update) => {
+        if (!wrapped)
+          return;
+        const viewUpdate = {
+          docChanged: update.docChanged,
+          selectionChanged: update.selectionSet,
+          viewportChanged: update.viewportChanged,
+          state: wrapped.state,
+          transactions: update.transactions,
+          userEvent: update.transactions.map((item) => item.annotation(import_state2.Transaction.userEvent)).filter(Boolean)[0] || void 0
+        };
+        configuration.onUpdate(viewUpdate);
+      })]
+    });
+    wrapped = new CMView(new import_view2.EditorView({ state }));
+    return wrapped;
+  }
+  mountEditorView(view, container) {
+    if (view.dom.parentElement !== container)
+      container.appendChild(view.dom);
+  }
+  setDecorations(view, decorations) {
+    const editor = view.editor;
+    const ranges = decorations.filter((item) => item.from >= 0 && item.to >= item.from && item.to <= editor.state.doc.length).map((item) => {
+      let decoration;
+      if (item.kind === "mark")
+        decoration = import_view2.Decoration.mark({ class: item.className || "", inclusive: item.inclusive });
+      else if (item.kind === "widget" && item.widget)
+        decoration = import_view2.Decoration.replace({ widget: new CMWidget(item.widget), block: item.block });
+      else
+        decoration = import_view2.Decoration.replace({ class: item.className || "" });
+      return decoration.range(item.from, item.to);
+    }).sort((left, right) => left.from - right.from || left.to - right.to);
+    editor.dispatch({ effects: decorationsEffect.of(import_view2.Decoration.set(ranges, true)) });
+  }
+  getInlineMarkdownTokens(view) {
+    const editor = view.editor;
+    const tokens = [];
+    (0, import_language2.syntaxTree)(editor.state).iterate({
+      enter: (ref) => {
+        const kind = tokenKindForNode(ref.name);
+        if (!kind)
+          return;
+        const token = tokenFromSyntaxNode(ref.node, kind);
+        if (token)
+          tokens.push(token);
+      }
+    });
+    return tokens;
+  }
+  getViewportRanges(view) {
+    const viewport = view.editor.viewport;
+    return [{ from: viewport.from, to: viewport.to }];
+  }
+};
+function toCMSelection(selection) {
+  return import_state2.EditorSelection.create(selection.ranges.map((range) => import_state2.EditorSelection.range(range.anchor, range.head)), selection.mainIndex || 0);
+}
+function fromCMSelection(selection) {
+  return { ranges: selection.ranges.map((range) => ({ anchor: range.anchor, head: range.head })), mainIndex: selection.mainIndex };
+}
+function wrapView(view) {
+  return new CMView(view);
+}
+function tokenKindForNode(name) {
+  switch (name) {
+    case "Emphasis":
+      return "emphasis";
+    case "StrongEmphasis":
+      return "strong";
+    case "Strikethrough":
+      return "strikethrough";
+    case "InlineCode":
+      return "inline-code";
+    case "Link":
+      return "link";
+    default:
+      return null;
+  }
+}
+function tokenFromSyntaxNode(node, kind) {
+  const markers = [];
+  const cursor = node.cursor();
+  if (cursor.firstChild()) {
+    do {
+      if (isMarkerNode(kind, cursor.name))
+        markers.push({ from: cursor.from, to: cursor.to });
+    } while (cursor.nextSibling());
+  }
+  if (markers.length === 0)
+    return null;
+  markers.sort((left, right) => left.from - right.from || left.to - right.to);
+  const contentFrom = markers[0].to;
+  const contentTo = kind === "link" && markers.length >= 2 ? markers[1].from : markers[markers.length - 1].from;
+  return {
+    kind,
+    from: node.from,
+    to: node.to,
+    contentFrom: Math.max(node.from, Math.min(contentFrom, node.to)),
+    contentTo: Math.max(contentFrom, Math.min(contentTo, node.to)),
+    markers
+  };
+}
+function isMarkerNode(kind, name) {
+  if (kind === "link")
+    return name === "LinkMark" || name === "URL";
+  if (kind === "inline-code")
+    return name === "CodeMark";
+  if (kind === "strikethrough")
+    return name === "StrikethroughMark";
+  return name === "EmphasisMark";
+}
+
+// src/live-preview/complex-block-provider.ts
+var BLOCK_HTML_TAGS = /* @__PURE__ */ new Set([
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "body",
+  "caption",
+  "center",
+  "colgroup",
+  "dd",
+  "details",
+  "dialog",
+  "dir",
+  "div",
+  "dl",
+  "dt",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "frameset",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "head",
+  "header",
+  "html",
+  "iframe",
+  "legend",
+  "li",
+  "main",
+  "menu",
+  "nav",
+  "noframes",
+  "ol",
+  "optgroup",
+  "option",
+  "p",
+  "pre",
+  "script",
+  "search",
+  "section",
+  "style",
+  "summary",
+  "table",
+  "tbody",
+  "td",
+  "textarea",
+  "tfoot",
+  "th",
+  "thead",
+  "title",
+  "tr",
+  "ul"
+]);
+var ObsidianComplexBlockProvider = class {
+  getBlocks(document2, context) {
+    const blocks = [];
+    const lines = document2.split("\n");
+    const starts = buildLineStarts(lines);
+    const add = (from, to, kind, block = true) => {
+      if (to <= from)
+        return;
+      blocks.push({
+        id: `${context.blockId}:${kind}:${from}`,
+        from,
+        to,
+        source: document2.slice(from, to),
+        sourcePath: context.sourcePath,
+        kind,
+        block
+      });
+    };
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const lineStart = starts[index];
+      const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+      if (fence) {
+        const marker = fence[1].charAt(0);
+        const markerLength = fence[1].length;
+        let end = index + 1;
+        const closing = new RegExp(`^\\s*${escapeRegExp(marker)}{${markerLength},}`);
+        while (end < lines.length && !closing.test(lines[end]))
+          end += 1;
+        if (end < lines.length)
+          end += 1;
+        add(lineStart, lineEnd2(starts, lines, Math.max(index + 1, end) - 1), "code-fence");
+        index = Math.max(index, end - 1);
+        continue;
+      }
+      if (/^\s*\$\$\s*$/.test(line)) {
+        let end = index + 1;
+        while (end < lines.length && !/^\s*\$\$\s*$/.test(lines[end]))
+          end += 1;
+        if (end < lines.length) {
+          add(lineStart, lineEnd2(starts, lines, end), "math");
+          index = end;
+          continue;
+        }
+      }
+      if (/^\s*>\s*\[![^\]]+\]/.test(line)) {
+        let end = index + 1;
+        while (end < lines.length && /^\s*>/.test(lines[end]))
+          end += 1;
+        add(lineStart, lineEnd2(starts, lines, end - 1), "callout");
+        index = end - 1;
+        continue;
+      }
+      if (line.indexOf("|") >= 0 && index + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[index + 1])) {
+        let end = index + 2;
+        while (end < lines.length && lines[end].indexOf("|") >= 0)
+          end += 1;
+        add(lineStart, lineEnd2(starts, lines, end - 1), "table");
+        index = end - 1;
+        continue;
+      }
+      const tag = /^\s*<([A-Za-z][\w-]*)(?=\s|\/?>)/.exec(line);
+      if (/^\s*<!--/.test(line) || tag && BLOCK_HTML_TAGS.has(tag[1].toLowerCase())) {
+        let end = index;
+        if (tag && line.indexOf(`</${tag[1]}>`) < 0) {
+          while (end + 1 < lines.length && lines[end].indexOf(`</${tag[1]}>`) < 0)
+            end += 1;
+        }
+        add(lineStart, lineEnd2(starts, lines, end), "html");
+        index = end;
+        continue;
+      }
+      collectInline(line, lineStart, add);
+    }
+    return removeOverlaps(blocks);
+  }
+};
+function collectInline(line, lineStart, add) {
+  const media = /!\[\[[^\]]+\]\]/g;
+  let match;
+  while ((match = media.exec(line)) !== null) {
+    add(
+      lineStart + match.index,
+      lineStart + match.index + match[0].length,
+      "embed",
+      false
+    );
+  }
+  collectMarkdownImages(line, lineStart, add);
+  const math = /\$[^$\n]+\$/g;
+  while ((match = math.exec(line)) !== null) {
+    add(lineStart + match.index, lineStart + match.index + match[0].length, "math", false);
+  }
+  collectInlineHtml(line, lineStart, add);
+}
+function collectMarkdownImages(line, lineStart, add) {
+  let cursor = 0;
+  while (cursor < line.length) {
+    const start = line.indexOf("![", cursor);
+    if (start < 0)
+      break;
+    const labelEnd = findUnescaped2(line, "]", start + 2);
+    if (labelEnd < 0 || line.charAt(labelEnd + 1) !== "(") {
+      cursor = start + 2;
+      continue;
+    }
+    const destinationEnd = findClosingParenthesis(line, labelEnd + 2);
+    if (destinationEnd < 0) {
+      cursor = labelEnd + 2;
+      continue;
+    }
+    add(lineStart + start, lineStart + destinationEnd + 1, "image", false);
+    cursor = destinationEnd + 1;
+  }
+}
+function findUnescaped2(value, character, from) {
+  for (let position = from; position < value.length; position += 1) {
+    if (value.charAt(position) === "\\")
+      position += 1;
+    else if (value.charAt(position) === character)
+      return position;
+  }
+  return -1;
+}
+function buildLineStarts(lines) {
+  const starts = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
+  return starts;
+}
+var INLINE_HTML_TAGS = /* @__PURE__ */ new Set([
+  "font",
+  "span",
+  "mark",
+  "kbd",
+  "sub",
+  "sup",
+  "small",
+  "del",
+  "ins",
+  "u",
+  "b",
+  "i",
+  "strong",
+  "em"
+]);
+function collectInlineHtml(line, lineStart, add) {
+  const codeRanges = collectInlineCodeRanges(line);
+  let cursor = 0;
+  while (cursor < line.length) {
+    const openingStart = line.indexOf("<", cursor);
+    if (openingStart < 0)
+      break;
+    cursor = openingStart + 1;
+    if (isInsideRanges(openingStart, codeRanges))
+      continue;
+    const opening = parseHtmlTag(line, openingStart);
+    if (!opening || opening.closing || opening.selfClosing || !INLINE_HTML_TAGS.has(opening.name))
+      continue;
+    const closingEnd = findMatchingInlineHtmlEnd(line, opening.end, opening.name, codeRanges);
+    if (closingEnd < 0)
+      continue;
+    add(lineStart + openingStart, lineStart + closingEnd, "inline-html", false);
+    cursor = closingEnd;
+  }
+}
+function findMatchingInlineHtmlEnd(line, from, tagName, codeRanges) {
+  let depth = 1;
+  let cursor = from;
+  while (cursor < line.length) {
+    const tagStart = line.indexOf("<", cursor);
+    if (tagStart < 0)
+      return -1;
+    cursor = tagStart + 1;
+    if (isInsideRanges(tagStart, codeRanges))
+      continue;
+    const tag = parseHtmlTag(line, tagStart);
+    if (!tag)
+      continue;
+    cursor = tag.end;
+    if (tag.name !== tagName)
+      continue;
+    if (tag.closing)
+      depth -= 1;
+    else if (!tag.selfClosing)
+      depth += 1;
+    if (depth === 0)
+      return tag.end;
+  }
+  return -1;
+}
+function parseHtmlTag(line, start) {
+  if (line.charAt(start) !== "<")
+    return null;
+  let cursor = start + 1;
+  let closing = false;
+  if (line.charAt(cursor) === "/") {
+    closing = true;
+    cursor += 1;
+  }
+  while (/\s/.test(line.charAt(cursor)))
+    cursor += 1;
+  const nameStart = cursor;
+  while (/[A-Za-z0-9-]/.test(line.charAt(cursor)))
+    cursor += 1;
+  if (cursor === nameStart)
+    return null;
+  const name = line.slice(nameStart, cursor).toLowerCase();
+  const end = findHtmlTagEnd(line, cursor);
+  if (end < 0)
+    return null;
+  let marker = end - 2;
+  while (marker >= start && /\s/.test(line.charAt(marker)))
+    marker -= 1;
+  return { name, end, closing, selfClosing: !closing && line.charAt(marker) === "/" };
+}
+function findHtmlTagEnd(line, from) {
+  let quote = "";
+  for (let cursor = from; cursor < line.length; cursor += 1) {
+    const character = line.charAt(cursor);
+    if (quote) {
+      if (character === quote)
+        quote = "";
+      continue;
+    }
+    if (character === String.fromCharCode(34) || character === String.fromCharCode(39))
+      quote = character;
+    else if (character === ">")
+      return cursor + 1;
+  }
+  return -1;
+}
+function collectInlineCodeRanges(line) {
+  const ranges = [];
+  let cursor = 0;
+  while (cursor < line.length) {
+    const start = line.indexOf("`", cursor);
+    if (start < 0)
+      break;
+    let markerLength = 1;
+    while (line.charAt(start + markerLength) === "`")
+      markerLength += 1;
+    const marker = "`".repeat(markerLength);
+    const endMarker = line.indexOf(marker, start + markerLength);
+    if (endMarker < 0)
+      break;
+    ranges.push({ from: start, to: endMarker + markerLength });
+    cursor = endMarker + markerLength;
+  }
+  return ranges;
+}
+function isInsideRanges(position, ranges) {
+  return ranges.some((range) => range.from <= position && position < range.to);
+}
+function lineEnd2(starts, lines, index) {
+  return starts[index] + lines[index].length;
+}
+function removeOverlaps(blocks) {
+  const sorted = blocks.slice().sort((left, right) => left.from - right.from || right.to - left.to);
+  const result = [];
+  for (const block of sorted) {
+    const previous = result[result.length - 1];
+    if (!previous || previous.to <= block.from) {
+      result.push(block);
+      continue;
+    }
+    if (block.to - block.from > previous.to - previous.from)
+      result[result.length - 1] = block;
+  }
+  return result;
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// src/live-preview/controller.ts
+function SurfaceConstructor(blockId, getDocument) {
+  const surface = document.createElement("div");
+  Object.setPrototypeOf(surface, SurfaceConstructor.prototype);
+  surface._livePreviewBlockId = blockId;
+  surface._livePreviewGetDocument = getDocument;
+  surface._livePreviewController = null;
+  surface._livePreviewValue = null;
+  surface._livePreviewSelection = DEFAULT_SELECTION;
+  surface.setAttribute("data-live-preview-surface", "true");
+  return surface;
+}
+var surfacePrototype = typeof HTMLElement === "undefined" ? Object.prototype : HTMLElement.prototype;
+SurfaceConstructor.prototype = Object.create(surfacePrototype);
+SurfaceConstructor.prototype.constructor = SurfaceConstructor;
+Object.defineProperties(SurfaceConstructor.prototype, {
+  value: {
+    get: function() {
+      if (this._livePreviewController && this._livePreviewController.isActive(this))
+        return this._livePreviewController.getValue();
+      if (this._livePreviewValue !== null)
+        return this._livePreviewValue;
+      return readSnapshot(this._livePreviewGetDocument).document;
+    },
+    set: function(value) {
+      this._livePreviewValue = String(value);
+      if (this._livePreviewController && this._livePreviewController.isActive(this))
+        this._livePreviewController.setValue(this._livePreviewValue);
+    }
+  },
+  selectionStart: {
+    get: function() {
+      const selection = this._livePreviewController && this._livePreviewController.isActive(this) ? this._livePreviewController.getSelection() : this._livePreviewSelection;
+      return normalizedRange(selection.ranges[selection.mainIndex || 0]).from;
+    },
+    set: function(value) {
+      this.setSelectionRange(value, this.selectionEnd);
+    }
+  },
+  selectionEnd: {
+    get: function() {
+      const selection = this._livePreviewController && this._livePreviewController.isActive(this) ? this._livePreviewController.getSelection() : this._livePreviewSelection;
+      return normalizedRange(selection.ranges[selection.mainIndex || 0]).to;
+    },
+    set: function(value) {
+      this.setSelectionRange(this.selectionStart, value);
+    }
+  }
+});
+SurfaceConstructor.prototype.setSelectionRange = function(start, end, direction) {
+  const length = this.value.length;
+  const from = Math.max(0, Math.min(start, length));
+  const to = Math.max(0, Math.min(end, length));
+  const range = direction === "backward" ? { anchor: to, head: from } : { anchor: from, head: to };
+  this._livePreviewSelection = { ranges: [range], mainIndex: 0 };
+  if (this._livePreviewController && this._livePreviewController.isActive(this))
+    this._livePreviewController.setSelection(this._livePreviewSelection);
+};
+SurfaceConstructor.prototype.focus = function() {
+  if (this._livePreviewController)
+    this._livePreviewController.activate(this, this._livePreviewSelection, true);
+  else
+    HTMLElement.prototype.focus.call(this);
+};
+SurfaceConstructor.prototype.blur = function() {
+  if (this._livePreviewController && this._livePreviewController.isActive(this))
+    this._livePreviewController.blur();
+  else
+    HTMLElement.prototype.blur.call(this);
+};
+var LivePreviewEditorSurface = SurfaceConstructor;
+var OutlineLivePreviewController = class {
+  constructor(options) {
+    this.activeSurface = null;
+    this.sourcePath = "";
+    this.applyingExternal = false;
+    this.applyingDecorations = false;
+    this.composing = false;
+    this.pendingCompositionChange = null;
+    this.pendingActivation = null;
+    this.parsedDocument = null;
+    this.inlineTokens = [];
+    this.complexBlocks = [];
+    this.complexDecorationCache = /* @__PURE__ */ new Map();
+    this.destroyed = false;
+    this.resizeObserver = null;
+    this.compositionStartHandler = () => this.handleCompositionStart();
+    this.compositionEndHandler = () => this.handleCompositionEnd();
+    this.focusHandler = () => {
+      if (this.activeSurface) {
+        this.activeSurface.dispatchEvent(new FocusEvent("focus"));
+        if (this.options.onFocus)
+          this.options.onFocus(this.activeSurface);
+      }
+    };
+    this.blurHandler = () => {
+      if (this.activeSurface) {
+        this.activeSurface.dispatchEvent(new Event("blur"));
+        if (this.options.onBlur)
+          this.options.onBlur(this.activeSurface);
+      }
+    };
+    this.keyDownHandler = (event) => {
+      if (!this.activeSurface || this.isComposing || event.isComposing || event.keyCode === 229)
+        return;
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.toggleMarkdownFormatting("**", "**");
+        return;
+      }
+      if (modifier && event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.toggleMarkdownFormatting("*", "*");
+        return;
+      }
+      if (modifier && event.shiftKey && event.key.toUpperCase() === "H") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.toggleMarkdownFormatting("==", "==");
+        return;
+      }
+      if (modifier && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        event.stopPropagation();
+        const selection = this.getSelection();
+        const range = normalizedRange(selection.ranges[selection.mainIndex || 0]);
+        const selected = this.getValue().slice(range.from, range.to);
+        const linkText = selected || t("features.placeholder.link");
+        const replacement = "[[" + linkText + "]]";
+        this.replaceRange(replacement, range.from, range.to);
+        const cursor = range.from + replacement.length;
+        this.setSelection({ ranges: [{ anchor: cursor, head: cursor }], mainIndex: 0 });
+        return;
+      }
+      if (this.options.onKeyDown)
+        this.options.onKeyDown(event, this.activeSurface);
+    };
+    this.options = options;
+    this.codeMirror = options.codeMirror || new CodeMirrorLivePreviewAdapter();
+    const document2 = options.initialDocument || "";
+    this.view = this.codeMirror.createEditorView({
+      doc: document2,
+      selection: clampSelection(options.initialSelection || DEFAULT_SELECTION, document2.length),
+      onUpdate: (update) => this.handleUpdate(update),
+      onModifierClick: (position, event) => this.handleModifierClick(position, event)
+    });
+    this.view.contentDOM.addEventListener("compositionstart", this.compositionStartHandler);
+    this.view.contentDOM.addEventListener("compositionend", this.compositionEndHandler);
+    this.view.contentDOM.addEventListener("focus", this.focusHandler);
+    this.view.contentDOM.addEventListener("blur", this.blurHandler);
+    this.view.contentDOM.addEventListener("keydown", this.keyDownHandler);
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        if (!this.activeSurface || !this.options.onHeightChange || entries.length === 0)
+          return;
+        this.options.onHeightChange(this.activeSurface, entries[0].contentRect.height);
+      });
+      this.resizeObserver.observe(this.view.dom);
+    }
+  }
+  createSurface(blockId, getDocument) {
+    this.assertAlive();
+    const surface = new LivePreviewEditorSurface(blockId, getDocument);
+    surface._livePreviewController = this;
+    return surface;
+  }
+  activate(surface, selection, focus = true) {
+    var _a, _b, _c;
+    this.assertAlive();
+    if (this.isComposing && this.activeSurface && this.activeSurface !== surface) {
+      this.pendingActivation = { surface, selection, focus };
+      return false;
+    }
+    const target = surface;
+    const previousSurface = this.activeSurface;
+    if (previousSurface && previousSurface !== target) {
+      previousSurface.dispatchEvent(new Event("blur"));
+      (_b = (_a = this.options).onBlur) == null ? void 0 : _b.call(_a, previousSurface);
+    }
+    const latestSnapshot = readSnapshot(target._livePreviewGetDocument);
+    const snapshot = {
+      ...latestSnapshot,
+      document: (_c = target._livePreviewValue) != null ? _c : latestSnapshot.document
+    };
+    const nextSourcePath = snapshot.sourcePath || "";
+    if (this.activeSurface !== target || this.sourcePath !== nextSourcePath)
+      this.invalidateParsedDocument();
+    this.activeSurface = target;
+    this.sourcePath = nextSourcePath;
+    this.revision = snapshot.revision;
+    target._livePreviewController = this;
+    this.codeMirror.mountEditorView(this.view, target);
+    this.applyDocument(snapshot.document, selection || target._livePreviewSelection);
+    this.refreshDecorations();
+    if (focus)
+      this.view.focus();
+    return true;
+  }
+  isActive(target) {
+    if (!this.activeSurface)
+      return false;
+    if (target === void 0)
+      return true;
+    return typeof target === "string" ? this.activeSurface._livePreviewBlockId === target : this.activeSurface === target;
+  }
+  hasFocus() {
+    return !!this.activeSurface && (this.view.hasFocus === true || this.view.contentDOM === document.activeElement || this.view.contentDOM.contains(document.activeElement));
+  }
+  getValue() {
+    return this.view.state.doc;
+  }
+  setValue(value) {
+    this.replaceRange(value, 0, this.getValue().length);
+  }
+  getSelection() {
+    return clampSelection(this.view.state.selection, this.getValue().length);
+  }
+  setSelection(selection) {
+    this.view.dispatch({ selection: clampSelection(selection, this.getValue().length), scrollIntoView: true, userEvent: "live-preview.selection" });
+  }
+  replaceRange(insert, from, to = from) {
+    const length = this.getValue().length;
+    const start = Math.max(0, Math.min(from, length));
+    const end = Math.max(start, Math.min(to, length));
+    const cursor = start + insert.length;
+    this.view.dispatch({ changes: [{ from: start, to: end, insert }], selection: { ranges: [{ anchor: cursor, head: cursor }], mainIndex: 0 }, userEvent: "input" });
+  }
+  replaceSelection(insert) {
+    const range = normalizedRange(this.getSelection().ranges[this.getSelection().mainIndex || 0]);
+    this.replaceRange(insert, range.from, range.to);
+  }
+  toggleMarkdownFormatting(prefix, suffix = prefix) {
+    const edit = createMarkdownToggleEdit(this.getValue(), this.getSelection(), prefix, suffix);
+    this.view.dispatch({ changes: [{ from: edit.from, to: edit.to, insert: edit.insert }], selection: edit.selection, userEvent: "input.format" });
+  }
+  coordsAtPos(position, side = 1) {
+    return this.view.coordsAtPos ? this.view.coordsAtPos(position, side) : null;
+  }
+  posAtCoords(coordinates, precise = true) {
+    return this.view.posAtCoords ? this.view.posAtCoords(coordinates, precise) : null;
+  }
+  openContextMenu(event) {
+    if (!this.activeSurface || !this.options.onContextMenu)
+      return false;
+    return this.options.onContextMenu(event, this.activeSurface) !== false;
+  }
+  updateSurfaceSnapshot(surface, document2, selection) {
+    this.assertAlive();
+    const target = surface;
+    if (this.isActive(target)) {
+      this.applyDocument(document2, selection || this.getSelection());
+      this.refreshDecorations();
       return;
     }
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0)
-      return;
-    const range = selection.getRangeAt(0);
-    const selectedText = selection.toString();
-    const linkText = selectedText || t("features.placeholder.link");
-    const linkMarkdown = `[[${linkText}]]`;
-    range.deleteContents();
-    range.insertNode(document.createTextNode(linkMarkdown));
-    this.element.dispatchEvent(new Event("input", { bubbles: true }));
+    target._livePreviewValue = document2;
+    if (selection)
+      target._livePreviewSelection = clampSelection(selection, document2.length);
   }
-  /**
-   * 为 textarea 插入内部链接
-   */
-  insertLinkTextarea() {
-    const textarea = this.element;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = textarea.value.substring(start, end);
-    const linkText = selectedText || t("features.placeholder.link");
-    const linkMarkdown = `[[${linkText}]]`;
-    const beforeText = textarea.value.substring(0, start);
-    const afterText = textarea.value.substring(end);
-    textarea.value = beforeText + linkMarkdown + afterText;
-    const newCursorPos = start + linkMarkdown.length;
-    textarea.setSelectionRange(newCursorPos, newCursorPos);
-    textarea.focus();
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-  /**
-   * 插入外部链接
-   */
-  insertExternalLink() {
-    if (this.element instanceof HTMLTextAreaElement) {
-      this.insertExternalLinkTextarea();
+  syncDocument(target, selection) {
+    if (typeof target === "string") {
+      if (!this.composing) {
+        this.applyDocument(target, selection);
+        this.refreshDecorations();
+      }
       return;
     }
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0)
+    const surface = target || this.activeSurface;
+    if (!surface || this.activeSurface && surface !== this.activeSurface)
       return;
-    const range = selection.getRangeAt(0);
-    const selectedText = selection.toString();
-    const linkText = selectedText || t("features.placeholder.link");
-    const linkMarkdown = `[${linkText}](https://example.com)`;
-    range.deleteContents();
-    range.insertNode(document.createTextNode(linkMarkdown));
-    this.element.dispatchEvent(new Event("input", { bubbles: true }));
+    if (this.composing)
+      return;
+    const snapshot = readSnapshot(surface._livePreviewGetDocument);
+    const nextSourcePath = snapshot.sourcePath || this.sourcePath;
+    if (nextSourcePath !== this.sourcePath)
+      this.invalidateParsedDocument();
+    this.sourcePath = nextSourcePath;
+    this.revision = snapshot.revision;
+    this.applyDocument(snapshot.document, selection || surface._livePreviewSelection);
+    this.refreshDecorations();
   }
-  /**
-   * 为 textarea 插入外部链接
-   */
-  insertExternalLinkTextarea() {
-    const textarea = this.element;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = textarea.value.substring(start, end);
-    const linkText = selectedText || t("features.placeholder.link");
-    const linkMarkdown = `[${linkText}](https://example.com)`;
-    const beforeText = textarea.value.substring(0, start);
-    const afterText = textarea.value.substring(end);
-    textarea.value = beforeText + linkMarkdown + afterText;
-    const newCursorPos = start + linkMarkdown.length;
-    textarea.setSelectionRange(newCursorPos, newCursorPos);
-    textarea.focus();
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  getActiveEdit() {
+    if (!this.activeSurface)
+      return null;
+    return { blockId: this.activeSurface._livePreviewBlockId, document: this.getValue(), selection: this.getSelection(), composing: this.isComposing, sourcePath: this.sourcePath, revision: this.revision, surface: this.activeSurface };
   }
-  /**
-   * 插入文本
-   */
-  insertText(text) {
-    if (this.element instanceof HTMLTextAreaElement) {
-      const textarea = this.element;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const beforeText = textarea.value.substring(0, start);
-      const afterText = textarea.value.substring(end);
-      textarea.value = beforeText + text + afterText;
-      const newCursorPos = start + text.length;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-      textarea.focus();
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  flush() {
+    if (this.pendingCompositionChange && !this.composing) {
+      const change = this.pendingCompositionChange;
+      this.pendingCompositionChange = null;
+      this.options.onDocumentChange(change);
+    }
+  }
+  detachSurface(surface, force = false) {
+    var _a, _b;
+    const target = surface;
+    if (((_a = this.pendingActivation) == null ? void 0 : _a.surface) === surface)
+      this.pendingActivation = null;
+    if (!this.isActive(surface)) {
+      if (target._livePreviewController === this)
+        target._livePreviewController = null;
       return;
     }
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0)
+    if (this.isComposing && !force)
       return;
-    const range = selection.getRangeAt(0);
-    range.deleteContents();
-    range.insertNode(document.createTextNode(text));
-    this.element.dispatchEvent(new Event("input", { bubbles: true }));
+    target._livePreviewSelection = this.getSelection();
+    target._livePreviewValue = this.getValue();
+    if (force && this.isComposing) {
+      this.composing = false;
+      if (this.pendingCompositionChange)
+        this.pendingCompositionChange.composing = false;
+      this.emitComposition(false);
+      this.flush();
+    }
+    this.setDecorations([]);
+    this.invalidateParsedDocument();
+    if (this.view.dom.parentElement)
+      this.view.dom.parentElement.removeChild(this.view.dom);
+    this.activeSurface = null;
+    if (((_b = this.pendingActivation) == null ? void 0 : _b.surface) === surface || force)
+      this.pendingActivation = null;
+    if (target._livePreviewController === this)
+      target._livePreviewController = null;
   }
-  /**
-   * 解绑事件
-   */
-  unbind() {
+  discardActiveEdit() {
+    var _a, _b;
+    if (!this.activeSurface)
+      return;
+    const surface = this.activeSurface;
+    surface.dispatchEvent(new Event("blur"));
+    (_b = (_a = this.options).onBlur) == null ? void 0 : _b.call(_a, surface);
+    this.pendingCompositionChange = null;
+    this.composing = false;
+    surface._livePreviewValue = null;
+    this.setDecorations([]);
+    this.invalidateParsedDocument();
+    if (this.view.dom.parentElement)
+      this.view.dom.parentElement.removeChild(this.view.dom);
+    this.activeSurface = null;
+    this.pendingActivation = null;
+  }
+  blur() {
+    this.view.contentDOM.blur();
+  }
+  destroy() {
+    var _a, _b, _c, _d, _e;
+    if (this.destroyed)
+      return;
+    this.destroyed = true;
+    this.composing = false;
+    if (this.pendingCompositionChange)
+      this.pendingCompositionChange.composing = false;
+    this.flush();
+    (_a = this.resizeObserver) == null ? void 0 : _a.disconnect();
+    this.view.contentDOM.removeEventListener("compositionstart", this.compositionStartHandler);
+    this.view.contentDOM.removeEventListener("compositionend", this.compositionEndHandler);
+    this.view.contentDOM.removeEventListener("focus", this.focusHandler);
+    this.view.contentDOM.removeEventListener("blur", this.blurHandler);
+    this.view.contentDOM.removeEventListener("keydown", this.keyDownHandler);
+    if (((_b = this.activeSurface) == null ? void 0 : _b._livePreviewController) === this)
+      this.activeSurface._livePreviewController = null;
+    const pendingSurface = (_c = this.pendingActivation) == null ? void 0 : _c.surface;
+    if ((pendingSurface == null ? void 0 : pendingSurface._livePreviewController) === this)
+      pendingSurface._livePreviewController = null;
+    this.view.destroy();
+    this.activeSurface = null;
+    this.pendingActivation = null;
+    (_e = (_d = this.options).onDestroy) == null ? void 0 : _e.call(_d);
+  }
+  get isComposing() {
+    return this.composing || this.view.composing === true;
+  }
+  applyDocument(documentValue, selection) {
+    const nextSelection = clampSelection(selection || DEFAULT_SELECTION, documentValue.length);
+    if (documentValue === this.getValue() && selectionEquals(nextSelection, this.getSelection()))
+      return;
+    this.applyingExternal = true;
+    try {
+      this.view.dispatch({ changes: documentValue === this.getValue() ? void 0 : [{ from: 0, to: this.getValue().length, insert: documentValue }], selection: nextSelection, userEvent: "live-preview.external-sync" });
+    } finally {
+      this.applyingExternal = false;
+    }
+  }
+  handleUpdate(update) {
+    if (!this.activeSurface || this.destroyed)
+      return;
+    if (this.applyingDecorations)
+      return;
+    const selection = clampSelection(update.state.selection, update.state.doc.length);
+    this.activeSurface._livePreviewSelection = selection;
+    this.activeSurface._livePreviewValue = update.state.doc;
+    if (!this.applyingExternal && update.docChanged) {
+      const change = { blockId: this.activeSurface._livePreviewBlockId, document: update.state.doc, selection, composing: this.isComposing, revision: this.revision, transactions: update.transactions, userEvent: update.userEvent };
+      if (this.isComposing)
+        this.pendingCompositionChange = change;
+      else
+        this.options.onDocumentChange(change);
+    }
+    if (!this.applyingExternal && update.selectionChanged && this.options.onSelectionChange)
+      this.options.onSelectionChange({ blockId: this.activeSurface._livePreviewBlockId, selection, composing: this.isComposing });
+    if (!this.applyingExternal && (update.docChanged || update.selectionChanged || update.viewportChanged)) {
+      if (!this.isComposing)
+        this.refreshDecorations();
+    }
+  }
+  handleCompositionStart() {
+    if (this.composing)
+      return;
+    this.composing = true;
+    this.emitComposition(true);
+  }
+  handleCompositionEnd() {
+    if (!this.composing)
+      return;
+    this.composing = false;
+    this.emitComposition(false);
+    Promise.resolve().then(() => {
+      if (this.destroyed || this.composing)
+        return;
+      if (this.pendingCompositionChange)
+        this.pendingCompositionChange.composing = false;
+      this.flush();
+      this.refreshDecorations();
+      const pending = this.pendingActivation;
+      this.pendingActivation = null;
+      if (pending)
+        this.activate(pending.surface, pending.selection, pending.focus);
+    });
+  }
+  emitComposition(composing) {
+    if (this.activeSurface && this.options.onCompositionChange)
+      this.options.onCompositionChange({ blockId: this.activeSurface._livePreviewBlockId, composing, document: this.getValue(), selection: this.getSelection() });
+  }
+  refreshDecorations() {
+    var _a, _b, _c, _d;
+    if (!this.activeSurface)
+      return;
+    const documentValue = this.getValue();
+    const selection = this.getSelection();
+    if (this.parsedDocument !== documentValue) {
+      this.parsedDocument = documentValue;
+      const syntaxTokens = ((_b = (_a = this.codeMirror).getInlineMarkdownTokens) == null ? void 0 : _b.call(_a, this.view)) || [];
+      const obsidianTokens = parseInlineMarkdown(documentValue).filter(
+        (token) => syntaxTokens.length === 0 || token.kind === "wikilink" || token.kind === "highlight" || token.kind === "comment" || token.kind === "tag" || token.kind === "block-ref"
+      );
+      this.inlineTokens = mergeInlineTokens(syntaxTokens, obsidianTokens);
+      this.complexBlocks = this.options.complexBlocks ? this.options.complexBlocks.getBlocks(documentValue, { blockId: this.activeSurface._livePreviewBlockId, sourcePath: this.sourcePath }).filter((block) => block.from >= 0 && block.to > block.from && block.to <= documentValue.length) : [];
+      this.complexDecorationCache.clear();
+    }
+    const decorations = buildInlineMarkdownDecorationsFromTokens(this.inlineTokens, selection).filter((item) => !this.complexBlocks.some((block) => item.from < block.to && block.from < item.to)).slice();
+    const viewportRanges = ((_d = (_c = this.codeMirror).getViewportRanges) == null ? void 0 : _d.call(_c, this.view)) || [{ from: 0, to: documentValue.length }];
+    this.complexBlocks.filter((block) => viewportRanges.some((range) => block.from < range.to && range.from < block.to)).filter((block) => !selectionTouchesBlock(selection, block)).forEach((block) => {
+      let decoration = this.complexDecorationCache.get(block.id);
+      if (!decoration) {
+        decoration = {
+          kind: "widget",
+          from: block.from,
+          to: block.to,
+          block: block.block !== false,
+          widget: new LivePreviewBlockWidget(block, {
+            renderer: this.options.markdownRenderer,
+            onRenderError: this.options.onRenderError,
+            onOpenLink: (target, sourcePath, openState) => {
+              var _a2, _b2;
+              return (_b2 = (_a2 = this.options).onOpenLink) == null ? void 0 : _b2.call(_a2, target, sourcePath, openState);
+            }
+          })
+        };
+        this.complexDecorationCache.set(block.id, decoration);
+      }
+      decorations.push(decoration);
+    });
+    this.setDecorations(decorations);
+  }
+  setDecorations(decorations) {
+    if (this.applyingDecorations)
+      return;
+    this.applyingDecorations = true;
+    try {
+      this.codeMirror.setDecorations(this.view, decorations);
+    } finally {
+      this.applyingDecorations = false;
+    }
+  }
+  handleModifierClick(position, event) {
+    if (!this.options.onOpenLink)
+      return false;
+    const token = this.inlineTokens.find(
+      (item) => (item.kind === "link" || item.kind === "wikilink") && item.from <= position && position < item.to
+    );
+    if (!token)
+      return false;
+    const source = this.getValue().slice(token.from, token.to);
+    const target = token.kind === "wikilink" ? source.replace(/^!?(?:\[\[)/, "").replace(/\]\]$/, "").split("|", 1)[0] : extractMarkdownLinkTarget(source);
+    if (!target)
+      return false;
+    this.options.onOpenLink(target, this.sourcePath, getOpenState2(event));
+    return true;
+  }
+  invalidateParsedDocument() {
+    this.parsedDocument = null;
+    this.inlineTokens = [];
+    this.complexBlocks = [];
+    this.complexDecorationCache.clear();
+  }
+  assertAlive() {
+    if (this.destroyed)
+      throw new Error("OutlineLivePreviewController has been destroyed.");
+  }
+};
+function readSnapshot(getDocument) {
+  const value = getDocument();
+  return typeof value === "string" ? { document: value } : value;
+}
+function getOpenState2(event) {
+  return (event.ctrlKey || event.metaKey) && event.altKey || event.shiftKey ? "split" : false;
+}
+function mergeInlineTokens(primary, supplemental) {
+  const seen = /* @__PURE__ */ new Set();
+  const wikilinks = supplemental.filter((token) => token.kind === "wikilink");
+  return [...primary, ...supplemental].filter((token) => {
+    if (token.kind === "link" && wikilinks.some((wikilink) => tokensOverlap(token, wikilink))) {
+      return false;
+    }
+    const key = `${token.kind}:${token.from}:${token.to}`;
+    if (seen.has(key))
+      return false;
+    seen.add(key);
+    return true;
+  }).sort((left, right) => left.from - right.from || right.to - left.to);
+}
+function tokensOverlap(left, right) {
+  return left.from < right.to && right.from < left.to;
+}
+function selectionTouchesBlock(selection, block) {
+  return selection.ranges.some((range) => {
+    const from = Math.min(range.anchor, range.head);
+    const to = Math.max(range.anchor, range.head);
+    if (from === to)
+      return block.from <= from && from <= block.to;
+    return block.from < to && from < block.to;
+  });
+}
+function extractMarkdownLinkTarget(source) {
+  const separator = source.lastIndexOf("](");
+  if (separator < 0 || !source.endsWith(")"))
+    return "";
+  return source.slice(separator + 2, -1).trim().replace(/^<|>$/g, "");
+}
+
+// src/live-preview/obsidian-renderer.ts
+var import_obsidian3 = require("obsidian");
+var ObsidianComponent = class {
+  constructor() {
+    this.component = new import_obsidian3.Component();
+    this.component.load();
+  }
+  unload() {
+    this.component.unload();
+  }
+};
+var ObsidianMarkdownRendererAdapter = class {
+  constructor(app) {
+    this.app = app;
+  }
+  createComponent() {
+    return new ObsidianComponent();
+  }
+  renderMarkdown(request) {
+    return import_obsidian3.MarkdownRenderer.render(this.app, request.markdown, request.container, request.sourcePath, request.component.component);
+  }
+};
+
+// src/live-preview/obsidian-editor-adapter.ts
+var import_obsidian4 = require("obsidian");
+function createLivePreviewEditorBackend(controller) {
+  return {
+    getValue: () => controller.getValue(),
+    setValue: (content) => controller.setValue(content),
+    getSelection: () => controller.getSelection(),
+    setSelection: (selection) => controller.setSelection(selection),
+    replaceRange: (replacement, from, to = from) => controller.replaceRange(replacement, from, to),
+    focus: () => {
+      var _a, _b;
+      return (_b = (_a = controller.getActiveEdit()) == null ? void 0 : _a.surface) == null ? void 0 : _b.focus();
+    },
+    blur: () => controller.blur(),
+    hasFocus: () => controller.hasFocus(),
+    coordsAtPos: (position, side) => controller.coordsAtPos(position, side),
+    refresh: () => {
+      const active = controller.getActiveEdit();
+      if (active)
+        controller.syncDocument(active.document, active.selection);
+    }
+  };
+}
+var OutlineObsidianEditor = class extends import_obsidian4.Editor {
+  constructor(backend, options) {
+    super();
+    this.backend = backend;
+    this.options = options;
+  }
+  get containerEl() {
+    return this.options.getContainer() || document.body;
+  }
+  refresh() {
+    var _a, _b;
+    (_b = (_a = this.backend).refresh) == null ? void 0 : _b.call(_a);
+  }
+  getValue() {
+    return this.backend.getValue();
+  }
+  setValue(content) {
+    this.backend.setValue(content);
+  }
+  getLine(line) {
+    return this.getLines()[line] || "";
+  }
+  lineCount() {
+    return this.getLines().length;
+  }
+  lastLine() {
+    return Math.max(0, this.lineCount() - 1);
+  }
+  setLine(line, text) {
+    const from = this.posToOffset({ line, ch: 0 });
+    const to = this.posToOffset({ line, ch: this.getLine(line).length });
+    this.backend.replaceRange(text, from, to);
+  }
+  getSelection() {
+    const selection = this.backend.getSelection();
+    const range = normalizedRange(selection.ranges[selection.mainIndex || 0]);
+    return this.getValue().slice(range.from, range.to);
+  }
+  getRange(from, to) {
+    return this.getValue().slice(this.posToOffset(from), this.posToOffset(to));
+  }
+  replaceSelection(replacement) {
+    const selection = this.backend.getSelection();
+    const range = normalizedRange(selection.ranges[selection.mainIndex || 0]);
+    this.backend.replaceRange(replacement, range.from, range.to);
+  }
+  replaceRange(replacement, from, to = from) {
+    this.backend.replaceRange(replacement, this.posToOffset(from), this.posToOffset(to));
+  }
+  getCursor(side = "head") {
+    const selection = this.backend.getSelection();
+    const range = selection.ranges[selection.mainIndex || 0];
+    const from = Math.min(range.anchor, range.head);
+    const to = Math.max(range.anchor, range.head);
+    const offset = side === "from" ? from : side === "to" ? to : side === "anchor" ? range.anchor : range.head;
+    return this.offsetToPos(offset);
+  }
+  listSelections() {
+    return this.backend.getSelection().ranges.map((range) => ({
+      anchor: this.offsetToPos(range.anchor),
+      head: this.offsetToPos(range.head)
+    }));
+  }
+  setSelection(anchor, head = anchor) {
+    this.setSelections([{ anchor, head }]);
+  }
+  setSelections(ranges, main = 0) {
+    this.backend.setSelection({
+      ranges: ranges.map((range) => ({
+        anchor: this.posToOffset(range.anchor),
+        head: this.posToOffset(range.head || range.anchor)
+      })),
+      mainIndex: main
+    });
+  }
+  focus() {
+    this.backend.focus();
+  }
+  blur() {
+    this.backend.blur();
+  }
+  hasFocus() {
+    return this.backend.hasFocus();
+  }
+  coordsAtPos(position, side = 1) {
+    var _a, _b;
+    const offset = typeof position === "number" ? position : this.posToOffset(position);
+    return ((_b = (_a = this.backend).coordsAtPos) == null ? void 0 : _b.call(_a, offset, side)) || this.containerEl.getBoundingClientRect();
+  }
+  getScrollInfo() {
+    const scroller = this.getScroller();
+    return { top: (scroller == null ? void 0 : scroller.scrollTop) || 0, left: (scroller == null ? void 0 : scroller.scrollLeft) || 0 };
+  }
+  scrollTo(x, y) {
+    const scroller = this.getScroller();
+    if (!scroller)
+      return;
+    scroller.scrollTo({ left: x != null ? x : scroller.scrollLeft, top: y != null ? y : scroller.scrollTop });
+  }
+  scrollIntoView(range, center = false) {
+    var _a, _b, _c;
+    const position = this.posToOffset(range.from);
+    const coordinates = (_b = (_a = this.backend).coordsAtPos) == null ? void 0 : _b.call(_a, position);
+    if (!coordinates) {
+      (_c = this.options.getContainer()) == null ? void 0 : _c.scrollIntoView({ block: center ? "center" : "nearest" });
+      return;
+    }
+    const scroller = this.getScroller();
+    const scrollerRect = scroller == null ? void 0 : scroller.getBoundingClientRect();
+    if (!scroller || !scrollerRect)
+      return;
+    const targetTop = coordinates.top - scrollerRect.top + scroller.scrollTop;
+    scroller.scrollTo({ top: center ? targetTop - scroller.clientHeight / 2 : targetTop });
+  }
+  undo() {
+    var _a, _b;
+    (_b = (_a = this.options).undo) == null ? void 0 : _b.call(_a);
+  }
+  redo() {
+    var _a, _b;
+    (_b = (_a = this.options).redo) == null ? void 0 : _b.call(_a);
+  }
+  indentList() {
+    this.exec("indentMore");
+  }
+  unindentList() {
+    this.exec("indentLess");
+  }
+  toggleNumberList() {
+    this.toggleLinePrefix("number");
+  }
+  toggleBulletList() {
+    this.toggleLinePrefix("bullet");
+  }
+  toggleCheckList() {
+    this.toggleLinePrefix("check");
+  }
+  toggleMarkdownFormatting(type) {
+    const markers = {
+      bold: ["**", "**"],
+      italic: ["*", "*"],
+      strikethrough: ["~~", "~~"],
+      highlight: ["==", "=="],
+      code: ["`", "`"],
+      math: ["$", "$"]
+    };
+    const marker = markers[type];
+    if (!marker)
+      return;
+    const edit = createMarkdownToggleEdit(this.getValue(), this.backend.getSelection(), marker[0], marker[1]);
+    this.backend.replaceRange(edit.insert, edit.from, edit.to);
+    this.backend.setSelection(edit.selection);
+  }
+  exec(command) {
+    var _a, _b;
+    if ((_b = (_a = this.options).exec) == null ? void 0 : _b.call(_a, command))
+      return;
+    this.execLocally(command);
+  }
+  transaction(transaction) {
+    var _a;
+    if (transaction.replaceSelection !== void 0)
+      this.replaceSelection(transaction.replaceSelection);
+    if ((_a = transaction.changes) == null ? void 0 : _a.length) {
+      const changes = transaction.changes.map((change) => ({
+        from: this.posToOffset(change.from),
+        to: this.posToOffset(change.to || change.from),
+        text: change.text
+      })).sort((left, right) => right.from - left.from || right.to - left.to);
+      for (const change of changes)
+        this.backend.replaceRange(change.text, change.from, change.to);
+    }
+    const selections = transaction.selections || (transaction.selection ? [transaction.selection] : null);
+    if (selections) {
+      this.setSelections(selections.map((range) => ({ anchor: range.from, head: range.to || range.from })));
+    }
+  }
+  wordAt(position) {
+    const line = this.getLine(position.line);
+    const isWord = (character) => /[A-Za-z0-9_\u00C0-\uFFFF-]/.test(character);
+    if (!line || !isWord(line.charAt(position.ch)) && !isWord(line.charAt(position.ch - 1)))
+      return null;
+    let from = Math.min(position.ch, Math.max(0, line.length - 1));
+    if (!isWord(line.charAt(from)) && from > 0)
+      from -= 1;
+    let to = from + 1;
+    while (from > 0 && isWord(line.charAt(from - 1)))
+      from -= 1;
+    while (to < line.length && isWord(line.charAt(to)))
+      to += 1;
+    return { from: { line: position.line, ch: from }, to: { line: position.line, ch: to } };
+  }
+  posToOffset(position) {
+    const lines = this.getLines();
+    const line = Math.max(0, Math.min(position.line, lines.length - 1));
+    let offset = 0;
+    for (let index = 0; index < line; index += 1)
+      offset += lines[index].length + 1;
+    return Math.min(this.getValue().length, offset + Math.max(0, Math.min(position.ch, lines[line].length)));
+  }
+  offsetToPos(offset) {
+    const target = Math.max(0, Math.min(offset, this.getValue().length));
+    const lines = this.getLines();
+    let remaining = target;
+    for (let line = 0; line < lines.length; line += 1) {
+      if (remaining <= lines[line].length)
+        return { line, ch: remaining };
+      remaining -= lines[line].length + 1;
+    }
+    return { line: lines.length - 1, ch: lines[lines.length - 1].length };
+  }
+  getLines() {
+    return this.getValue().split("\n");
+  }
+  getScroller() {
+    var _a;
+    return ((_a = this.options.getContainer()) == null ? void 0 : _a.querySelector(".cm-scroller")) || null;
+  }
+  execLocally(command) {
+    var _a;
+    const cursor = this.getCursor();
+    if (command === "goStart")
+      this.setCursor({ line: cursor.line, ch: 0 });
+    else if (command === "goEnd")
+      this.setCursor({ line: cursor.line, ch: this.getLine(cursor.line).length });
+    else if (command === "goLeft")
+      this.setCursor(this.offsetToPos(Math.max(0, this.posToOffset(cursor) - 1)));
+    else if (command === "goRight")
+      this.setCursor(this.offsetToPos(Math.min(this.getValue().length, this.posToOffset(cursor) + 1)));
+    else if (command === "goUp")
+      this.setCursor({ line: Math.max(0, cursor.line - 1), ch: cursor.ch });
+    else if (command === "goDown")
+      this.setCursor({ line: Math.min(this.lastLine(), cursor.line + 1), ch: cursor.ch });
+    else if (command === "newlineAndIndent")
+      this.replaceSelection("\n" + (((_a = /^\s*/.exec(this.getLine(cursor.line))) == null ? void 0 : _a[0]) || ""));
+    else if (command === "deleteLine")
+      this.deleteCurrentLine(cursor.line);
+    else if (command === "indentMore")
+      this.transformSelectedLines((line) => "	" + line);
+    else if (command === "indentLess")
+      this.transformSelectedLines((line) => line.replace(/^(?:\t| {1,4})/, ""));
+  }
+  deleteCurrentLine(line) {
+    const from = this.posToOffset({ line, ch: 0 });
+    const to = line < this.lastLine() ? this.posToOffset({ line: line + 1, ch: 0 }) : this.posToOffset({ line, ch: this.getLine(line).length });
+    this.backend.replaceRange("", from, to);
+  }
+  transformSelectedLines(transform) {
+    const from = this.getCursor("from");
+    const to = this.getCursor("to");
+    for (let line = to.line; line >= from.line; line -= 1)
+      this.setLine(line, transform(this.getLine(line)));
+  }
+  toggleLinePrefix(kind) {
+    const from = this.getCursor("from");
+    const to = this.getCursor("to");
+    const prefixPattern = /^\s*(?:(?:[-+*]|\d+\.)\s+(?:\[[ xX]\]\s+)?)?/;
+    for (let line = to.line; line >= from.line; line -= 1) {
+      const content = this.getLine(line);
+      const bare = content.replace(prefixPattern, "");
+      const prefix = kind === "number" ? `${line - from.line + 1}. ` : kind === "check" ? "- [ ] " : "- ";
+      this.setLine(line, prefix + bare);
+    }
   }
 };
 
 // src/features/link-suggest.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/ui/floating-menu-position.ts
+function prepareFloatingMenu(menuElement, options = {}) {
+  var _a, _b, _c, _d, _e, _f, _g;
+  const margin = (_a = options.margin) != null ? _a : 8;
+  const viewportWidth = (_c = (_b = window.visualViewport) == null ? void 0 : _b.width) != null ? _c : window.innerWidth;
+  const availableWidth = Math.max(0, viewportWidth - margin * 2);
+  const minWidth = Math.min((_d = options.minWidth) != null ? _d : 180, availableWidth);
+  const requestedWidth = (_f = (_e = options.preferredWidth) != null ? _e : options.anchorWidth) != null ? _f : minWidth;
+  const maxWidth = Math.min((_g = options.maxWidth) != null ? _g : availableWidth, availableWidth);
+  const width = Math.min(availableWidth, Math.max(minWidth, Math.min(requestedWidth, maxWidth)));
+  menuElement.style.visibility = "hidden";
+  menuElement.style.display = "block";
+  menuElement.style.left = "0px";
+  menuElement.style.top = "0px";
+  menuElement.style.width = `${width}px`;
+  menuElement.style.maxWidth = `${availableWidth}px`;
+}
 function getSafeViewportBounds(margin) {
   var _a, _b, _c, _d;
   const visualViewport = window.visualViewport;
@@ -3769,27 +7698,13 @@ function getSafeViewportBounds(margin) {
   };
 }
 function positionFloatingMenu(menuElement, anchorPoint, options = {}) {
-  var _a, _b, _c, _d, _e, _f, _g;
+  var _a, _b;
   const margin = (_a = options.margin) != null ? _a : 8;
   const offset = (_b = options.offset) != null ? _b : 12;
-  const minWidth = (_c = options.minWidth) != null ? _c : 180;
   const bounds = getSafeViewportBounds(margin);
-  const previousVisibility = menuElement.style.visibility;
-  const previousDisplay = menuElement.style.display;
-  menuElement.style.visibility = "hidden";
-  menuElement.style.display = "block";
-  menuElement.style.left = "0px";
-  menuElement.style.top = "0px";
-  const measuredWidth = menuElement.getBoundingClientRect().width || menuElement.offsetWidth || minWidth;
-  const requestedWidth = (_f = (_e = (_d = options.preferredWidth) != null ? _d : options.anchorWidth) != null ? _e : measuredWidth) != null ? _f : minWidth;
-  const maxWidth = Math.min((_g = options.maxWidth) != null ? _g : bounds.width, bounds.width);
-  const finalWidth = Math.min(
-    bounds.width,
-    Math.max(Math.min(minWidth, bounds.width), Math.min(requestedWidth, maxWidth))
-  );
-  menuElement.style.width = `${finalWidth}px`;
-  menuElement.style.maxWidth = `${bounds.width}px`;
-  const measuredHeight = menuElement.getBoundingClientRect().height || menuElement.offsetHeight || 0;
+  const menuRect = menuElement.getBoundingClientRect();
+  const finalWidth = Math.min(menuRect.width || options.minWidth || 180, bounds.width);
+  const measuredHeight = menuRect.height || 0;
   const anchorX = Math.min(Math.max(anchorPoint.x, bounds.left), bounds.right);
   const anchorY = Math.min(Math.max(anchorPoint.y, bounds.top), bounds.bottom);
   const spaceBelow = Math.max(0, bounds.bottom - (anchorY + offset));
@@ -3808,8 +7723,8 @@ function positionFloatingMenu(menuElement, anchorPoint, options = {}) {
   menuElement.style.maxHeight = `${availableHeight}px`;
   menuElement.style.overflowY = "auto";
   menuElement.style.overscrollBehavior = "contain";
-  menuElement.style.visibility = previousVisibility || "visible";
-  menuElement.style.display = previousDisplay || "block";
+  menuElement.style.visibility = "visible";
+  menuElement.style.display = "block";
 }
 
 // src/features/link-suggest.ts
@@ -3833,6 +7748,9 @@ var LinkSuggestManager = class {
     this.onSelectCallback = null;
     // 当前绑定的元素
     this.boundElement = null;
+    this.renderFrame = null;
+    this.positionFrame = null;
+    this.blurTimeout = null;
     /**
      * 处理输入
      */
@@ -3884,15 +7802,18 @@ var LinkSuggestManager = class {
      * 处理失焦
      */
     this.handleBlur = () => {
-      setTimeout(() => {
+      if (this.blurTimeout !== null)
+        window.clearTimeout(this.blurTimeout);
+      this.blurTimeout = window.setTimeout(() => {
         var _a;
+        this.blurTimeout = null;
         if (!((_a = this.suggestEl) == null ? void 0 : _a.contains(document.activeElement))) {
           this.close();
         }
       }, 150);
     };
     this.app = app;
-    this.scope = new import_obsidian4.Scope();
+    this.scope = new import_obsidian5.Scope();
     this.boundHandleViewportChange = this.handleViewportChange.bind(this);
     this.setupKeyboardHandlers();
   }
@@ -3997,11 +7918,12 @@ var LinkSuggestManager = class {
   getTextAndCursor() {
     if (!this.boundElement)
       return { text: "", cursorPos: 0 };
-    if (this.boundElement instanceof HTMLTextAreaElement || this.boundElement instanceof HTMLInputElement) {
-      return {
-        text: this.boundElement.value,
-        cursorPos: this.boundElement.selectionStart || 0
-      };
+    if (this.boundElement.matches("[data-live-preview-surface]")) {
+      const surface = this.boundElement;
+      return { text: surface.value, cursorPos: surface.selectionStart };
+    }
+    if (this.boundElement instanceof HTMLInputElement) {
+      return { text: this.boundElement.value, cursorPos: this.boundElement.selectionStart || 0 };
     }
     const text = this.boundElement.textContent || "";
     const selection = window.getSelection();
@@ -4030,7 +7952,7 @@ var LinkSuggestManager = class {
         this.updateFileSuggestions();
     }
     this.selectedIndex = 0;
-    this.renderSuggestions();
+    this.scheduleRender();
   }
   /**
    * 更新文件建议
@@ -4044,7 +7966,7 @@ var LinkSuggestManager = class {
         score: 0
       }));
     } else {
-      const fuzzySearch = (0, import_obsidian4.prepareFuzzySearch)(this.currentQuery);
+      const fuzzySearch = (0, import_obsidian5.prepareFuzzySearch)(this.currentQuery);
       this.suggestions = [];
       for (const file of files) {
         const match = fuzzySearch(file.basename);
@@ -4131,14 +8053,12 @@ var LinkSuggestManager = class {
    */
   open() {
     if (this.isOpen) {
-      this.renderSuggestions();
-      this.positionSuggestEl();
+      this.scheduleRender();
       return;
     }
     this.isOpen = true;
     this.createSuggestEl();
-    this.renderSuggestions();
-    this.positionSuggestEl();
+    this.scheduleRender();
     this.attachViewportListeners();
     this.app.keymap.pushScope(this.scope);
   }
@@ -4149,6 +8069,7 @@ var LinkSuggestManager = class {
     if (!this.isOpen)
       return;
     this.isOpen = false;
+    this.cancelScheduledLayout();
     this.app.keymap.popScope(this.scope);
     if (this.suggestEl) {
       this.suggestEl.remove();
@@ -4217,26 +8138,51 @@ var LinkSuggestManager = class {
       });
       item.addEventListener("mouseenter", () => {
         this.selectedIndex = index;
-        this.renderSuggestions();
+        this.scheduleRender();
       });
     });
-    if (this.isOpen) {
-      this.positionSuggestEl();
-    }
+  }
+  scheduleRender() {
+    if (!this.isOpen || this.renderFrame !== null)
+      return;
+    this.renderFrame = window.requestAnimationFrame(() => {
+      this.renderFrame = null;
+      if (!this.isOpen)
+        return;
+      this.renderSuggestions();
+      this.schedulePosition();
+    });
+  }
+  schedulePosition() {
+    if (!this.isOpen || this.positionFrame !== null)
+      return;
+    this.positionFrame = window.requestAnimationFrame(() => {
+      this.positionFrame = null;
+      if (this.isOpen)
+        this.positionSuggestEl();
+    });
+  }
+  cancelScheduledLayout() {
+    if (this.renderFrame !== null)
+      window.cancelAnimationFrame(this.renderFrame);
+    if (this.positionFrame !== null)
+      window.cancelAnimationFrame(this.positionFrame);
+    this.renderFrame = null;
+    this.positionFrame = null;
   }
   /**
    * 选择下一个
    */
   selectNext() {
     this.selectedIndex = (this.selectedIndex + 1) % this.suggestions.length;
-    this.renderSuggestions();
+    this.scheduleRender();
   }
   /**
    * 选择上一个
    */
   selectPrev() {
     this.selectedIndex = (this.selectedIndex - 1 + this.suggestions.length) % this.suggestions.length;
-    this.renderSuggestions();
+    this.scheduleRender();
   }
   /**
    * 确认选择
@@ -4267,7 +8213,7 @@ var LinkSuggestManager = class {
   handleViewportChange() {
     if (!this.isOpen)
       return;
-    this.positionSuggestEl();
+    this.schedulePosition();
   }
   attachViewportListeners() {
     window.addEventListener("resize", this.boundHandleViewportChange);
@@ -4287,8 +8233,8 @@ var LinkSuggestManager = class {
     if (!this.boundElement) {
       return { x: 0, y: 0 };
     }
-    if (this.boundElement instanceof HTMLTextAreaElement || this.boundElement instanceof HTMLInputElement) {
-      return this.getTextareaCursorCoordinates(
+    if (this.boundElement instanceof HTMLInputElement) {
+      return this.getInputCursorCoordinates(
         this.boundElement,
         this.boundElement.selectionStart || 0
       );
@@ -4305,7 +8251,7 @@ var LinkSuggestManager = class {
     const rect = this.boundElement.getBoundingClientRect();
     return { x: rect.left, y: rect.bottom };
   }
-  getTextareaCursorCoordinates(input, cursorPosition) {
+  getInputCursorCoordinates(input, cursorPosition) {
     const mirror = document.createElement("div");
     const style = window.getComputedStyle(input);
     const properties = [
@@ -4333,7 +8279,7 @@ var LinkSuggestManager = class {
     mirror.style.position = "absolute";
     mirror.style.visibility = "hidden";
     mirror.style.overflow = "hidden";
-    mirror.style.whiteSpace = input instanceof HTMLTextAreaElement ? "pre-wrap" : "pre";
+    mirror.style.whiteSpace = "pre";
     mirror.style.wordWrap = "break-word";
     properties.forEach((prop) => {
       mirror.style[prop] = style.getPropertyValue(
@@ -4360,13 +8306,18 @@ var LinkSuggestManager = class {
    * 销毁
    */
   destroy() {
+    if (this.blurTimeout !== null) {
+      window.clearTimeout(this.blurTimeout);
+      this.blurTimeout = null;
+    }
+    this.cancelScheduledLayout();
     this.detachViewportListeners();
     this.unbind();
   }
 };
 
 // src/features/file-drop-handler.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 var FileDropHandler = class {
   constructor(app, sourcePath, insertCallback, settings3) {
     this.settings = null;
@@ -4470,7 +8421,7 @@ var FileDropHandler = class {
         if (fileParam) {
           const decodedPath = decodeURIComponent(fileParam);
           const file = this.app.metadataCache.getFirstLinkpathDest(decodedPath, this.sourcePath);
-          if (file instanceof import_obsidian5.TFile) {
+          if (file instanceof import_obsidian6.TFile) {
             return file;
           }
         }
@@ -4479,11 +8430,11 @@ var FileDropHandler = class {
       return null;
     }
     const abstractFile = this.app.vault.getAbstractFileByPath(filePath);
-    if (abstractFile instanceof import_obsidian5.TFile) {
+    if (abstractFile instanceof import_obsidian6.TFile) {
       return abstractFile;
     }
     const linkedFile = this.app.metadataCache.getFirstLinkpathDest(filePath, this.sourcePath);
-    if (linkedFile instanceof import_obsidian5.TFile) {
+    if (linkedFile instanceof import_obsidian6.TFile) {
       return linkedFile;
     }
     return null;
@@ -4514,22 +8465,22 @@ var FileDropHandler = class {
   async getCustomAttachmentPath(filename) {
     var _a;
     const customPath = ((_a = this.settings) == null ? void 0 : _a.editor.customAttachmentPath) || "attachments";
-    const normalizedPath = (0, import_obsidian5.normalizePath)(customPath);
+    const normalizedPath = (0, import_obsidian6.normalizePath)(customPath);
     const folder = this.app.vault.getAbstractFileByPath(normalizedPath);
     if (!folder) {
       await this.app.vault.createFolder(normalizedPath);
-    } else if (!(folder instanceof import_obsidian5.TFolder)) {
+    } else if (!(folder instanceof import_obsidian6.TFolder)) {
       return await this.app.fileManager.getAvailablePathForAttachment(
         filename,
         this.sourcePath
       );
     }
-    let targetPath = (0, import_obsidian5.normalizePath)(`${normalizedPath}/${filename}`);
+    let targetPath = (0, import_obsidian6.normalizePath)(`${normalizedPath}/${filename}`);
     let counter = 1;
     const ext = filename.includes(".") ? filename.substring(filename.lastIndexOf(".")) : "";
     const baseName = filename.includes(".") ? filename.substring(0, filename.lastIndexOf(".")) : filename;
     while (this.app.vault.getAbstractFileByPath(targetPath)) {
-      targetPath = (0, import_obsidian5.normalizePath)(`${normalizedPath}/${baseName} ${counter}${ext}`);
+      targetPath = (0, import_obsidian6.normalizePath)(`${normalizedPath}/${baseName} ${counter}${ext}`);
       counter++;
     }
     return targetPath;
@@ -4597,28 +8548,28 @@ var CrossDocumentDragUtils = class {
    * 反序列化块数据为 OutlineBlock
    * 注意：会生成新的 ID 以避免冲突
    */
-  static deserializeBlock(data, newLevel) {
+  static deserializeBlock(data2, newLevel) {
     const newId = this.generateBlockId();
     return {
       id: newId,
       type: "list",
-      content: data.content,
+      content: data2.content,
       level: newLevel,
       collapsed: false,
-      children: data.children.map(
+      children: data2.children.map(
         (child) => this.deserializeBlock(child, newLevel + 1)
       ),
-      isTodo: data.isTodo,
-      todoCompleted: data.todoCompleted,
-      listMarker: data.listMarker,
-      isOrderedList: data.isOrderedList
+      isTodo: data2.isTodo,
+      todoCompleted: data2.todoCompleted,
+      listMarker: data2.listMarker,
+      isOrderedList: data2.isOrderedList
     };
   }
   /**
    * 反序列化多个块
    */
   static deserializeBlocks(dataList, baseLevel) {
-    return dataList.map((data) => this.deserializeBlock(data, baseLevel));
+    return dataList.map((data2) => this.deserializeBlock(data2, baseLevel));
   }
   /**
    * 生成块引用格式 ![[file#^blockid]]
@@ -4690,9 +8641,9 @@ var CrossDocumentDragUtils = class {
    */
   static parseDragData(jsonString) {
     try {
-      const data = JSON.parse(jsonString);
-      if (data.type === "workflowy-blocks") {
-        return data;
+      const data2 = JSON.parse(jsonString);
+      if (data2.type === "workflowy-blocks") {
+        return data2;
       }
       return null;
     } catch (e) {
@@ -4719,6 +8670,11 @@ var TagSuggestMenu = class {
     this.CACHE_DURATION = 3e4;
     // 30秒缓存
     this.lastPosition = null;
+    this.renderFrame = null;
+    this.positionFrame = null;
+    this.clickOutsideTimeout = null;
+    this.viewportListenersAttached = false;
+    this.isDestroyed = false;
     this.app = app;
     this.container = document.body;
     this.createMenuElement();
@@ -4732,6 +8688,8 @@ var TagSuggestMenu = class {
     this.container.appendChild(this.menuElement);
   }
   show(position, query, onSelect) {
+    if (this.isDestroyed)
+      return;
     this.onSelect = onSelect;
     this.lastPosition = position;
     this.updateTagCache();
@@ -4742,17 +8700,22 @@ var TagSuggestMenu = class {
     }
     this.isVisible = true;
     this.selectedIndex = 0;
-    this.renderMenu();
-    this.menuElement.style.display = "block";
-    this.positionMenu();
+    this.scheduleMenuUpdate(true);
     this.attachViewportListeners();
-    setTimeout(() => {
+    this.cancelClickOutsideTimeout();
+    this.clickOutsideTimeout = window.setTimeout(() => {
+      this.clickOutsideTimeout = null;
+      if (!this.isVisible || this.isDestroyed)
+        return;
       document.addEventListener("mousedown", this.boundHandleClickOutside);
     }, 0);
   }
   hide() {
     this.isVisible = false;
+    this.cancelScheduledUpdate();
+    this.cancelClickOutsideTimeout();
     this.menuElement.style.display = "none";
+    this.menuElement.style.visibility = "hidden";
     this.onSelect = null;
     this.lastPosition = null;
     document.removeEventListener("mousedown", this.boundHandleClickOutside);
@@ -4771,8 +8734,7 @@ var TagSuggestMenu = class {
       this.hide();
       return;
     }
-    this.renderMenu();
-    this.positionMenu();
+    this.scheduleMenuUpdate(true);
   }
   filterSuggestions(query) {
     const queryLower = query.toLowerCase();
@@ -4896,7 +8858,37 @@ var TagSuggestMenu = class {
   handleViewportChange() {
     if (!this.isVisible)
       return;
-    this.positionMenu();
+    this.scheduleMenuUpdate(false);
+  }
+  scheduleMenuUpdate(render) {
+    this.cancelScheduledUpdate();
+    this.renderFrame = window.requestAnimationFrame(() => {
+      this.renderFrame = null;
+      if (!this.isVisible || this.isDestroyed || !this.lastPosition)
+        return;
+      if (render)
+        this.renderMenu();
+      prepareFloatingMenu(this.menuElement, { preferredWidth: 220, minWidth: 180, offset: 12, margin: 8 });
+      this.positionFrame = window.requestAnimationFrame(() => {
+        this.positionFrame = null;
+        if (!this.isVisible || this.isDestroyed || !this.lastPosition)
+          return;
+        this.positionMenu();
+      });
+    });
+  }
+  cancelScheduledUpdate() {
+    if (this.renderFrame !== null)
+      window.cancelAnimationFrame(this.renderFrame);
+    if (this.positionFrame !== null)
+      window.cancelAnimationFrame(this.positionFrame);
+    this.renderFrame = null;
+    this.positionFrame = null;
+  }
+  cancelClickOutsideTimeout() {
+    if (this.clickOutsideTimeout !== null)
+      window.clearTimeout(this.clickOutsideTimeout);
+    this.clickOutsideTimeout = null;
   }
   positionMenu() {
     if (!this.lastPosition)
@@ -4909,6 +8901,9 @@ var TagSuggestMenu = class {
     });
   }
   attachViewportListeners() {
+    if (this.viewportListenersAttached)
+      return;
+    this.viewportListenersAttached = true;
     window.addEventListener("resize", this.boundHandleViewportChange);
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", this.boundHandleViewportChange);
@@ -4916,6 +8911,9 @@ var TagSuggestMenu = class {
     }
   }
   detachViewportListeners() {
+    if (!this.viewportListenersAttached)
+      return;
+    this.viewportListenersAttached = false;
     window.removeEventListener("resize", this.boundHandleViewportChange);
     if (window.visualViewport) {
       window.visualViewport.removeEventListener("resize", this.boundHandleViewportChange);
@@ -4938,7 +8936,7 @@ var TagSuggestMenu = class {
    */
   getAllTags() {
     var _a;
-    const tags = /* @__PURE__ */ new Set();
+    const tags2 = /* @__PURE__ */ new Set();
     const metadataCache = this.app.metadataCache;
     const allFiles = this.app.vault.getMarkdownFiles();
     for (const file of allFiles) {
@@ -4947,11 +8945,11 @@ var TagSuggestMenu = class {
         for (const tagCache of metadata.tags) {
           const tagName = tagCache.tag.startsWith("#") ? tagCache.tag.slice(1) : tagCache.tag;
           if (tagName) {
-            tags.add(tagName);
+            tags2.add(tagName);
             const parts = tagName.split("/");
             for (let i = 1; i < parts.length; i++) {
               const parentTag = parts.slice(0, i).join("/");
-              tags.add(parentTag);
+              tags2.add(parentTag);
             }
           }
         }
@@ -4961,15 +8959,15 @@ var TagSuggestMenu = class {
         if (Array.isArray(frontmatterTags)) {
           for (const tag of frontmatterTags) {
             if (typeof tag === "string") {
-              tags.add(tag);
+              tags2.add(tag);
             }
           }
         } else if (typeof frontmatterTags === "string") {
-          tags.add(frontmatterTags);
+          tags2.add(frontmatterTags);
         }
       }
     }
-    return Array.from(tags).sort();
+    return Array.from(tags2).sort();
   }
   /**
    * 强制刷新标签缓存
@@ -4982,6 +8980,11 @@ var TagSuggestMenu = class {
    * 销毁 TagSuggestMenu，释放所有资源
    */
   destroy() {
+    if (this.isDestroyed)
+      return;
+    this.isDestroyed = true;
+    this.cancelScheduledUpdate();
+    this.cancelClickOutsideTimeout();
     document.removeEventListener("mousedown", this.boundHandleClickOutside);
     this.detachViewportListeners();
     if (this.menuElement && this.menuElement.parentNode) {
@@ -4998,11 +9001,780 @@ var TagSuggestMenu = class {
   }
 };
 
+// src/ui/virtual-outline-window.ts
+var import_obsidian7 = require("obsidian");
+function replaceEditorSelection(editor, replacement, selectionFrom, selectionTo = selectionFrom) {
+  const start = editor.posToOffset(editor.getCursor("from"));
+  editor.replaceSelection(replacement);
+  editor.setSelection(editor.offsetToPos(start + selectionFrom), editor.offsetToPos(start + selectionTo));
+  editor.focus();
+}
+function insertInternalLink(editor) {
+  const selected = editor.getSelection();
+  const linkText = selected || t("features.placeholder.link");
+  const replacement = `[[${linkText}]]`;
+  replaceEditorSelection(editor, replacement, replacement.length);
+}
+function insertDoubleLink(editor) {
+  const selected = editor.getSelection();
+  const replacement = `[[${selected}]]`;
+  replaceEditorSelection(editor, replacement, selected ? replacement.length : 2);
+}
+function insertExternalLink(editor) {
+  const selected = editor.getSelection();
+  const linkText = selected || t("features.placeholder.link");
+  const replacement = `[${linkText}](https://example.com)`;
+  replaceEditorSelection(editor, replacement, replacement.length);
+}
+async function writeClipboardText(text) {
+  var _a;
+  try {
+    if (!((_a = navigator.clipboard) == null ? void 0 : _a.writeText))
+      return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+async function readClipboardText() {
+  var _a;
+  try {
+    if (!((_a = navigator.clipboard) == null ? void 0 : _a.readText))
+      return null;
+    return await navigator.clipboard.readText();
+  } catch (e) {
+    return null;
+  }
+}
+function executeDocumentCommand(editor, command) {
+  editor.focus();
+  try {
+    return document.execCommand(command);
+  } catch (e) {
+    return false;
+  }
+}
+function captureEditorMutationContext(editor, getContext) {
+  const selectionStart = editor.posToOffset(editor.getCursor("from"));
+  const selectionEnd = editor.posToOffset(editor.getCursor("to"));
+  return { ...getContext(), document: editor.getValue(), selectionStart, selectionEnd };
+}
+function editorMutationContextMatches(editor, getContext, captured) {
+  const current = captureEditorMutationContext(editor, getContext);
+  return current.blockId === captured.blockId && current.revision === captured.revision && current.document === captured.document && current.selectionStart === captured.selectionStart && current.selectionEnd === captured.selectionEnd;
+}
+function addOutlineEditorContextMenuItems(menu, editor, getContext = () => ({ blockId: null, revision: 0 })) {
+  const selected = editor.getSelection();
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.bold")).setIcon("bold").onClick(() => editor.toggleMarkdownFormatting("bold")));
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.italic")).setIcon("italic").onClick(() => editor.toggleMarkdownFormatting("italic")));
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.highlight")).setIcon("highlighter").onClick(() => editor.toggleMarkdownFormatting("highlight")));
+  menu.addSeparator();
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.insertLink")).setIcon("link").onClick(() => insertInternalLink(editor)));
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.insertDoubleLink")).setIcon("links-coming-in").onClick(() => insertDoubleLink(editor)));
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.insertExternalLink")).setIcon("external-link").onClick(() => insertExternalLink(editor)));
+  menu.addSeparator();
+  if (selected) {
+    menu.addItem((item) => item.setTitle(t("features.contextMenu.cut")).setIcon("scissors").onClick(() => {
+      var _a;
+      const captured = captureEditorMutationContext(editor, getContext);
+      if (!((_a = navigator.clipboard) == null ? void 0 : _a.writeText)) {
+        executeDocumentCommand(editor, "cut");
+        return;
+      }
+      void writeClipboardText(selected).then((written) => {
+        if (written && editorMutationContextMatches(editor, getContext, captured)) {
+          editor.replaceSelection("");
+        }
+      });
+    }));
+    menu.addItem((item) => item.setTitle(t("features.contextMenu.copy")).setIcon("copy").onClick(() => {
+      var _a;
+      if (!((_a = navigator.clipboard) == null ? void 0 : _a.writeText)) {
+        executeDocumentCommand(editor, "copy");
+        return;
+      }
+      void writeClipboardText(selected);
+    }));
+  }
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.paste")).setIcon("clipboard").onClick(() => {
+    const pasted = executeDocumentCommand(editor, "paste");
+    if (!pasted) {
+      const captured = captureEditorMutationContext(editor, getContext);
+      void readClipboardText().then((text) => {
+        if (text !== null && editorMutationContextMatches(editor, getContext, captured)) {
+          editor.replaceSelection(text);
+        }
+      });
+    }
+  }));
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.pasteAsPlainText")).setIcon("clipboard-paste").onClick(() => {
+    const captured = captureEditorMutationContext(editor, getContext);
+    void readClipboardText().then((text) => {
+      if (text !== null && editorMutationContextMatches(editor, getContext, captured)) {
+        editor.replaceSelection(text);
+      }
+    });
+  }));
+  menu.addSeparator();
+  menu.addItem((item) => item.setTitle(t("features.contextMenu.selectAll")).setIcon("text-select").onClick(() => {
+    editor.setSelection({ line: 0, ch: 0 }, editor.offsetToPos(editor.getValue().length));
+    editor.focus();
+  }));
+}
+function showOutlineEditorContextMenu(options) {
+  const menu = new import_obsidian7.Menu();
+  addOutlineEditorContextMenuItems(menu, options.editor, options.getContext);
+  options.app.workspace.trigger("editor-menu", menu, options.editor, options.view);
+  menu.showAtMouseEvent(options.event);
+}
+function createViewLivePreviewController(options) {
+  let controller;
+  let editor;
+  let owner;
+  let editorContextRevision = 0;
+  const activateEditor = () => {
+    options.app.workspace.activeEditor = owner;
+  };
+  controller = new OutlineLivePreviewController({
+    markdownRenderer: new ObsidianMarkdownRendererAdapter(options.app),
+    complexBlocks: new ObsidianComplexBlockProvider(),
+    onDocumentChange: (change) => {
+      var _a, _b;
+      editorContextRevision += 1;
+      (_b = (_a = options.getVirtualWindow) == null ? void 0 : _a.call(options)) == null ? void 0 : _b.invalidateRow(change.blockId);
+      options.onDocumentChange(change.blockId, change.document);
+    },
+    onSelectionChange: (change) => {
+      editorContextRevision += 1;
+      if (!options.onSelectionChange)
+        return;
+      const range = change.selection.ranges[change.selection.mainIndex || 0];
+      options.onSelectionChange(
+        change.blockId,
+        Math.min(range.anchor, range.head),
+        Math.max(range.anchor, range.head),
+        controller.getValue()
+      );
+    },
+    onCompositionChange: (change) => {
+      var _a, _b, _c;
+      const virtualWindow = (_a = options.getVirtualWindow) == null ? void 0 : _a.call(options);
+      if (!virtualWindow)
+        return;
+      if (change.composing)
+        virtualWindow.pin(change.blockId);
+      else if (((_c = (_b = options.getActiveEdit) == null ? void 0 : _b.call(options)) == null ? void 0 : _c.blockId) !== change.blockId)
+        virtualWindow.unpin(change.blockId);
+    },
+    onHeightChange: () => {
+      var _a, _b;
+      const activeEdit = controller.getActiveEdit();
+      if (activeEdit)
+        (_b = (_a = options.getVirtualWindow) == null ? void 0 : _a.call(options)) == null ? void 0 : _b.invalidateRow(activeEdit.blockId);
+    },
+    onOpenLink: (target, sourcePath, openState) => {
+      void openWorkflowyLinkTarget(options.app, target, sourcePath || "", openState);
+    },
+    onFocus: () => activateEditor(),
+    onContextMenu: (event) => {
+      var _a;
+      activateEditor();
+      showOutlineEditorContextMenu({
+        app: options.app,
+        event,
+        editor,
+        view: ((_a = options.getMenuView) == null ? void 0 : _a.call(options)) || null,
+        getContext: () => {
+          var _a2;
+          return {
+            blockId: ((_a2 = controller.getActiveEdit()) == null ? void 0 : _a2.blockId) || null,
+            revision: editorContextRevision
+          };
+        }
+      });
+      return true;
+    },
+    onDestroy: () => {
+      if (options.app.workspace.activeEditor === owner) {
+        options.app.workspace.activeEditor = null;
+      }
+    }
+  });
+  editor = new OutlineObsidianEditor(createLivePreviewEditorBackend(controller), {
+    getContainer: () => {
+      var _a;
+      return ((_a = controller.getActiveEdit()) == null ? void 0 : _a.surface) || null;
+    },
+    undo: options.undo,
+    redo: options.redo
+  });
+  owner = {
+    app: options.app,
+    hoverPopover: null,
+    get file() {
+      var _a;
+      return ((_a = options.getFile) == null ? void 0 : _a.call(options)) || null;
+    },
+    editor
+  };
+  return controller;
+}
+function updateViewActiveEdit(virtualWindow, current, next) {
+  const previousId = (current == null ? void 0 : current.blockId) || null;
+  if (!next) {
+    if (previousId)
+      virtualWindow == null ? void 0 : virtualWindow.unpin(previousId);
+    virtualWindow == null ? void 0 : virtualWindow.updateViewport();
+    return null;
+  }
+  if (previousId && previousId !== next.blockId)
+    virtualWindow == null ? void 0 : virtualWindow.unpin(previousId);
+  virtualWindow == null ? void 0 : virtualWindow.pin(next.blockId);
+  return next;
+}
+function syncViewLivePreviewAfterRows(controller, virtualWindow, activeEdit, restore) {
+  controller == null ? void 0 : controller.syncDocument();
+  if (!activeEdit)
+    return;
+  virtualWindow.pin(activeEdit.blockId);
+  const item = virtualWindow.getMountedItem(activeEdit.blockId);
+  if (item)
+    restore(item, activeEdit);
+}
+function hasSameMeasurementShape(previous, next) {
+  return previous.level === next.level && previous.orderIndex === next.orderIndex && previous.hasChildren === next.hasChildren && previous.isCollapsed === next.isCollapsed && previous.block.content === next.block.content && previous.block.type === next.block.type && previous.block.headingLevel === next.block.headingLevel && previous.block.isTodo === next.block.isTodo && previous.block.todoCompleted === next.block.todoCompleted && previous.block.isOrderedList === next.block.isOrderedList;
+}
+var BASE_ROW_HEIGHT = 28;
+var WRAP_LINE_HEIGHT = 22;
+var CHARS_PER_LINE = 70;
+var DEFAULT_MARGIN = 600;
+function defaultEstimateHeight(row) {
+  const block = row.block;
+  const content = block.content || "";
+  const hardLines = content.length === 0 ? 1 : content.split("\n").length;
+  const wrapLines = Math.max(1, Math.ceil(content.length / CHARS_PER_LINE));
+  const lines = Math.max(hardLines, wrapLines);
+  let height = BASE_ROW_HEIGHT + (lines - 1) * WRAP_LINE_HEIGHT;
+  if (block.type === "heading") {
+    height += Math.max(0, 7 - (block.headingLevel || 1)) * 3;
+  } else if (block.type === "code") {
+    height += 16;
+  } else if (block.type === "horizontal") {
+    height = 24;
+  }
+  return height;
+}
+function findScrollParent(el) {
+  let current = el.parentElement;
+  while (current) {
+    if (typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+      const overflowY = window.getComputedStyle(current).overflowY;
+      if (overflowY === "auto" || overflowY === "scroll")
+        return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+var VirtualOutlineWindow = class {
+  constructor(contentEl, callbacks, options = {}) {
+    this.rows = [];
+    this.rowIndexByBlockId = /* @__PURE__ */ new Map();
+    /** 每行高度(估计或实测) */
+    this.heights = [];
+    this.measuredFlags = [];
+    /** 前缀和:tops[i] = 第 i 行在内容盒内的累积偏移 */
+    this.tops = [];
+    this.totalHeight = 0;
+    this.mounted = /* @__PURE__ */ new Map();
+    /** 当前挂载的连续行区间(不含 pin 的离散行) */
+    this.mountedRange = { start: 0, end: 0 };
+    this.pinned = /* @__PURE__ */ new Set();
+    this.navigationLeases = /* @__PURE__ */ new Map();
+    this.viewportFrame = null;
+    this.measureFrame = null;
+    this.resizeObserver = null;
+    this.observedWidth = null;
+    this.destroyed = false;
+    this.scrollRewindowCount = 0;
+    this.onScroll = () => this.scheduleViewportUpdate();
+    var _a, _b, _c, _d, _e;
+    this.contentEl = contentEl;
+    this.callbacks = callbacks;
+    this.marginPx = (_a = options.marginPx) != null ? _a : DEFAULT_MARGIN;
+    this.estimate = (_b = options.estimateHeight) != null ? _b : defaultEstimateHeight;
+    this.requestFrame = (_c = options.requestFrame) != null ? _c : (cb) => typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => cb()) : setTimeout(cb, 16);
+    this.cancelFrame = (_d = options.cancelFrame) != null ? _d : (id) => typeof cancelAnimationFrame === "function" ? cancelAnimationFrame(id) : clearTimeout(id);
+    this.scrollEl = options.scrollEl !== void 0 ? options.scrollEl : findScrollParent(contentEl);
+    (_e = this.scrollEl) == null ? void 0 : _e.addEventListener("scroll", this.onScroll, { passive: true });
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        var _a2;
+        const width = (_a2 = entries[0]) == null ? void 0 : _a2.contentRect.width;
+        if (width == null || width <= 0)
+          return;
+        if (this.observedWidth === null) {
+          this.observedWidth = width;
+          return;
+        }
+        if (Math.abs(width - this.observedWidth) <= 0.5)
+          return;
+        this.observedWidth = width;
+        this.invalidateAllRows();
+        this.updateViewport();
+      });
+      this.resizeObserver.observe(contentEl);
+    }
+  }
+  // ============ 数据注入 ============
+  /** 注入新行数组:重建度量,复用 blockId 仍存在的已挂载条目,同步差集更新窗口 */
+  setRows(rows) {
+    var _a, _b;
+    if (this.destroyed)
+      return;
+    const prevMeasured = /* @__PURE__ */ new Map();
+    for (let i = 0; i < this.rows.length; i++) {
+      if (this.measuredFlags[i]) {
+        prevMeasured.set(this.rows[i].blockId, { height: this.heights[i], row: this.rows[i] });
+      }
+    }
+    this.rows = rows;
+    this.rowIndexByBlockId = /* @__PURE__ */ new Map();
+    this.heights = new Array(rows.length);
+    this.measuredFlags = new Array(rows.length);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      this.rowIndexByBlockId.set(row.blockId, i);
+      const measured = prevMeasured.get(row.blockId);
+      if (measured && hasSameMeasurementShape(measured.row, row)) {
+        this.heights[i] = measured.height;
+        this.measuredFlags[i] = true;
+      } else {
+        const cached = (_b = (_a = this.callbacks).getCachedHeight) == null ? void 0 : _b.call(_a, row);
+        this.heights[i] = cached != null && cached > 0 ? cached : this.estimate(row);
+        this.measuredFlags[i] = false;
+      }
+    }
+    this.recomputeTops();
+    for (const [blockId, entry] of Array.from(this.mounted)) {
+      const newIndex = this.rowIndexByBlockId.get(blockId);
+      if (newIndex === void 0) {
+        this.unmountEntry(blockId, entry, "removed");
+      }
+    }
+    for (const blockId of Array.from(this.pinned)) {
+      if (!this.rowIndexByBlockId.has(blockId))
+        this.pinned.delete(blockId);
+    }
+    for (const blockId of Array.from(this.navigationLeases.keys())) {
+      if (!this.rowIndexByBlockId.has(blockId))
+        this.navigationLeases.delete(blockId);
+    }
+    this.updateViewport();
+    this.scheduleMeasure();
+  }
+  // ============ 窗口更新 ============
+  /** 同步计算视口对应的行区间并做差集挂载/卸载 */
+  updateViewport() {
+    var _a, _b;
+    if (this.destroyed)
+      return;
+    if (this.viewportFrame !== null) {
+      this.cancelFrame(this.viewportFrame);
+      this.viewportFrame = null;
+    }
+    const range = this.computeTargetRange();
+    this.applyRange(range);
+    (_b = (_a = this.callbacks).onWindowUpdated) == null ? void 0 : _b.call(_a);
+  }
+  scheduleViewportUpdate() {
+    if (this.destroyed || this.viewportFrame !== null)
+      return;
+    this.viewportFrame = this.requestFrame(() => {
+      var _a, _b;
+      this.viewportFrame = null;
+      if (this.destroyed)
+        return;
+      const range = this.computeTargetRange();
+      const changed = range.start !== this.mountedRange.start || range.end !== this.mountedRange.end;
+      if (changed) {
+        this.scrollRewindowCount++;
+        this.applyRange(range);
+        (_b = (_a = this.callbacks).onWindowUpdated) == null ? void 0 : _b.call(_a);
+        this.scheduleMeasure();
+      }
+    });
+  }
+  /** 视口(滚动坐标 → 内容盒坐标)± margin 对应的行区间 */
+  computeTargetRange() {
+    if (this.rows.length === 0)
+      return { start: 0, end: 0 };
+    if (!this.scrollEl)
+      return { start: 0, end: this.rows.length };
+    const scrollRect = this.scrollEl.getBoundingClientRect();
+    const contentRect = this.contentEl.getBoundingClientRect();
+    const viewTopInContent = scrollRect.top - contentRect.top;
+    const viewportHeight = this.scrollEl.clientHeight;
+    const bandTop = viewTopInContent - this.marginPx;
+    const bandBottom = viewTopInContent + viewportHeight + this.marginPx;
+    const start = this.findRowAtOffset(bandTop);
+    let end = this.findRowAtOffset(bandBottom) + 1;
+    end = Math.min(end, this.rows.length);
+    return { start: Math.max(0, Math.min(start, this.rows.length - 1)), end: Math.max(end, 0) };
+  }
+  /** 二分:返回覆盖 y(或其上方最近)的行索引 */
+  findRowAtOffset(y) {
+    const n = this.rows.length;
+    if (n === 0)
+      return 0;
+    if (y <= 0)
+      return 0;
+    if (y >= this.totalHeight)
+      return n - 1;
+    let lo = 0;
+    let hi = n - 1;
+    while (lo < hi) {
+      const mid = lo + hi + 1 >> 1;
+      if (this.tops[mid] <= y)
+        lo = mid;
+      else
+        hi = mid - 1;
+    }
+    return lo;
+  }
+  /** 差集挂载/卸载到目标区间(pin 行始终保留) */
+  applyRange(range) {
+    var _a, _b;
+    const desired = /* @__PURE__ */ new Set();
+    for (let i = range.start; i < range.end; i++)
+      desired.add(this.rows[i].blockId);
+    for (const blockId of this.pinned) {
+      if (this.rowIndexByBlockId.has(blockId))
+        desired.add(blockId);
+    }
+    for (const blockId of this.navigationLeases.keys()) {
+      if (this.rowIndexByBlockId.has(blockId))
+        desired.add(blockId);
+    }
+    for (const [blockId, entry] of Array.from(this.mounted)) {
+      if (!desired.has(blockId))
+        this.unmountEntry(blockId, entry, "window");
+    }
+    for (const blockId of desired) {
+      const index = this.rowIndexByBlockId.get(blockId);
+      const row = this.rows[index];
+      const existing = this.mounted.get(blockId);
+      if (existing) {
+        const reusable = ((_b = (_a = this.callbacks).updateItem) == null ? void 0 : _b.call(_a, row, existing.item)) !== false;
+        if (reusable) {
+          this.applyTransform(existing, this.tops[index]);
+        } else {
+          this.unmountEntry(blockId, existing, "replace");
+          this.mountRow(row, index);
+        }
+      } else {
+        this.mountRow(row, index);
+      }
+    }
+    this.mountedRange = range;
+  }
+  mountRow(row, index) {
+    var _a, _b;
+    const item = this.callbacks.createItem(row);
+    if (!item)
+      return;
+    const element = item.getElement();
+    element.style.position = "absolute";
+    element.style.left = "0";
+    element.style.right = "0";
+    const entry = { item, element, appliedTop: Number.NaN };
+    this.applyTransform(entry, this.tops[index]);
+    this.contentEl.appendChild(element);
+    this.mounted.set(row.blockId, entry);
+    (_b = (_a = this.callbacks).onMounted) == null ? void 0 : _b.call(_a, row, item);
+  }
+  unmountEntry(blockId, entry, reason) {
+    this.mounted.delete(blockId);
+    entry.element.remove();
+    const index = this.rowIndexByBlockId.get(blockId);
+    const row = index !== void 0 ? this.rows[index] : null;
+    if (row) {
+      this.callbacks.onUnmount(row, entry.item, reason);
+    } else {
+      this.callbacks.onUnmount({ blockId }, entry.item, reason);
+    }
+  }
+  applyTransform(entry, top) {
+    if (entry.appliedTop === top)
+      return;
+    entry.appliedTop = top;
+    entry.element.style.transform = `translateY(${top}px)`;
+  }
+  recomputeTops() {
+    const n = this.rows.length;
+    this.tops = new Array(n);
+    let acc = 0;
+    for (let i = 0; i < n; i++) {
+      this.tops[i] = acc;
+      acc += this.heights[i];
+    }
+    this.totalHeight = acc;
+    this.contentEl.style.height = `${acc}px`;
+  }
+  // ============ 测量与协调 ============
+  invalidateRow(blockId) {
+    const index = this.rowIndexByBlockId.get(blockId);
+    if (index === void 0)
+      return;
+    this.measuredFlags[index] = false;
+    this.scheduleMeasure();
+  }
+  invalidateAllRows() {
+    if (this.destroyed || this.rows.length === 0)
+      return;
+    this.measuredFlags.fill(false);
+    this.scheduleMeasure();
+  }
+  /** 调度一次 rAF 内的批量测高 + 高度协调 */
+  scheduleMeasure() {
+    if (this.destroyed || this.measureFrame !== null)
+      return;
+    this.measureFrame = this.requestFrame(() => {
+      this.measureFrame = null;
+      this.measureAndReconcile();
+    });
+  }
+  /**
+   * 仅批量实测尚未测量或已失效的挂载行。
+   * 已有实测高度的复用行不会再次读取布局，避免折叠操作触发整窗强制回流。
+   */
+  measureAndReconcile() {
+    var _a, _b, _c, _d;
+    if (this.destroyed || this.rows.length === 0)
+      return;
+    const pending = [];
+    for (const [blockId, entry] of this.mounted) {
+      const index = this.rowIndexByBlockId.get(blockId);
+      if (index !== void 0 && !this.measuredFlags[index])
+        pending.push({ index, entry });
+    }
+    if (pending.length === 0)
+      return;
+    let anchorIndex = -1;
+    let anchorOldTop = 0;
+    if (this.scrollEl) {
+      const scrollRect = this.scrollEl.getBoundingClientRect();
+      const contentRect = this.contentEl.getBoundingClientRect();
+      const viewTopInContent = scrollRect.top - contentRect.top;
+      if (viewTopInContent > 0) {
+        anchorIndex = this.findRowAtOffset(viewTopInContent);
+        anchorOldTop = this.tops[anchorIndex];
+      }
+    }
+    let anyChanged = false;
+    for (const { index, entry } of pending) {
+      const height = entry.element.getBoundingClientRect().height;
+      if (height <= 0)
+        continue;
+      if (Math.abs(height - this.heights[index]) > 0.5)
+        anyChanged = true;
+      this.heights[index] = height;
+      this.measuredFlags[index] = true;
+      (_b = (_a = this.callbacks).setCachedHeight) == null ? void 0 : _b.call(_a, this.rows[index], height);
+    }
+    if (!anyChanged)
+      return;
+    this.recomputeTops();
+    if (anchorIndex >= 0 && this.scrollEl && this.scrollEl.scrollTop > 0) {
+      const delta = this.tops[anchorIndex] - anchorOldTop;
+      if (Math.abs(delta) > 0.5)
+        this.scrollEl.scrollTop += delta;
+    }
+    const range = this.computeTargetRange();
+    this.applyRange(range);
+    (_d = (_c = this.callbacks).onWindowUpdated) == null ? void 0 : _d.call(_c);
+  }
+  // ============ 滚动定位 ============
+  /**
+   * 滚动使目标行进入视口并同步挂载(调用后 getMountedItem 立即可用)。
+   * align: start=行顶对齐视口顶;center=居中;nearest=已可见则不动,否则最小移动。
+   */
+  scrollToRow(rowIndex, align = "nearest") {
+    if (this.destroyed || rowIndex < 0 || rowIndex >= this.rows.length)
+      return;
+    if (!this.scrollEl) {
+      this.updateViewport();
+      return;
+    }
+    const scrollRect = this.scrollEl.getBoundingClientRect();
+    const contentRect = this.contentEl.getBoundingClientRect();
+    const viewTopInContent = scrollRect.top - contentRect.top;
+    const viewportHeight = this.scrollEl.clientHeight;
+    const rowTop = this.tops[rowIndex];
+    const rowHeight = this.heights[rowIndex];
+    let targetViewTop;
+    if (align === "center") {
+      targetViewTop = rowTop - Math.max(0, (viewportHeight - rowHeight) / 2);
+    } else if (align === "start") {
+      targetViewTop = rowTop;
+    } else {
+      const fullyVisible = rowTop >= viewTopInContent && rowTop + rowHeight <= viewTopInContent + viewportHeight;
+      if (fullyVisible) {
+        this.updateViewport();
+        return;
+      }
+      targetViewTop = rowTop < viewTopInContent ? rowTop : rowTop + rowHeight - viewportHeight;
+    }
+    const newScrollTop = Math.max(0, this.scrollEl.scrollTop + (targetViewTop - viewTopInContent));
+    this.scrollEl.scrollTop = newScrollTop;
+    this.updateViewport();
+    this.scheduleMeasure();
+  }
+  /**
+   * Resolve navigation from the complete flattened row set, then synchronously
+   * pin, scroll and mount the target so callers never depend on the current DOM window.
+   */
+  getAdjacentFocusableItem(blockId, direction, align = "nearest") {
+    if (this.destroyed)
+      return null;
+    const currentIndex = this.rowIndexByBlockId.get(blockId);
+    if (currentIndex === void 0)
+      return null;
+    const step = direction === "previous" ? -1 : 1;
+    for (let targetIndex = currentIndex + step; targetIndex >= 0 && targetIndex < this.rows.length; targetIndex += step) {
+      const row = this.rows[targetIndex];
+      const release = this.acquireNavigationLease(row.blockId);
+      const item = this.getMountedItem(row.blockId);
+      if (!item) {
+        release();
+        continue;
+      }
+      this.scrollToRow(targetIndex, align);
+      return { blockId: row.blockId, row, item, release };
+    }
+    return null;
+  }
+  acquireNavigationLease(blockId) {
+    if (this.destroyed)
+      return () => {
+      };
+    this.navigationLeases.set(blockId, (this.navigationLeases.get(blockId) || 0) + 1);
+    const index = this.rowIndexByBlockId.get(blockId);
+    if (index !== void 0 && !this.mounted.has(blockId))
+      this.mountRow(this.rows[index], index);
+    let released = false;
+    return () => {
+      if (released)
+        return;
+      released = true;
+      const count2 = this.navigationLeases.get(blockId) || 0;
+      if (count2 <= 1)
+        this.navigationLeases.delete(blockId);
+      else
+        this.navigationLeases.set(blockId, count2 - 1);
+      this.updateViewport();
+    };
+  }
+  // ============ pin(编辑中的行滚出视口仍保持挂载) ============
+  pin(blockId) {
+    if (this.destroyed)
+      return;
+    this.pinned.add(blockId);
+    const index = this.rowIndexByBlockId.get(blockId);
+    if (index !== void 0 && !this.mounted.has(blockId)) {
+      this.mountRow(this.rows[index], index);
+    }
+  }
+  unpin(blockId) {
+    this.pinned.delete(blockId);
+  }
+  getPinned() {
+    return this.pinned;
+  }
+  // ============ 查询(含 WindowLineSource 实现) ============
+  getMountedItem(blockId) {
+    var _a, _b;
+    return (_b = (_a = this.mounted.get(blockId)) == null ? void 0 : _a.item) != null ? _b : null;
+  }
+  /** 遍历当前已挂载条目 */
+  forEachMounted(cb) {
+    for (const [blockId, entry] of this.mounted)
+      cb(blockId, entry.item);
+  }
+  getBlockIds() {
+    return this.rows.map((row) => row.blockId);
+  }
+  getRowIndexAtClientY(clientY) {
+    if (this.rows.length === 0)
+      return -1;
+    const contentRect = this.contentEl.getBoundingClientRect();
+    return this.findRowAtOffset(clientY - contentRect.top);
+  }
+  getScrollRewindowCount() {
+    return this.scrollRewindowCount;
+  }
+  getMountedCount() {
+    return this.mounted.size;
+  }
+  getRowCount() {
+    return this.rows.length;
+  }
+  getRow(index) {
+    var _a;
+    return (_a = this.rows[index]) != null ? _a : null;
+  }
+  getRowMetric(index) {
+    if (index < 0 || index >= this.rows.length)
+      return null;
+    return { top: this.tops[index], height: this.heights[index], measured: this.measuredFlags[index] };
+  }
+  getRowIndex(blockId) {
+    var _a;
+    return (_a = this.rowIndexByBlockId.get(blockId)) != null ? _a : -1;
+  }
+  getVisibleRange() {
+    return { ...this.mountedRange };
+  }
+  getTotalHeight() {
+    return this.totalHeight;
+  }
+  // ============ 生命周期 ============
+  destroy() {
+    var _a, _b;
+    if (this.destroyed)
+      return;
+    this.destroyed = true;
+    (_a = this.scrollEl) == null ? void 0 : _a.removeEventListener("scroll", this.onScroll);
+    (_b = this.resizeObserver) == null ? void 0 : _b.disconnect();
+    this.resizeObserver = null;
+    if (this.viewportFrame !== null) {
+      this.cancelFrame(this.viewportFrame);
+      this.viewportFrame = null;
+    }
+    if (this.measureFrame !== null) {
+      this.cancelFrame(this.measureFrame);
+      this.measureFrame = null;
+    }
+    for (const [blockId, entry] of Array.from(this.mounted)) {
+      this.unmountEntry(blockId, entry, "destroy");
+    }
+    this.mounted.clear();
+    this.pinned.clear();
+    this.navigationLeases.clear();
+    this.rows = [];
+    this.rowIndexByBlockId.clear();
+    this.mountedRange = { start: 0, end: 0 };
+  }
+};
+
 // src/ui/outline-item.ts
 var _OutlineItem = class {
-  constructor(block, editor, onUpdate, onFocus, onRender, getMultiSelectionManager, onBulletClick, getZoomedBlockId, app, sourcePath, settings3, viewId, orderIndex, slashCommandMenu, lazyHeavyRender) {
+  constructor(block, editor, onUpdate, onFocus, onRender, getMultiSelectionManager, onBulletClick, getZoomedBlockId, app, sourcePath, settings3, viewId, orderIndex, slashCommandMenu, lazyHeavyRender, lazyLivePreviewRender, livePreviewController) {
     this.collapseIndicator = null;
     this.checkboxElement = null;
+    // restoreEditState 恢复期间抑制中间态回调，避免回调风暴（恢复完成后统一通知一次）
+    this.suppressEditStateNotify = false;
     // Obsidian 集成
     this.app = null;
     this.sourcePath = "";
@@ -5014,18 +9786,28 @@ var _OutlineItem = class {
     this.heavyRendered = false;
     // 是否已完成真正的 heavy 渲染
     this.heavyPlaceholder = null;
+    this.lazyLivePreviewRender = false;
+    this.livePreviewRendered = false;
+    this.livePreviewRenderVersion = 0;
     this.destroyed = false;
+    // 析构守卫：异步渲染回调写僵尸 DOM 前检查
+    this.suggestionPositionFrame = null;
+    this.pendingSuggestionRequest = null;
     // HoverParent 接口实现
     this.hoverPopover = null;
     // 跨文档拖拽相关
     this.viewId = "";
-    // 双层渲染相关（Live Preview 模式）
+    // 非活动显示层与视图级共享编辑器挂载面
     this.settings = null;
     this.isEditMode = false;
     this.displayElement = null;
     this.editorElement = null;
     this.contentWrapper = null;
-    this.livePreviewEditor = null;
+    this.livePreviewController = null;
+    this.livePreviewBlurTimer = null;
+    this.sourceObsidianEditor = null;
+    this.sourceEditorOwner = null;
+    this.sourceEditorRevision = 0;
     this.isDragging = false;
     this.draggedBlock = null;
     // 事件监听器管理 - 用于清理
@@ -5039,8 +9821,6 @@ var _OutlineItem = class {
     this.fileDropHandler = null;
     // 文件拖拽时记录的光标位置
     this.fileDragCursorPosition = 0;
-    // 块引用 ID（Live Preview 模式下隐藏，保存时恢复）
-    this._blockRefId = null;
     // Slash Command Menu
     this.slashCommandMenu = null;
     // Tag Suggest Menu
@@ -5067,6 +9847,8 @@ var _OutlineItem = class {
     this.orderIndex = orderIndex || 1;
     this.slashCommandMenu = slashCommandMenu || null;
     this.lazyHeavyRender = lazyHeavyRender === true;
+    this.lazyLivePreviewRender = lazyLivePreviewRender === true;
+    this.livePreviewController = livePreviewController || null;
     if (app) {
       this.tagSuggestMenu = new TagSuggestMenu(app);
     }
@@ -5075,30 +9857,6 @@ var _OutlineItem = class {
     if ((this.block.type === "list" || !this.block.useObsidianRenderer) && ((_a = this.settings) == null ? void 0 : _a.editor.renderMode) !== "live-preview") {
       this.bindEvents();
     }
-  }
-  /**
-   * 提取块引用 ID（格式：^blockid，必须在行尾）
-   * 返回不含块引用 ID 的文本和块引用 ID
-   */
-  extractBlockRefId(content) {
-    const match = content.match(/(\s+\^[a-zA-Z0-9-]+)\s*$/);
-    if (match) {
-      return {
-        text: content.slice(0, -match[0].length),
-        blockRefId: match[1]
-        // 保留前面的空格
-      };
-    }
-    return { text: content, blockRefId: null };
-  }
-  /**
-   * 恢复块引用 ID 到内容末尾
-   */
-  restoreBlockRefId(content) {
-    if (this._blockRefId) {
-      return content + this._blockRefId;
-    }
-    return content;
   }
   /**
    * 确保拖拽指示元素存在 - 复用 obsidian-outliner 的实现
@@ -5125,6 +9883,7 @@ var _OutlineItem = class {
       _OutlineItem.dropZone = null;
     }
     _OutlineItem.dropZonePadding = null;
+    _OutlineItem.heavyHeightCache.clear();
   }
   /**
    * 创建元素结构（借鉴 OutlineItemSimple 的直接创建方式）
@@ -5217,7 +9976,7 @@ var _OutlineItem = class {
     this.element.appendChild(contentLine);
   }
   /**
-   * 创建源码模式内容（保留原有实现）
+   * 创建源码模式内容
    */
   createSourceContent(contentLine) {
     var _a, _b;
@@ -5231,9 +9990,104 @@ var _OutlineItem = class {
       this.contentElement.setAttribute("data-placeholder", placeholder);
     }
     contentLine.appendChild(this.contentElement);
+    this.createSourceObsidianEditor();
+  }
+  createSourceObsidianEditor() {
+    var _a, _b;
+    if (!this.app)
+      return;
+    const backend = {
+      getValue: () => this.contentElement.textContent || "",
+      setValue: (content) => this.updateSourceEditorContent(content, content.length, content.length),
+      getSelection: () => {
+        const selection = this.getContentEditableCursorState(this.contentElement);
+        return {
+          ranges: [{ anchor: selection.offset, head: selection.offset + selection.selectionLength }],
+          mainIndex: 0
+        };
+      },
+      setSelection: (selection) => {
+        const range = selection.ranges[selection.mainIndex || 0];
+        this.setContentEditableSelection(this.contentElement, range.anchor, range.head);
+      },
+      replaceRange: (replacement, from, to = from) => {
+        const value = this.contentElement.textContent || "";
+        const start = Math.max(0, Math.min(from, value.length));
+        const end = Math.max(start, Math.min(to, value.length));
+        const next = value.slice(0, start) + replacement + value.slice(end);
+        const cursor = start + replacement.length;
+        this.updateSourceEditorContent(next, cursor, cursor);
+      },
+      focus: () => this.contentElement.focus(),
+      blur: () => this.contentElement.blur(),
+      hasFocus: () => this.contentElement === document.activeElement || this.contentElement.contains(document.activeElement),
+      coordsAtPos: (position) => this.getContentEditableCoordinates(this.contentElement, position)
+    };
+    this.sourceObsidianEditor = new OutlineObsidianEditor(backend, {
+      getContainer: () => this.contentElement,
+      undo: () => {
+        var _a2;
+        return (_a2 = this.onViewUndo) == null ? void 0 : _a2.call(this);
+      },
+      redo: () => {
+        var _a2;
+        return (_a2 = this.onViewRedo) == null ? void 0 : _a2.call(this);
+      }
+    });
+    const file = ((_b = (_a = this.app.vault) == null ? void 0 : _a.getAbstractFileByPath) == null ? void 0 : _b.call(_a, this.sourcePath)) || null;
+    this.sourceEditorOwner = {
+      app: this.app,
+      hoverPopover: null,
+      file: file instanceof import_obsidian8.TFile ? file : null,
+      editor: this.sourceObsidianEditor
+    };
+  }
+  activateSourceObsidianEditor() {
+    if (this.app && this.sourceEditorOwner)
+      this.app.workspace.activeEditor = this.sourceEditorOwner;
+  }
+  updateSourceEditorContent(content, anchor, head) {
+    this.contentElement.textContent = content;
+    this.sourceEditorRevision += 1;
+    this.onUpdate(this.block.id, content);
+    this.setContentEditableSelection(this.contentElement, anchor, head);
+    this.notifyEditStateChange();
+  }
+  locateContentEditableOffset(element, offset) {
+    var _a, _b;
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let remaining = Math.max(0, Math.min(offset, ((_a = element.textContent) == null ? void 0 : _a.length) || 0));
+    let node = walker.nextNode();
+    while (node) {
+      const nodeLength = ((_b = node.textContent) == null ? void 0 : _b.length) || 0;
+      if (remaining <= nodeLength)
+        return { node, offset: remaining };
+      remaining -= nodeLength;
+      node = walker.nextNode();
+    }
+    return { node: element, offset: element.childNodes.length };
+  }
+  setContentEditableSelection(element, anchor, head) {
+    element.focus();
+    const from = this.locateContentEditableOffset(element, Math.min(anchor, head));
+    const to = this.locateContentEditableOffset(element, Math.max(anchor, head));
+    const range = document.createRange();
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
+    const selection = window.getSelection();
+    selection == null ? void 0 : selection.removeAllRanges();
+    selection == null ? void 0 : selection.addRange(range);
+  }
+  getContentEditableCoordinates(element, position) {
+    const point = this.locateContentEditableOffset(element, position);
+    const range = document.createRange();
+    range.setStart(point.node, point.offset);
+    range.collapse(true);
+    const rect = range.getBoundingClientRect();
+    return rect && (rect.width || rect.height || rect.left || rect.top) ? rect : element.getBoundingClientRect();
   }
   /**
-   * 创建 Live Preview 模式内容（双层渲染）
+   * 创建 Live Preview 显示层和共享编辑器挂载面
    */
   createLivePreviewContent(contentLine) {
     this.contentWrapper = document.createElement("div");
@@ -5241,29 +10095,86 @@ var _OutlineItem = class {
     this.displayElement = document.createElement("div");
     this.displayElement.className = "workflowy-content-display";
     this.contentWrapper.appendChild(this.displayElement);
-    this.editorElement = document.createElement("textarea");
+    if (!this.livePreviewController) {
+      throw new Error("Live Preview requires a view-level controller.");
+    }
+    this.editorElement = this.livePreviewController.createSurface(
+      this.block.id,
+      () => ({ document: this.block.content, sourcePath: this.sourcePath })
+    );
     this.editorElement.className = "workflowy-content-editor";
-    const { text, blockRefId } = this.extractBlockRefId(this.block.content);
-    this._blockRefId = blockRefId;
-    this.editorElement.value = text;
     this.editorElement.style.display = "none";
     this.editorElement.setAttribute("data-block-id", this.block.id);
-    this.editorElement.rows = 1;
-    this.editorElement.style.overflow = "hidden";
-    this.editorElement.style.resize = "none";
     this.contentWrapper.appendChild(this.editorElement);
-    this.bindAutoResize();
     contentLine.appendChild(this.contentWrapper);
     this.bindLivePreviewEvents();
-    this.renderDisplay();
+    if (this.lazyLivePreviewRender) {
+      this.renderLivePreviewPlaceholder();
+    } else {
+      this.livePreviewRendered = true;
+      this.renderPromise = this.renderDisplay();
+    }
     this.contentElement = this.editorElement;
   }
-  /**
-   * 添加事件监听器并记录以便清理
-   */
+  getLivePreviewValue() {
+    if (!this.livePreviewController || !this.editorElement)
+      return this.block.content;
+    return this.livePreviewController.isActive(this.editorElement) ? this.livePreviewController.getValue() : this.editorElement.value;
+  }
+  setLivePreviewValue(value) {
+    if (!this.livePreviewController || !this.editorElement)
+      return;
+    if (this.livePreviewController.isActive(this.editorElement))
+      this.livePreviewController.setValue(value);
+    else
+      this.livePreviewController.updateSurfaceSnapshot(this.editorElement, value);
+  }
+  getLivePreviewSelection() {
+    if (!this.livePreviewController || !this.editorElement || !this.livePreviewController.isActive(this.editorElement)) {
+      return { start: 0, end: 0 };
+    }
+    const selection = this.livePreviewController.getSelection();
+    const range = selection.ranges[selection.mainIndex || 0];
+    return { start: Math.min(range.anchor, range.head), end: Math.max(range.anchor, range.head) };
+  }
+  activateLivePreview(start, end, focus = true) {
+    if (!this.livePreviewController || !this.editorElement)
+      return false;
+    const selection = start === void 0 ? void 0 : { ranges: [{ anchor: start, head: end != null ? end : start }], mainIndex: 0 };
+    return this.livePreviewController.activate(this.editorElement, selection, focus);
+  }
+  setLivePreviewSelection(start, end = start) {
+    if (!this.livePreviewController || !this.editorElement)
+      return;
+    if (!this.livePreviewController.isActive(this.editorElement)) {
+      this.activateLivePreview(start, end, true);
+      return;
+    }
+    this.livePreviewController.setSelection({ ranges: [{ anchor: start, head: end }], mainIndex: 0 });
+  }
   addEventListener(element, event, handler, options) {
     element.addEventListener(event, handler, options);
     this.eventHandlers.push({ element, event, handler, options });
+  }
+  removeEventListenersFor(element) {
+    this.eventHandlers = this.eventHandlers.filter((entry) => {
+      if (entry.element !== element)
+        return true;
+      entry.element.removeEventListener(entry.event, entry.handler, entry.options);
+      return false;
+    });
+  }
+  bindCollapseIndicatorEvents() {
+    if (!this.collapseIndicator)
+      return;
+    this.addEventListener(this.collapseIndicator, "pointerdown", (event) => {
+      event.preventDefault();
+    });
+    this.addEventListener(this.collapseIndicator, "click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.toggleCollapse();
+    });
   }
   /**
    * 绑定事件监听器（保留原有的错误处理）
@@ -5275,16 +10186,7 @@ var _OutlineItem = class {
       console.warn("[OutlineItem] bindEvents called but contentElement is undefined. Block type:", this.block.type);
       return;
     }
-    if (this.collapseIndicator) {
-      this.addEventListener(this.collapseIndicator, "pointerdown", (e) => {
-        e.preventDefault();
-      });
-      this.addEventListener(this.collapseIndicator, "click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.toggleCollapse();
-      });
-    }
+    this.bindCollapseIndicatorEvents();
     if (this.checkboxElement) {
       this.addEventListener(this.checkboxElement, "pointerdown", (e) => {
         e.preventDefault();
@@ -5303,6 +10205,22 @@ var _OutlineItem = class {
     });
     this.addEventListener(this.contentElement, "blur", () => {
       this.handleBlur();
+    });
+    this.addEventListener(this.contentElement, "contextmenu", (event) => {
+      var _a2;
+      if (!this.app || !this.sourceObsidianEditor)
+        return;
+      const mouseEvent = event;
+      this.activateSourceObsidianEditor();
+      showOutlineEditorContextMenu({
+        app: this.app,
+        event: mouseEvent,
+        editor: this.sourceObsidianEditor,
+        view: ((_a2 = this.app.workspace.activeLeaf) == null ? void 0 : _a2.view) || null,
+        getContext: () => ({ blockId: this.block.id, revision: this.sourceEditorRevision })
+      });
+      mouseEvent.preventDefault();
+      mouseEvent.stopPropagation();
     });
     this.addEventListener(this.contentElement, "input", (e) => {
       this.handleInput(e);
@@ -5432,7 +10350,7 @@ var _OutlineItem = class {
     if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && this.editorElement) {
       if (this.editorElement.selectionEnd !== void 0) {
         const content = this.editorElement.value || "";
-        return this.editorElement.selectionEnd === content.length;
+        return this.editorElement.selectionStart === this.editorElement.selectionEnd && this.editorElement.selectionEnd === content.length;
       }
     }
     const selection = window.getSelection();
@@ -5441,6 +10359,8 @@ var _OutlineItem = class {
     }
     try {
       const range = selection.getRangeAt(0);
+      if (!range.collapsed)
+        return false;
       const cursorPosition = range.startOffset;
       const content = this.contentElement.textContent || "";
       return cursorPosition === content.length;
@@ -5578,8 +10498,7 @@ var _OutlineItem = class {
     if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && this.editorElement) {
       this.editorElement.value = "";
       this.editorElement.focus();
-      const contentWithBlockRef = this.restoreBlockRefId("");
-      this.onUpdate(this.block.id, contentWithBlockRef);
+      this.onUpdate(this.block.id, "");
     } else if (this.contentElement) {
       this.contentElement.textContent = "";
       this.contentElement.focus();
@@ -5623,11 +10542,17 @@ var _OutlineItem = class {
     const parentBlock = this.findParentBlock(allBlocks, zoomedBlockId);
     if (parentBlock) {
       if (this.onBulletClick) {
-        this.onBulletClick(parentBlock.id);
+        this.onBulletClick(parentBlock.id, {
+          source: "keyboard",
+          direction: "out"
+        });
       }
     } else {
       if (this.onBulletClick) {
-        this.onBulletClick(zoomedBlockId);
+        this.onBulletClick(zoomedBlockId, {
+          source: "keyboard",
+          direction: "out"
+        });
       }
     }
   }
@@ -5641,13 +10566,21 @@ var _OutlineItem = class {
       if (this.block.children.length > 0) {
         const firstChild = this.block.children[0];
         if (this.onBulletClick) {
-          this.onBulletClick(firstChild.id);
+          this.onBulletClick(firstChild.id, {
+            source: "keyboard",
+            direction: "in",
+            cursorState: this.getZoomCursorState(firstChild.id)
+          });
         }
       } else {
       }
     } else {
       if (this.onBulletClick) {
-        this.onBulletClick(this.block.id);
+        this.onBulletClick(this.block.id, {
+          source: "keyboard",
+          direction: "in",
+          cursorState: this.getZoomCursorState(this.block.id)
+        });
       }
     }
   }
@@ -5673,7 +10606,7 @@ var _OutlineItem = class {
    */
   handleEnter(_e) {
     this.editor.beginTransaction();
-    if (import_obsidian6.Platform.isMobile && this.mobilePatcher) {
+    if (import_obsidian8.Platform.isMobile && this.mobilePatcher) {
       const selection2 = window.getSelection();
       if (!selection2 || selection2.rangeCount === 0) {
         this.editor.commitTransaction();
@@ -5761,9 +10694,9 @@ var _OutlineItem = class {
     let content;
     let cursorPosition = null;
     if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && this.editorElement) {
-      const textarea = this.editorElement;
-      content = textarea.value || "";
-      cursorPosition = textarea.selectionStart || 0;
+      const editorSurface = this.editorElement;
+      content = editorSurface.value || "";
+      cursorPosition = editorSurface.selectionStart || 0;
       e.preventDefault();
       e.stopPropagation();
     } else if (this.contentElement) {
@@ -5794,7 +10727,7 @@ var _OutlineItem = class {
       if (isFirstBlock && allBlocks.length === 1) {
         return;
       }
-      if (import_obsidian6.Platform.isMobile && this.mobilePatcher) {
+      if (import_obsidian8.Platform.isMobile && this.mobilePatcher) {
         this.mobilePatcher.patchDeleteBlock(this.block.id);
         return;
       }
@@ -5805,7 +10738,7 @@ var _OutlineItem = class {
       }
     } else {
       if (!isFirstBlock) {
-        if (import_obsidian6.Platform.isMobile && this.mobilePatcher) {
+        if (import_obsidian8.Platform.isMobile && this.mobilePatcher) {
           this.mobilePatcher.patchDeleteBlock(this.block.id);
           return;
         }
@@ -5828,13 +10761,21 @@ var _OutlineItem = class {
    * preventDefault 已在 handleKeyDown 中统一处理
    */
   handleDelete(e) {
-    const selection = window.getSelection();
-    if (!selection) {
-      return;
+    var _a;
+    const isLivePreview = ((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && !!this.editorElement;
+    let cursorPosition;
+    let content;
+    if (isLivePreview) {
+      const selection = this.getLivePreviewSelection();
+      cursorPosition = selection.end;
+      content = this.getLivePreviewValue();
+    } else {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0)
+        return;
+      cursorPosition = selection.getRangeAt(0).startOffset;
+      content = this.contentElement.textContent || "";
     }
-    const range = selection.getRangeAt(0);
-    const cursorPosition = range.startOffset;
-    const content = this.contentElement.textContent || "";
     if (cursorPosition === content.length) {
       if (content === "" && this.block.children.length === 0) {
         this.deleteBlock();
@@ -5875,59 +10816,52 @@ var _OutlineItem = class {
    * 延迟导航处理：利用浏览器原生光标移动来判断是否到达边界行
    * 不阻止默认行为，让浏览器自然处理 ArrowUp/ArrowDown 的光标移动，
    * 下一帧检查光标位置是否变化——没变化说明到达边界，此时执行跳转。
-   * 对 textarea 自动换行和 contentEditable 都能正确适配。
+   * 对 editorSurface 自动换行和 contentEditable 都能正确适配。
    */
   handleDeferredNavigation(direction) {
-    const active = document.activeElement;
-    const isTextarea = active instanceof HTMLTextAreaElement;
-    const isContentEditable = (active == null ? void 0 : active.isContentEditable) === true;
-    if (!isTextarea && !isContentEditable) {
-      if (direction === "up") {
-        this.focusPreviousBlock();
-      } else {
-        this.focusNextBlock();
-      }
+    var _a, _b;
+    if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && ((_b = this.livePreviewController) == null ? void 0 : _b.hasFocus())) {
+      const before = this.getLivePreviewSelection().end;
+      requestAnimationFrame(() => {
+        var _a2;
+        if (!((_a2 = this.livePreviewController) == null ? void 0 : _a2.hasFocus()))
+          return;
+        const after = this.getLivePreviewSelection().end;
+        if (before === after) {
+          if (direction === "up")
+            this.focusPreviousBlock();
+          else
+            this.focusNextBlock();
+        }
+      });
       return;
     }
-    let savedStart;
-    let savedContainer = null;
-    if (isTextarea) {
-      savedStart = active.selectionStart;
-    } else {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) {
+    const active = document.activeElement;
+    if (!(active == null ? void 0 : active.isContentEditable)) {
+      if (direction === "up")
+        this.focusPreviousBlock();
+      else
+        this.focusNextBlock();
+      return;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0)
+      return;
+    const range = selection.getRangeAt(0);
+    const beforeOffset = range.startOffset;
+    const beforeContainer = range.startContainer;
+    requestAnimationFrame(() => {
+      if (document.activeElement !== active)
+        return;
+      const current = window.getSelection();
+      if (!current || current.rangeCount === 0)
+        return;
+      const currentRange = current.getRangeAt(0);
+      if (beforeOffset === currentRange.startOffset && beforeContainer === currentRange.startContainer) {
         if (direction === "up")
           this.focusPreviousBlock();
         else
           this.focusNextBlock();
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      savedStart = range.startOffset;
-      savedContainer = range.startContainer;
-    }
-    requestAnimationFrame(() => {
-      if (document.activeElement !== active)
-        return;
-      let newStart;
-      let newContainer = null;
-      if (isTextarea) {
-        newStart = active.selectionStart;
-      } else {
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0)
-          return;
-        const range = sel.getRangeAt(0);
-        newStart = range.startOffset;
-        newContainer = range.startContainer;
-      }
-      const positionUnchanged = isTextarea ? savedStart === newStart : savedStart === newStart && savedContainer === newContainer;
-      if (positionUnchanged) {
-        if (direction === "up") {
-          this.focusPreviousBlock();
-        } else {
-          this.focusNextBlock();
-        }
       }
     });
   }
@@ -6072,36 +11006,14 @@ var _OutlineItem = class {
     }
   }
   /**
-   * 根据鼠标位置计算 textarea 中的光标位置
+   * 根据鼠标位置计算 editorSurface 中的光标位置
    */
-  calculateCursorPositionFromMouse(e, textarea) {
-    const text = textarea.value;
-    if (!text)
-      return 0;
-    const rect = textarea.getBoundingClientRect();
-    const style = window.getComputedStyle(textarea);
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const paddingTop = parseFloat(style.paddingTop) || 0;
-    const lineHeight = parseFloat(style.lineHeight) || 20;
-    const fontSize = parseFloat(style.fontSize) || 14;
-    const relativeX = e.clientX - rect.left - paddingLeft;
-    const relativeY = e.clientY - rect.top - paddingTop;
-    const lineIndex = Math.max(0, Math.floor(relativeY / lineHeight));
-    const lines = text.split("\n");
-    let charsBefore = 0;
-    for (let i = 0; i < lineIndex && i < lines.length; i++) {
-      charsBefore += lines[i].length + 1;
-    }
-    if (lineIndex >= lines.length) {
-      return text.length;
-    }
-    const currentLine = lines[lineIndex];
-    const avgCharWidth = fontSize * 0.6;
-    const charIndex = Math.min(
-      Math.max(0, Math.round(relativeX / avgCharWidth)),
-      currentLine.length
-    );
-    return charsBefore + charIndex;
+  calculateCursorPositionFromMouse(e, editorSurface) {
+    var _a;
+    const position = (_a = this.livePreviewController) == null ? void 0 : _a.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (position !== void 0 && position !== null)
+      return position;
+    return editorSurface.value.length;
   }
   /**
    * 根据鼠标位置计算 contenteditable 中的光标位置
@@ -6224,15 +11136,13 @@ var _OutlineItem = class {
           } else {
             position2 = allowNestedDrop2 ? "child" : "after";
           }
-          if (multiSelectionManager) {
-            multiSelectionManager.handleDropSelectedBlocks(dragData, this.block.id, position2);
-          }
+          const handled = (multiSelectionManager == null ? void 0 : multiSelectionManager.handleDropSelectedBlocks(dragData, this.block.id, position2)) === true;
           _OutlineItem.currentDraggedId = null;
           _OutlineItem.currentDragData = null;
           this.isDragging = false;
           this.draggedBlock = null;
           this.clearDragStyles();
-          if (this.onRender) {
+          if (!handled && this.onRender) {
             setTimeout(() => {
               var _a2;
               (_a2 = this.onRender) == null ? void 0 : _a2.call(this);
@@ -6387,17 +11297,17 @@ var _OutlineItem = class {
     var _a, _b;
     return (_b = (_a = content.match(/\^([a-zA-Z0-9-]+)\s*$/)) == null ? void 0 : _a[1]) != null ? _b : null;
   }
-  requestSourceBlockContentUpdate(app, data) {
+  requestSourceBlockContentUpdate(app, data2) {
     return new Promise((resolve2, reject) => {
       let settled = false;
       const timeoutId = window.setTimeout(() => {
         if (settled)
           return;
         settled = true;
-        reject(new Error(`Timed out waiting for source block update: ${data.viewId}/${data.blockId}`));
+        reject(new Error(`Timed out waiting for source block update: ${data2.viewId}/${data2.blockId}`));
       }, 5e3);
       app.workspace.trigger("workflowy:update-block-content", {
-        ...data,
+        ...data2,
         complete: (error) => {
           if (settled)
             return;
@@ -6415,7 +11325,7 @@ var _OutlineItem = class {
   async waitForBlockMetadata(app, sourceFilePath, blockId) {
     var _a;
     const sourceFile = app.vault.getAbstractFileByPath(sourceFilePath);
-    if (!(sourceFile instanceof import_obsidian6.TFile)) {
+    if (!(sourceFile instanceof import_obsidian8.TFile)) {
       throw new Error(`Source file not found: ${sourceFilePath}`);
     }
     const deadline = Date.now() + 5e3;
@@ -6540,25 +11450,54 @@ var _OutlineItem = class {
    * Compute current offset and update UndoManager cursor state (Req 3.1)
    */
   notifyCursorState(target) {
-    let offset = 0;
-    let selectionLength = 0;
-    const el = target || document.activeElement || this.contentElement;
-    if (el instanceof HTMLTextAreaElement) {
-      offset = el.selectionStart || 0;
-      selectionLength = (el.selectionEnd || 0) - offset;
-    } else {
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        offset = range.startOffset;
-        selectionLength = range.endOffset - range.startOffset;
-      }
-    }
+    const { offset, selectionLength } = this.getCursorOffsetAndSelection(target);
     this.editor.setCursorStateForNextTransaction({
       blockId: this.block.id,
       offset,
       selectionLength
     });
+  }
+  getZoomCursorState(blockId) {
+    if (blockId !== this.block.id) {
+      return {
+        blockId,
+        offset: 0,
+        selectionLength: 0
+      };
+    }
+    const { offset, selectionLength } = this.getCursorOffsetAndSelection();
+    return {
+      blockId,
+      offset,
+      selectionLength
+    };
+  }
+  getCursorOffsetAndSelection(target) {
+    var _a, _b;
+    if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && ((_b = this.livePreviewController) == null ? void 0 : _b.isActive(this.editorElement || void 0))) {
+      const selection = this.getLivePreviewSelection();
+      return { offset: selection.start, selectionLength: selection.end - selection.start };
+    }
+    const el = target || document.activeElement || this.contentElement;
+    const contentEl = this.contentElement && el && this.contentElement.contains(el) ? this.contentElement : (el == null ? void 0 : el.isContentEditable) ? el : this.contentElement;
+    return contentEl ? this.getContentEditableCursorState(contentEl) : { offset: 0, selectionLength: 0 };
+  }
+  getContentEditableCursorState(contentEl) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return { offset: 0, selectionLength: 0 };
+    }
+    const range = selection.getRangeAt(0);
+    if (!contentEl.contains(range.startContainer)) {
+      return { offset: 0, selectionLength: 0 };
+    }
+    const prefixRange = range.cloneRange();
+    prefixRange.selectNodeContents(contentEl);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    return {
+      offset: prefixRange.toString().length,
+      selectionLength: range.toString().length
+    };
   }
   /**
    * 处理文件拖拽的 drop 事件
@@ -6592,17 +11531,14 @@ var _OutlineItem = class {
     const position = this.fileDragCursorPosition;
     if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview") {
       if (this.editorElement) {
-        const textarea = this.editorElement;
-        const beforeText = textarea.value.substring(0, position);
-        const afterText = textarea.value.substring(position);
-        textarea.value = beforeText + text + afterText;
+        const editorSurface = this.editorElement;
+        const beforeText = editorSurface.value.substring(0, position);
+        const afterText = editorSurface.value.substring(position);
+        editorSurface.value = beforeText + text + afterText;
         const newPos = position + text.length;
-        textarea.setSelectionRange(newPos, newPos);
-        textarea.focus();
-        const contentWithBlockRef = this.restoreBlockRefId(textarea.value);
-        this.onUpdate(this.block.id, contentWithBlockRef);
-        textarea.style.height = "auto";
-        textarea.style.height = textarea.scrollHeight + "px";
+        editorSurface.setSelectionRange(newPos, newPos);
+        editorSurface.focus();
+        this.onUpdate(this.block.id, editorSurface.value);
       }
     } else {
       if (this.contentElement) {
@@ -6652,9 +11588,10 @@ var _OutlineItem = class {
     if (_OutlineItem.dropZone) {
       _OutlineItem.dropZone.style.display = "none";
     }
-    const elementsWithDragStyles = document.querySelectorAll(".drag-over-active");
+    const elementsWithDragStyles = document.querySelectorAll(".drag-over-active, .workflowy-item.dragging");
     elementsWithDragStyles.forEach((el) => {
       el.classList.remove("drag-over-active");
+      el.classList.remove("dragging");
     });
   }
   moveBlock(draggedId, targetId, position) {
@@ -6718,7 +11655,9 @@ var _OutlineItem = class {
   handleContentChange() {
     var _a, _b;
     const newContent = this.contentElement.textContent || "";
+    this.sourceEditorRevision += 1;
     this.onUpdate(this.block.id, newContent);
+    this.notifyEditStateChange();
     if (newContent) {
       this.contentElement.removeAttribute("data-placeholder");
     } else {
@@ -6730,11 +11669,20 @@ var _OutlineItem = class {
    * 焦点处理
    */
   handleFocus() {
+    this.cancelLivePreviewBlur();
+    if (!this.displayElement)
+      this.activateSourceObsidianEditor();
     this.onFocus(this.block.id);
     this.element.classList.add("focused");
+    if (!this.displayElement) {
+      this.notifyEditStateChange();
+    }
   }
   handleBlur() {
     this.element.classList.remove("focused");
+    if (!this.displayElement) {
+      this.notifyEditStateChange();
+    }
   }
   /**
    * 折叠/展开处理
@@ -6751,16 +11699,12 @@ var _OutlineItem = class {
     }
     return false;
   }
-  /** 阶段3b：供主视图局部更新后同步折叠指示器图标。 */
-  refreshCollapseIndicator() {
-    this.updateCollapseIndicator();
-  }
   /**
    * 处理复选框点击
    */
   handleCheckboxClick() {
     if (this.editor.toggleTodo(this.block.id)) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         const state = this.editor.getState();
         const newBlock = findBlockById(state.blocks, this.block.id);
         if (newBlock) {
@@ -6782,6 +11726,32 @@ var _OutlineItem = class {
     return `<svg viewBox="6 5 10 10">
             <path d="M13.75 9.56879C14.0833 9.76124 14.0833 10.2424 13.75 10.4348L8.5 13.4659C8.16667 13.6584 7.75 13.4178 7.75 13.0329L7.75 6.97072C7.75 6.58582 8.16667 6.34525 8.5 6.5377L13.75 9.56879Z" stroke="none" fill="currentColor"></path>
         </svg>`;
+  }
+  syncCollapseIndicatorTopology() {
+    var _a, _b;
+    const contentLine = this.element.querySelector(".workflowy-content-line");
+    if (!(contentLine instanceof HTMLElement))
+      return;
+    const shouldShow = this.block.children.length > 0 && ((_b = (_a = this.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.showCollapseIndicators) !== false;
+    const placeholder = contentLine.querySelector(".workflowy-collapse-placeholder");
+    if (shouldShow && !this.collapseIndicator) {
+      placeholder == null ? void 0 : placeholder.remove();
+      const indicator = document.createElement("div");
+      indicator.className = "workflowy-collapse";
+      indicator.innerHTML = this.getCollapseIndicatorSvg();
+      contentLine.insertBefore(indicator, contentLine.firstChild);
+      this.collapseIndicator = indicator;
+      this.bindCollapseIndicatorEvents();
+    } else if (!shouldShow && this.collapseIndicator) {
+      this.removeEventListenersFor(this.collapseIndicator);
+      this.collapseIndicator.remove();
+      this.collapseIndicator = null;
+    }
+    if (!shouldShow && !contentLine.querySelector(".workflowy-collapse-placeholder")) {
+      const nextPlaceholder = document.createElement("div");
+      nextPlaceholder.className = "workflowy-collapse-placeholder";
+      contentLine.insertBefore(nextPlaceholder, contentLine.firstChild);
+    }
   }
   updateCollapseIndicator() {
     if (this.collapseIndicator) {
@@ -6816,28 +11786,74 @@ var _OutlineItem = class {
    * 辅助方法 - 焦点导航（借鉴 OutlineItemEnhanced）
    */
   focusPreviousBlock() {
-    const allBlocks = getAllBlocks(this.editor.getState().blocks);
-    const currentIndex = allBlocks.findIndex((b) => b.id === this.block.id);
+    var _a;
+    if ((_a = this.onNavigateBlock) == null ? void 0 : _a.call(this, this.block.id, "previous"))
+      return;
+    const visibleBlockElements = this.getVisibleBlockElementsInCurrentEditor();
+    const currentIndex = visibleBlockElements.findIndex((element) => element === this.element);
     if (currentIndex > 0) {
-      const prevBlock = allBlocks[currentIndex - 1];
-      this.focusBlockAtEnd(prevBlock.id);
+      const prevBlockId = visibleBlockElements[currentIndex - 1].dataset.blockId;
+      if (prevBlockId) {
+        this.focusBlockAtEnd(prevBlockId);
+      }
     }
   }
   focusNextBlock() {
-    const allBlocks = getAllBlocks(this.editor.getState().blocks);
-    const currentIndex = allBlocks.findIndex((b) => b.id === this.block.id);
-    if (currentIndex < allBlocks.length - 1) {
-      const nextBlock = allBlocks[currentIndex + 1];
-      this.focusBlockAtStart(nextBlock.id);
+    var _a;
+    if ((_a = this.onNavigateBlock) == null ? void 0 : _a.call(this, this.block.id, "next"))
+      return;
+    const visibleBlockElements = this.getVisibleBlockElementsInCurrentEditor();
+    const currentIndex = visibleBlockElements.findIndex((element) => element === this.element);
+    if (currentIndex >= 0 && currentIndex < visibleBlockElements.length - 1) {
+      const nextBlockId = visibleBlockElements[currentIndex + 1].dataset.blockId;
+      if (nextBlockId) {
+        this.focusBlockAtStart(nextBlockId);
+      }
     }
   }
+  getCurrentEditorRoot() {
+    return this.element.closest(".workflowy-editor");
+  }
+  focusAtBoundary(boundary) {
+    if (this.editorElement && this.displayElement) {
+      this.enterEditMode();
+      const offset = boundary === "start" ? 0 : this.getLivePreviewValue().length;
+      this.setLivePreviewSelection(offset);
+      return;
+    }
+    if (!this.contentElement)
+      return;
+    this.contentElement.focus();
+    const range = document.createRange();
+    range.selectNodeContents(this.contentElement);
+    range.collapse(boundary === "start");
+    const selection = window.getSelection();
+    selection == null ? void 0 : selection.removeAllRanges();
+    selection == null ? void 0 : selection.addRange(range);
+  }
+  getVisibleBlockElementsInCurrentEditor() {
+    const root = this.getCurrentEditorRoot();
+    if (!root) {
+      return [];
+    }
+    return Array.from(root.querySelectorAll(".workflowy-item[data-block-id]")).filter((element) => {
+      return element.isConnected && element.style.display !== "none" && !element.classList.contains("workflowy-filtered-hidden");
+    });
+  }
+  findBlockElementInCurrentEditor(blockId) {
+    const root = this.getCurrentEditorRoot();
+    if (!root) {
+      return null;
+    }
+    return this.getVisibleBlockElementsInCurrentEditor().find((element) => element.dataset.blockId === blockId) || null;
+  }
   focusBlockAtStart(blockId) {
-    const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+    const blockElement = this.findBlockElementInCurrentEditor(blockId);
     if (!blockElement)
       return;
     const editorElement = blockElement.querySelector(".workflowy-content-editor");
     if (editorElement) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         editorElement.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       editorElement.focus();
@@ -6850,7 +11866,7 @@ var _OutlineItem = class {
     }
     const element = blockElement.querySelector(".workflowy-content");
     if (element) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         element.scrollIntoView({ behavior: "smooth", block: "center" });
       } else {
         element.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -6872,12 +11888,12 @@ var _OutlineItem = class {
     }
   }
   focusBlockAtEnd(blockId) {
-    const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+    const blockElement = this.findBlockElementInCurrentEditor(blockId);
     if (!blockElement)
       return;
     const editorElement = blockElement.querySelector(".workflowy-content-editor");
     if (editorElement) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         editorElement.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       editorElement.focus();
@@ -6891,7 +11907,7 @@ var _OutlineItem = class {
     }
     const element = blockElement.querySelector(".workflowy-content");
     if (element) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         element.scrollIntoView({ behavior: "smooth", block: "center" });
       } else {
         element.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -6925,7 +11941,7 @@ var _OutlineItem = class {
       setTimeout(() => {
         const editorElement = blockElement.querySelector(".workflowy-content-editor");
         if (editorElement) {
-          if (import_obsidian6.Platform.isMobile) {
+          if (import_obsidian8.Platform.isMobile) {
             editorElement.scrollIntoView({ behavior: "smooth", block: "center" });
           }
           editorElement.focus();
@@ -6938,7 +11954,7 @@ var _OutlineItem = class {
     }
     const element = blockElement.querySelector(".workflowy-content");
     if (element) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         element.scrollIntoView({ behavior: "smooth", block: "center" });
       } else {
         element.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -7047,7 +12063,7 @@ var _OutlineItem = class {
     if (!structurallyCompatible) {
       return false;
     }
-    if (import_obsidian6.Platform.isMobile && this.isEditMode && this.editorElement && document.body.contains(this.editorElement)) {
+    if (import_obsidian8.Platform.isMobile && this.isEditMode && this.editorElement && document.body.contains(this.editorElement)) {
       return true;
     }
     if (newBlock.content !== this.block.content) {
@@ -7058,17 +12074,38 @@ var _OutlineItem = class {
     }
     return true;
   }
+  canSyncWithBlock(block) {
+    return areBlocksEquivalentForRender(block, this.block, {
+      ignoreContent: true,
+      ignoreLevel: true,
+      ignoreChildren: true
+    });
+  }
+  /**
+   * 应用缩进样式（paddingLeft + data-level 属性）——纯 DOM 操作，不触碰块模型。
+   * 供 updateLevel / setLevel / setDisplayLevel 共用。
+   */
+  applyIndent(level) {
+    var _a, _b;
+    const indentSize = ((_b = (_a = this.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.indentSize) || UI_CONFIG.indentSize;
+    this.element.style.paddingLeft = `${level * indentSize}px`;
+    this.element.setAttribute("data-level", level.toString());
+  }
   /**
    * 方案 E：更新块的层级（用于 indent/outdent 后复用）
    */
   updateLevel(newLevel) {
-    var _a, _b;
     if (this.block.level !== newLevel) {
       this.block.level = newLevel;
-      this.element.setAttribute("data-level", newLevel.toString());
-      const indentSize = ((_b = (_a = this.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.indentSize) || UI_CONFIG.indentSize;
-      this.element.style.paddingLeft = `${newLevel * indentSize}px`;
+      this.applyIndent(newLevel);
     }
+  }
+  /**
+   * 虚拟窗口化：按显示层级设置缩进（zoom 模式下显示层级 ≠ 模型层级）。
+   * 只更新 DOM 缩进，绝不修改 this.block.level。
+   */
+  setDisplayLevel(level) {
+    this.applyIndent(level);
   }
   /**
    * 移动端全量属性同步（DOM diff 复用时调用）
@@ -7156,7 +12193,7 @@ var _OutlineItem = class {
   }
   getEditableContentSnapshot() {
     if (this.editorElement) {
-      return this.restoreBlockRefId(this.editorElement.value);
+      return this.editorElement.value;
     }
     if (this.contentElement && this.contentElement.isContentEditable) {
       return this.contentElement.textContent || "";
@@ -7164,13 +12201,13 @@ var _OutlineItem = class {
     return null;
   }
   syncWithBlock(block) {
-    const { blockRefId } = this.extractBlockRefId(block.content);
     this.block = { ...block };
-    this._blockRefId = blockRefId;
     this.element.setAttribute("data-block-id", block.id);
     this.element.setAttribute("data-block-type", block.type);
     this.element.setAttribute("data-level", block.level.toString());
     this.element.classList.toggle("todo-completed", !!(block.isTodo && block.todoCompleted));
+    this.syncCollapseIndicatorTopology();
+    this.updateCollapseIndicator();
   }
   /**
    * 设置移动端局部 DOM 更新回调
@@ -7183,6 +12220,11 @@ var _OutlineItem = class {
    * 提供给 EventDelegator 的入口（捕获阶段触发）
    */
   onKeyDownDelegated(e) {
+    var _a;
+    if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview") {
+      this.handleLivePreviewKeyDown(e);
+      return;
+    }
     this.handleKeyDown(e);
   }
   focus() {
@@ -7191,18 +12233,27 @@ var _OutlineItem = class {
       return;
     }
     if (this.contentElement) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         this.contentElement.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       this.contentElement.focus();
     } else if (this.editorElement) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         this.editorElement.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       this.editorElement.focus();
     }
   }
   blur() {
+    this.element.classList.remove("focused");
+    if (this.editorElement && this.livePreviewController) {
+      if (this.livePreviewController.isActive(this.editorElement)) {
+        this.livePreviewController.blur();
+      } else if (this.isEditMode) {
+        this.exitEditMode();
+      }
+      return;
+    }
     if (this.contentElement) {
       this.contentElement.blur();
     }
@@ -7222,7 +12273,7 @@ var _OutlineItem = class {
       return;
     }
     if (this.contentElement) {
-      if (import_obsidian6.Platform.isMobile) {
+      if (import_obsidian8.Platform.isMobile) {
         this.contentElement.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       this.contentElement.focus();
@@ -7248,17 +12299,14 @@ var _OutlineItem = class {
       if (!this.isEditMode && this.displayElement) {
         this.enterEditMode();
       }
-      const textarea = this.editorElement;
-      const currentValue = textarea.value;
+      const editorSurface = this.editorElement;
+      const currentValue = editorSurface.value;
       const newValue = currentValue + text;
-      textarea.value = newValue;
+      editorSurface.value = newValue;
       const newCursorPos = newValue.length;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-      textarea.focus();
-      const contentWithBlockRef = this.restoreBlockRefId(newValue);
-      this.onUpdate(this.block.id, contentWithBlockRef);
-      textarea.style.height = "auto";
-      textarea.style.height = textarea.scrollHeight + "px";
+      editorSurface.setSelectionRange(newCursorPos, newCursorPos);
+      editorSurface.focus();
+      this.onUpdate(this.block.id, newValue);
     } else {
       if (!this.contentElement)
         return;
@@ -7281,7 +12329,16 @@ var _OutlineItem = class {
     }
   }
   destroy() {
+    if (this.destroyed)
+      return;
     this.destroyed = true;
+    if (this.suggestionPositionFrame !== null) {
+      cancelAnimationFrame(this.suggestionPositionFrame);
+      this.suggestionPositionFrame = null;
+    }
+    this.cancelLivePreviewBlur();
+    this.pendingSuggestionRequest = null;
+    this.livePreviewRenderVersion++;
     this.heavyPlaceholder = null;
     this.eventHandlers.forEach(({ element, event, handler, options }) => {
       element.removeEventListener(event, handler, options);
@@ -7295,9 +12352,14 @@ var _OutlineItem = class {
       this.renderComponent.unload();
       this.renderComponent = null;
     }
-    if (this.livePreviewEditor) {
-      this.livePreviewEditor = null;
+    if (this.livePreviewController && this.editorElement) {
+      this.livePreviewController.detachSurface(this.editorElement, true);
     }
+    if (this.app && this.sourceEditorOwner && this.app.workspace.activeEditor === this.sourceEditorOwner) {
+      this.app.workspace.activeEditor = null;
+    }
+    this.sourceEditorOwner = null;
+    this.sourceObsidianEditor = null;
     if (this.linkSuggestManager) {
       this.linkSuggestManager.destroy();
       this.linkSuggestManager = null;
@@ -7327,37 +12389,36 @@ var _OutlineItem = class {
     this.getMultiSelectionManager = void 0;
     this.onBulletClick = void 0;
     this.getZoomedBlockId = void 0;
+    this.onEditStateChange = void 0;
   }
   /**
    * Update content text without recreating the element (used for content-only undo/redo patch)
    */
   updateContent(newContent) {
+    var _a;
+    this.block = { ...this.block, content: newContent };
     if (this.editorElement) {
-      const { text, blockRefId } = this.extractBlockRefId(newContent);
-      this._blockRefId = blockRefId;
-      this.editorElement.value = text;
-      this.renderDisplay();
+      (_a = this.livePreviewController) == null ? void 0 : _a.updateSurfaceSnapshot(this.editorElement, newContent);
+      if (this.livePreviewRendered || !this.lazyLivePreviewRender) {
+        void this.renderDisplay();
+      } else {
+        this.renderLivePreviewPlaceholder();
+      }
     } else if (this.contentElement) {
       if (this.contentElement.textContent !== newContent) {
         this.contentElement.textContent = newContent;
       }
     }
-    this.block = { ...this.block, content: newContent };
   }
   setLevel(level) {
-    var _a, _b;
     this.block.level = level;
-    const indentSize = ((_b = (_a = this.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.indentSize) || UI_CONFIG.indentSize;
-    this.element.style.paddingLeft = `${level * indentSize}px`;
-    this.element.setAttribute("data-level", level.toString());
+    this.applyIndent(level);
   }
   /**
    * 等待异步渲染完成（如果有）
    */
-  async waitForRender() {
-    if (this.renderPromise) {
-      await this.renderPromise;
-    }
+  waitForRender() {
+    return this.renderPromise;
   }
   /**
    * 查找父块
@@ -7508,8 +12569,75 @@ var _OutlineItem = class {
     await this.renderPromise;
     if (!this.destroyed && this.element.isConnected) {
       const h = this.element.getBoundingClientRect().height;
-      if (h > 0)
-        _OutlineItem.heavyHeightCache.set(this.heavyCacheKey(), Math.ceil(h));
+      if (h > 0) {
+        const cacheKey = this.heavyCacheKey();
+        _OutlineItem.heavyHeightCache.delete(cacheKey);
+        _OutlineItem.heavyHeightCache.set(cacheKey, Math.ceil(h));
+        while (_OutlineItem.heavyHeightCache.size > _OutlineItem.heavyHeightCacheLimit) {
+          const oldestKey = _OutlineItem.heavyHeightCache.keys().next().value;
+          if (oldestKey === void 0)
+            break;
+          _OutlineItem.heavyHeightCache.delete(oldestKey);
+        }
+      }
+    }
+  }
+  usesViewportRendering() {
+    var _a;
+    return this.needsHeavyRender() || this.lazyLivePreviewRender && ((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && this.block.type === "list";
+  }
+  needsViewportRender() {
+    return this.needsHeavyRender() || this.needsLivePreviewRender();
+  }
+  async mountViewportRender() {
+    if (this.needsHeavyRender()) {
+      await this.mountHeavyRender();
+      return;
+    }
+    if (!this.needsLivePreviewRender())
+      return;
+    this.livePreviewRendered = true;
+    const renderPromise = this.renderDisplay();
+    this.renderPromise = renderPromise;
+    await renderPromise;
+    if (this.renderPromise === renderPromise)
+      this.renderPromise = null;
+  }
+  unmountViewportRender() {
+    var _a;
+    if (!this.lazyLivePreviewRender || !this.livePreviewRendered || this.destroyed)
+      return false;
+    if (this.isEditMode || this.editorElement === document.activeElement)
+      return false;
+    this.livePreviewRenderVersion++;
+    this.livePreviewRendered = false;
+    this.renderPromise = null;
+    (_a = this.renderComponent) == null ? void 0 : _a.unload();
+    this.renderComponent = null;
+    this.lastRenderedContent = "";
+    this.hasAsyncEmbedCache = null;
+    this.renderLivePreviewPlaceholder();
+    return true;
+  }
+  needsLivePreviewRender() {
+    var _a;
+    return this.lazyLivePreviewRender && !this.livePreviewRendered && !this.destroyed && ((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && this.block.type === "list";
+  }
+  renderLivePreviewPlaceholder() {
+    var _a, _b, _c;
+    if (!this.displayElement)
+      return;
+    this.displayElement.empty();
+    this.displayElement.addClass("workflowy-live-preview-placeholder");
+    const content = ((_a = this.editorElement) == null ? void 0 : _a.value) || this.block.content;
+    if (content) {
+      this.displayElement.textContent = content;
+      this.displayElement.removeAttribute("data-placeholder");
+    } else {
+      this.displayElement.setAttribute(
+        "data-placeholder",
+        ((_c = (_b = this.settings) == null ? void 0 : _b.editor) == null ? void 0 : _c.placeholder) || t("ui.outline.placeholder")
+      );
     }
   }
   /** 阶段3a：是否为「待懒渲染」的非列表块（占位未真正渲染）。 */
@@ -7520,105 +12648,67 @@ var _OutlineItem = class {
    * ==================== Live Preview 模式方法 ====================
    */
   /**
-   * 绑定自动扩展功能
-   */
-  bindAutoResize() {
-    if (!this.editorElement) {
-      console.warn("[OutlineItem] bindAutoResize aborted - no editorElement");
-      return;
-    }
-    const autoResize = () => {
-      if (!this.editorElement)
-        return;
-      const originalHeight = this.editorElement.style.height;
-      this.editorElement.style.height = "auto";
-      const scrollHeight = this.editorElement.scrollHeight;
-      this.editorElement.style.height = originalHeight;
-      if (scrollHeight > 0) {
-        this.editorElement.style.height = scrollHeight + "px";
-      }
-      this.editorElement.scrollTop = 0;
-    };
-    this.editorElement.addEventListener("input", autoResize);
-  }
-  /**
-   * 绑定双层渲染事件
+   * 绑定显示层与共享编辑器事件
    */
   bindLivePreviewEvents() {
     var _a, _b;
-    if (!this.displayElement || !this.editorElement) {
+    if (!this.displayElement || !this.editorElement)
       return;
-    }
-    if (this.collapseIndicator) {
-      this.collapseIndicator.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-      });
-      this.collapseIndicator.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.toggleCollapse();
-      });
-    }
+    this.bindCollapseIndicatorEvents();
     if (this.checkboxElement) {
-      this.checkboxElement.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-      });
-      this.checkboxElement.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      this.checkboxElement.addEventListener("pointerdown", (event) => event.preventDefault());
+      this.checkboxElement.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         this.handleCheckboxClick();
       });
     }
-    this.element.addEventListener("mouseenter", () => {
-      this.element.classList.add("hovered");
-    });
-    this.element.addEventListener("mouseleave", () => {
-      this.element.classList.remove("hovered");
-    });
+    this.element.addEventListener("mouseenter", () => this.element.classList.add("hovered"));
+    this.element.addEventListener("mouseleave", () => this.element.classList.remove("hovered"));
     this.bulletElement.setAttribute("draggable", "true");
-    this.bulletElement.addEventListener("dragstart", (e) => {
-      this.handleDragStart(e);
-    });
-    this.element.addEventListener("dragover", (e) => this.handleDragOver(e), { capture: true });
-    this.element.addEventListener("drop", (e) => this.handleDrop(e), { capture: true });
-    this.element.addEventListener("dragend", (e) => this.handleDragEnd(e), { capture: true });
-    this.element.addEventListener("dragleave", (e) => this.handleDragLeave(e), { capture: true });
-    this.displayElement.addEventListener("click", (e) => {
-      const target = e.target;
-      if (target.tagName === "A" || target.closest("a")) {
+    this.bulletElement.addEventListener("dragstart", (event) => this.handleDragStart(event));
+    this.element.addEventListener("dragover", (event) => this.handleDragOver(event), { capture: true });
+    this.element.addEventListener("drop", (event) => this.handleDrop(event), { capture: true });
+    this.element.addEventListener("dragend", (event) => this.handleDragEnd(event), { capture: true });
+    this.element.addEventListener("dragleave", (event) => this.handleDragLeave(event), { capture: true });
+    this.displayElement.addEventListener("click", (event) => {
+      var _a2;
+      const target = event.target;
+      if (target.tagName === "A" || target.closest("a"))
         return;
-      }
       this.enterEditMode();
+      const position = (_a2 = this.livePreviewController) == null ? void 0 : _a2.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (position !== void 0 && position !== null)
+        this.setLivePreviewSelection(position);
     });
-    this.editorElement.addEventListener("input", (e) => {
-      const editedContent = this.editorElement.value;
-      const newContent = this.restoreBlockRefId(editedContent);
-      this.onUpdate(this.block.id, newContent);
-      this.handleInput(e);
+    this.editorElement.addEventListener("input", (event) => {
+      this.notifyEditStateChange();
+      this.handleInput(event);
     });
-    this.editorElement.addEventListener("blur", () => {
-      this.handleLivePreviewBlur();
-    });
-    this.editorElement.addEventListener("focus", () => {
-      this.handleFocus();
-    });
-    this.editorElement.addEventListener("keydown", (e) => {
-      this.handleEditorKeydown(e);
-    });
-    if (this.app && this.editorElement) {
-      this.livePreviewEditor = new LivePreviewEditor(
-        this.app,
-        this.editorElement
-      );
-      this.livePreviewEditor.bindShortcuts();
-      this.livePreviewEditor.bindContextMenu();
-      const linkSuggestEnabled = ((_b = (_a = this.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.linkSuggest) !== false;
-      if (linkSuggestEnabled) {
-        this.linkSuggestManager = new LinkSuggestManager(this.app);
-        this.linkSuggestManager.bind(this.editorElement, (linkText, start, end) => {
-          this.insertLinkText(linkText, start, end);
-        });
+    this.editorElement.addEventListener("blur", () => this.handleLivePreviewBlur());
+    this.editorElement.addEventListener("focus", () => this.handleFocus());
+    this.editorElement.addEventListener("keydown", (event) => this.handleLivePreviewKeyDown(event));
+    this.addEventListener(this.editorElement, "contextmenu", (event) => {
+      var _a2, _b2;
+      const mouseEvent = event;
+      this.enterEditMode();
+      const position = (_a2 = this.livePreviewController) == null ? void 0 : _a2.posAtCoords({ x: mouseEvent.clientX, y: mouseEvent.clientY });
+      if (position !== void 0 && position !== null) {
+        const selection = this.getLivePreviewSelection();
+        const clickedInsideSelection = selection.start !== selection.end && selection.start <= position && position <= selection.end;
+        if (!clickedInsideSelection)
+          this.setLivePreviewSelection(position);
       }
+      if ((_b2 = this.livePreviewController) == null ? void 0 : _b2.openContextMenu(mouseEvent)) {
+        mouseEvent.preventDefault();
+        mouseEvent.stopPropagation();
+      }
+    });
+    if (this.app && ((_b = (_a = this.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.linkSuggest) !== false) {
+      this.linkSuggestManager = new LinkSuggestManager(this.app);
+      this.linkSuggestManager.bind(this.editorElement, (linkText, start, end) => {
+        this.insertLinkText(linkText, start, end);
+      });
     }
   }
   /**
@@ -7627,46 +12717,49 @@ var _OutlineItem = class {
   insertLinkText(linkText, start, end) {
     if (!this.editorElement)
       return;
-    const currentValue = this.editorElement.value;
+    const currentValue = this.getLivePreviewValue();
     const newValue = currentValue.slice(0, start) + linkText + currentValue.slice(end);
-    this.editorElement.value = newValue;
     const newCursorPos = start + linkText.length;
-    this.editorElement.setSelectionRange(newCursorPos, newCursorPos);
-    this.editorElement.focus();
+    this.setLivePreviewValue(newValue);
+    this.setLivePreviewSelection(newCursorPos);
     this.onUpdate(this.block.id, newValue);
   }
   /**
    * 处理 Live Preview 编辑器 blur。
-   * 移动端点击底部工具栏时，textarea 可能短暂失焦；这里延迟判定，
+   * 移动端点击底部工具栏时，editorSurface 可能短暂失焦；这里延迟判定，
    * 避免立刻 exitEditMode 导致输入法收起再展开。
    */
   handleLivePreviewBlur() {
+    if (this.livePreviewBlurTimer !== null)
+      return;
     const isProtected = () => {
       return this.isMobileToolbarBlurGuardActive() || document.documentElement.hasAttribute("data-workflowy-indent-active");
     };
     const finalizeBlur = () => {
+      var _a, _b;
+      this.livePreviewBlurTimer = null;
       if (!this.editorElement)
         return;
       if (!document.body.contains(this.editorElement)) {
         return;
       }
-      if (document.activeElement === this.editorElement) {
+      const activeElement = document.activeElement;
+      const isActiveSurface = ((_a = this.livePreviewController) == null ? void 0 : _a.isActive(this.editorElement)) === true;
+      if (isActiveSurface && (((_b = this.livePreviewController) == null ? void 0 : _b.hasFocus()) || activeElement === this.editorElement || this.editorElement.contains(activeElement)))
         return;
-      }
       if (isProtected()) {
-        window.setTimeout(finalizeBlur, 80);
+        this.livePreviewBlurTimer = window.setTimeout(finalizeBlur, 80);
         return;
       }
       this.exitEditMode();
     };
-    if (isProtected()) {
-      window.setTimeout(finalizeBlur, 80);
+    this.livePreviewBlurTimer = window.setTimeout(finalizeBlur, isProtected() ? 80 : 0);
+  }
+  cancelLivePreviewBlur() {
+    if (this.livePreviewBlurTimer === null)
       return;
-    }
-    if (!document.body.contains(this.editorElement)) {
-      return;
-    }
-    this.exitEditMode();
+    window.clearTimeout(this.livePreviewBlurTimer);
+    this.livePreviewBlurTimer = null;
   }
   /**
    * 判断是否仍处于移动端工具栏引发的短暂 blur 保护窗口
@@ -7681,33 +12774,25 @@ var _OutlineItem = class {
    * 进入编辑模式
    */
   enterEditMode() {
-    if (!this.displayElement || !this.editorElement)
+    if (!this.displayElement || !this.editorElement || !this.livePreviewController)
       return;
-    if (this.isEditMode)
+    if (this.isEditMode) {
+      this.activateLivePreview(void 0, void 0, true);
       return;
-    const scrollContainer = this.element.closest(".workflowy-editor") || document.documentElement;
-    const savedScrollTop = scrollContainer.scrollTop;
-    const elementRect = this.element.getBoundingClientRect();
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const relativeTop = elementRect.top - containerRect.top;
-    this.isEditMode = true;
+    }
     this.displayElement.style.display = "none";
     this.editorElement.style.display = "block";
-    this.editorElement.style.height = "auto";
-    this.editorElement.style.height = this.editorElement.scrollHeight + "px";
-    this.editorElement.scrollTop = 0;
-    this.editorElement.focus();
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const newElementRect = this.element.getBoundingClientRect();
-        const newRelativeTop = newElementRect.top - containerRect.top;
-        const scrollDiff = newRelativeTop - relativeTop;
-        if (Math.abs(scrollDiff) > 1) {
-          scrollContainer.scrollTop = savedScrollTop + scrollDiff;
-        }
-      });
-    });
+    if (!this.activateLivePreview(void 0, void 0, true)) {
+      this.livePreviewController.detachSurface(this.editorElement);
+      this.editorElement.style.display = "none";
+      this.displayElement.style.display = "block";
+      return;
+    }
+    this.cancelLivePreviewBlur();
+    this.isEditMode = true;
+    this.element.classList.add("focused");
     this.onFocus(this.block.id);
+    this.notifyEditStateChange();
   }
   /**
    * 退出编辑模式
@@ -7715,16 +12800,111 @@ var _OutlineItem = class {
   exitEditMode() {
     if (!this.displayElement || !this.editorElement)
       return;
+    this.cancelLivePreviewBlur();
+    const wasEditing = this.isEditMode;
     this.isEditMode = false;
-    const editedContent = this.editorElement.value;
-    const currentContent = this.restoreBlockRefId(editedContent);
-    const originalWithoutBlockRef = this.extractBlockRefId(this.block.content).text;
-    if (editedContent !== originalWithoutBlockRef) {
-      this.onUpdate(this.block.id, currentContent);
-    }
+    this.element.classList.remove("focused");
+    const editedContent = this.getLivePreviewValue();
+    if (editedContent !== this.block.content)
+      this.onUpdate(this.block.id, editedContent);
     this.editorElement.style.display = "none";
     this.displayElement.style.display = "block";
-    this.renderDisplay();
+    void this.renderDisplay();
+    if (wasEditing)
+      this.notifyEditStateChange();
+  }
+  // ==================== 虚拟窗口化：编辑状态与 DOM 节点身份解耦 ====================
+  /**
+   * 获取当前活动编辑状态（虚拟窗口化：行卸载前由窗口管理器采集）。
+   * 不在编辑模式时返回 null。
+   */
+  getActiveEdit() {
+    if (this.destroyed)
+      return null;
+    if (this.editorElement && this.displayElement) {
+      if (!this.isEditMode)
+        return null;
+      const value = this.getLivePreviewValue();
+      const selection = this.getLivePreviewSelection();
+      return {
+        blockId: this.block.id,
+        selectionStart: selection.start,
+        selectionEnd: selection.end,
+        pendingContent: value !== this.block.content ? value : null
+      };
+    }
+    if (this.contentElement) {
+      const activeElement = document.activeElement;
+      if (!activeElement || activeElement !== this.contentElement && !this.contentElement.contains(activeElement))
+        return null;
+      const { offset, selectionLength } = this.getContentEditableCursorState(this.contentElement);
+      const text = this.contentElement.textContent || "";
+      return { blockId: this.block.id, selectionStart: offset, selectionEnd: offset + selectionLength, pendingContent: text !== this.block.content ? text : null };
+    }
+    return null;
+  }
+  /**
+   * 行重新挂载后恢复编辑状态（虚拟窗口化）。
+   * 复用现有 enterEditMode 逻辑进入编辑模式；若 pendingContent 非 null，
+   * 先把编辑器文本设为它（直接赋值不触发 input，不走保存回调），
+   * 再恢复 selection（越界时 clamp 到文本长度）。恢复过程只触发一次 onEditStateChange。
+   */
+  restoreEditState(edit) {
+    if (this.destroyed)
+      return;
+    this.suppressEditStateNotify = true;
+    try {
+      if (this.editorElement && this.displayElement) {
+        if (edit.pendingContent != null)
+          this.setLivePreviewValue(edit.pendingContent);
+        this.enterEditMode();
+        const length = this.getLivePreviewValue().length;
+        const start = Math.max(0, Math.min(edit.selectionStart, length));
+        const end = Math.max(start, Math.min(edit.selectionEnd, length));
+        this.setLivePreviewSelection(start, end);
+      } else if (this.contentElement) {
+        if (edit.pendingContent != null && this.contentElement.textContent !== edit.pendingContent)
+          this.contentElement.textContent = edit.pendingContent;
+        this.contentElement.focus();
+        const length = (this.contentElement.textContent || "").length;
+        const start = Math.max(0, Math.min(edit.selectionStart, length));
+        const end = Math.max(start, Math.min(edit.selectionEnd, length));
+        this.setSelectionRangeInContentEditable(this.contentElement, start, end);
+      }
+    } finally {
+      this.suppressEditStateNotify = false;
+      this.notifyEditStateChange();
+    }
+  }
+  /**
+   * 在 contenteditable 中设置选区（支持范围选择，越界由调用方 clamp）
+   */
+  setSelectionRangeInContentEditable(element, start, end) {
+    var _a;
+    const selection = window.getSelection();
+    if (!selection)
+      return;
+    const range = document.createRange();
+    const textNode = element.firstChild;
+    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+      const maxLen = ((_a = textNode.textContent) == null ? void 0 : _a.length) || 0;
+      range.setStart(textNode, Math.min(start, maxLen));
+      range.setEnd(textNode, Math.min(end, maxLen));
+    } else {
+      range.setStart(element, 0);
+      range.collapse(true);
+    }
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  /**
+   * 通知编辑状态变化（进入/退出编辑模式、input 内容变化时调用）。
+   * restoreEditState 恢复期间被抑制，避免回调风暴。
+   */
+  notifyEditStateChange() {
+    if (this.suppressEditStateNotify || this.destroyed || !this.onEditStateChange)
+      return;
+    this.onEditStateChange(this.getActiveEdit());
   }
   /**
    * 渲染显示层（使用 MarkdownRenderer）
@@ -7737,19 +12917,24 @@ var _OutlineItem = class {
     var _a, _b, _c;
     if (!this.app || !this.displayElement)
       return;
+    if (this.lazyLivePreviewRender)
+      this.livePreviewRendered = true;
+    const renderVersion = ++this.livePreviewRenderVersion;
+    const displayElement = this.displayElement;
     const content = ((_a = this.editorElement) == null ? void 0 : _a.value) || this.block.content;
     if (content === this.lastRenderedContent && this.hasAsyncEmbed()) {
       return;
     }
-    this.displayElement.empty();
+    displayElement.removeClass("workflowy-live-preview-placeholder");
+    displayElement.empty();
     this.hasAsyncEmbedCache = null;
     if (!content.trim()) {
       const placeholder = ((_c = (_b = this.settings) == null ? void 0 : _b.editor) == null ? void 0 : _c.placeholder) || t("ui.outline.placeholder");
-      this.displayElement.setAttribute("data-placeholder", placeholder);
+      displayElement.setAttribute("data-placeholder", placeholder);
       this.lastRenderedContent = content;
       return;
     }
-    const renderComponent = new import_obsidian6.Component();
+    const renderComponent = new import_obsidian8.Component();
     renderComponent.load();
     try {
       const lines = content.split("\n");
@@ -7795,20 +12980,30 @@ var _OutlineItem = class {
         }
         return line + "<br>";
       }).join("");
-      await import_obsidian6.MarkdownRenderer.render(
+      await import_obsidian8.MarkdownRenderer.render(
         this.app,
         markdownContent,
-        this.displayElement,
+        displayElement,
         this.sourcePath || "",
         renderComponent
       );
+      if (this.destroyed || renderVersion !== this.livePreviewRenderVersion || displayElement !== this.displayElement) {
+        return;
+      }
       this.enableAllInteractions();
       this.lastRenderedContent = content;
     } catch (error) {
+      if (this.destroyed || renderVersion !== this.livePreviewRenderVersion || displayElement !== this.displayElement) {
+        return;
+      }
       console.error("[OutlineItem] Error rendering markdown:", error);
-      this.displayElement.textContent = content;
+      displayElement.textContent = content;
       this.lastRenderedContent = content;
     } finally {
+      if (this.destroyed || renderVersion !== this.livePreviewRenderVersion || displayElement !== this.displayElement) {
+        renderComponent.unload();
+        return;
+      }
       if (this.renderComponent) {
         this.renderComponent.unload();
       }
@@ -7965,8 +13160,8 @@ var _OutlineItem = class {
   enableTagClicks() {
     if (!this.displayElement || !this.app)
       return;
-    const tags = this.displayElement.querySelectorAll("a.tag");
-    tags.forEach((tag) => {
+    const tags2 = this.displayElement.querySelectorAll("a.tag");
+    tags2.forEach((tag) => {
       tag.addEventListener("click", (e) => {
         var _a, _b;
         e.preventDefault();
@@ -8071,7 +13266,7 @@ var _OutlineItem = class {
     linkBtn.setAttribute("aria-label", t("ui.outline.open", { source: filesource }));
     linkBtn.title = t("ui.outline.open", { source: filesource });
     try {
-      (0, import_obsidian6.setIcon)(linkBtn, "lucide-expand");
+      (0, import_obsidian8.setIcon)(linkBtn, "lucide-expand");
     } catch (e) {
       linkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>`;
     }
@@ -8187,7 +13382,7 @@ var _OutlineItem = class {
     linkBtn.setAttribute("aria-label", t("ui.outline.open", { source: src }));
     linkBtn.title = t("ui.outline.open", { source: src });
     try {
-      (0, import_obsidian6.setIcon)(linkBtn, "lucide-expand");
+      (0, import_obsidian8.setIcon)(linkBtn, "lucide-expand");
     } catch (e) {
       linkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>`;
     }
@@ -8230,11 +13425,21 @@ var _OutlineItem = class {
   /**
    * 处理编辑器键盘事件（保留 WorkFlowy 快捷键）
    */
-  handleEditorKeydown(e) {
+  handleLivePreviewKeyDown(e) {
     var _a, _b, _c, _d;
     if (!this.editorElement)
       return;
+    if (((_a = this.livePreviewController) == null ? void 0 : _a.isComposing) || e.isComposing || e.keyCode === 229)
+      return;
     const keyCombo = getKeyCombo(e);
+    if (keyCombo === "Shift+Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      const selection = this.getLivePreviewSelection();
+      (_b = this.livePreviewController) == null ? void 0 : _b.replaceRange("\n", selection.start, selection.end);
+      this.setLivePreviewSelection(selection.start + 1);
+      return;
+    }
     switch (keyCombo) {
       case "Enter":
         e.preventDefault();
@@ -8246,76 +13451,46 @@ var _OutlineItem = class {
           this.handleBackspace(e);
         }
         break;
+      case "Delete":
+        if (this.shouldHandleDelete()) {
+          e.preventDefault();
+          this.handleDelete(e);
+        }
+        break;
       case "Tab":
         e.preventDefault();
-        this.editor.indentBlock(this.block.id);
-        this.exitEditMode();
-        (_a = this.onRender) == null ? void 0 : _a.call(this);
+        if (this.editor.indentBlock(this.block.id)) {
+          this.notifyEditStateChange();
+          (_c = this.onRender) == null ? void 0 : _c.call(this);
+        }
         break;
       case "Shift+Tab":
         e.preventDefault();
-        this.editor.outdentBlock(this.block.id);
-        this.exitEditMode();
-        (_b = this.onRender) == null ? void 0 : _b.call(this);
+        if (this.editor.outdentBlock(this.block.id)) {
+          this.notifyEditStateChange();
+          (_d = this.onRender) == null ? void 0 : _d.call(this);
+        }
         break;
       case "Escape":
         e.preventDefault();
         this.exitEditMode();
         break;
       case "ArrowUp":
-        if (this.isCursorAtFirstLine()) {
-          e.preventDefault();
-          this.exitEditMode();
-          this.focusPreviousBlock();
-        }
+        this.handleDeferredNavigation("up");
         break;
       case "ArrowDown":
-        if (this.isCursorAtLastLine()) {
-          e.preventDefault();
-          this.exitEditMode();
-          this.focusNextBlock();
-        }
+        this.handleDeferredNavigation("down");
         break;
-      case "Ctrl+ArrowUp":
-      case "Cmd+ArrowUp":
+      default: {
+        const operation = WORKFLOWY_SHORTCUTS[keyCombo];
+        if (!operation || operation === "navigateUp" || operation === "navigateDown" || operation === "createNewBlock" || operation === "handleBackspace" || operation === "handleDelete" || operation === "indentBlock" || operation === "outdentBlock")
+          return;
         e.preventDefault();
-        this.editor.moveBlockUp(this.block.id);
-        this.exitEditMode();
-        (_c = this.onRender) == null ? void 0 : _c.call(this);
-        break;
-      case "Ctrl+ArrowDown":
-      case "Cmd+ArrowDown":
-        e.preventDefault();
-        this.editor.moveBlockDown(this.block.id);
-        this.exitEditMode();
-        (_d = this.onRender) == null ? void 0 : _d.call(this);
-        break;
+        e.stopPropagation();
+        this.executeOperation(operation, e);
+      }
     }
   }
-  /**
-   * 检查光标是否在第一行（Live Preview 模式）
-   */
-  isCursorAtFirstLine() {
-    if (!this.editorElement)
-      return false;
-    const textarea = this.editorElement;
-    const cursorPos = textarea.selectionStart;
-    const textBeforeCursor = textarea.value.substring(0, cursorPos);
-    return !textBeforeCursor.includes("\n");
-  }
-  /**
-   * 检查光标是否在最后一行（Live Preview 模式）
-   */
-  isCursorAtLastLine() {
-    if (!this.editorElement)
-      return false;
-    const textarea = this.editorElement;
-    const cursorPos = textarea.selectionStart;
-    const textAfterCursor = textarea.value.substring(cursorPos);
-    return !textAfterCursor.includes("\n");
-  }
-  // isCursorAtFirstLineOfActiveElement / isCursorAtLastLineOfActiveElement 已移除
-  // navigateUp/navigateDown 改用 handleDeferredNavigation 延迟检查方式
   /**
    * 处理编辑器中的 Enter 键
    */
@@ -8323,30 +13498,31 @@ var _OutlineItem = class {
     var _a;
     if (!this.editorElement)
       return;
-    if (import_obsidian6.Platform.isMobile && this.mobilePatcher) {
-      const cursorPos2 = this.editorElement.selectionStart;
-      const content2 = this.editorElement.value;
-      const beforeCursor2 = content2.substring(0, cursorPos2);
-      const afterCursor2 = content2.substring(cursorPos2);
-      this.editorElement.value = beforeCursor2;
-      const currentBlockContent2 = this.restoreBlockRefId(beforeCursor2);
-      this.onUpdate(this.block.id, currentBlockContent2);
-      this.mobilePatcher.patchNewBlock(this.block.id, afterCursor2 || void 0);
+    const selection = this.getLivePreviewSelection();
+    const content = this.getLivePreviewValue();
+    const beforeCursor = content.substring(0, selection.start);
+    const afterCursor = content.substring(selection.end);
+    if (import_obsidian8.Platform.isMobile && this.mobilePatcher) {
+      this.editor.beginTransaction();
+      try {
+        this.editorElement.value = beforeCursor;
+        this.onUpdate(this.block.id, beforeCursor);
+        this.mobilePatcher.patchNewBlock(this.block.id, afterCursor || void 0);
+      } finally {
+        this.editor.commitTransaction();
+      }
       return;
     }
-    const cursorPos = this.editorElement.selectionStart;
-    const content = this.editorElement.value;
-    const beforeCursor = content.substring(0, cursorPos);
-    const afterCursor = content.substring(cursorPos);
+    this.editor.beginTransaction();
     this.editorElement.value = beforeCursor;
-    const currentBlockContent = this.restoreBlockRefId(beforeCursor);
-    this.onUpdate(this.block.id, currentBlockContent);
+    this.onUpdate(this.block.id, beforeCursor);
     const timestamp = afterCursor === "" ? this.generateThinoTimestamp() : "";
     const newBlockContent = timestamp + afterCursor;
     const newBlock = this.editor.createNewBlock(this.block.id, timestamp);
     if (afterCursor) {
       this.onUpdate(newBlock.id, newBlockContent);
     }
+    this.editor.commitTransaction();
     this.exitEditMode();
     (_a = this.onRender) == null ? void 0 : _a.call(this);
     setTimeout(() => {
@@ -8374,125 +13550,85 @@ var _OutlineItem = class {
    * Handle input event for Slash Command
   */
   handleInput(e) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g;
+    if ((_a = this.livePreviewController) == null ? void 0 : _a.isComposing)
+      return;
     const target = e.target;
-    let content = "";
-    let cursorPosition = 0;
-    if (target instanceof HTMLTextAreaElement) {
-      content = target.value;
-      cursorPosition = target.selectionStart;
+    let content;
+    let cursorPosition;
+    if (((_b = this.settings) == null ? void 0 : _b.editor.renderMode) === "live-preview" && ((_c = this.livePreviewController) == null ? void 0 : _c.isActive(this.editorElement || void 0))) {
+      content = this.getLivePreviewValue();
+      cursorPosition = this.getLivePreviewSelection().end;
     } else {
       content = target.textContent || "";
       const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        cursorPosition = selection.getRangeAt(0).startOffset;
-      }
+      cursorPosition = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).startOffset : 0;
     }
     const textBeforeCursor = content.slice(0, cursorPosition);
-    const slashCommandEnabled = ((_b = (_a = this.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.slashCommand) !== false;
-    if (slashCommandEnabled && this.slashCommandMenu) {
+    let slashRequest;
+    if (((_e = (_d = this.settings) == null ? void 0 : _d.features) == null ? void 0 : _e.slashCommand) !== false && this.slashCommandMenu) {
       const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([a-zA-Z0-9_]*)$/);
       if (slashMatch) {
-        const query = slashMatch[1];
-        const cursorCoords = this.getCursorScreenCoordinates(target, cursorPosition);
-        this.slashCommandMenu.show(cursorCoords, (command) => {
-          this.executeSlashCommand(command, content, cursorPosition, slashMatch[0].length);
-        });
-        this.slashCommandMenu.filter(query);
-      } else {
-        if (this.slashCommandMenu.isOpen()) {
-          this.slashCommandMenu.hide();
-        }
+        slashRequest = { content, matchLength: slashMatch[0].length, query: slashMatch[1] };
+      } else if (this.slashCommandMenu.isOpen()) {
+        this.slashCommandMenu.hide();
       }
     }
-    const tagSuggestEnabled = ((_d = (_c = this.settings) == null ? void 0 : _c.features) == null ? void 0 : _d.tagSuggest) !== false;
-    if (tagSuggestEnabled && this.tagSuggestMenu) {
-      const tagMatch = textBeforeCursor.match(/(?:^|\s)#([\w\-\/]*)$/);
+    let tagRequest;
+    if (((_g = (_f = this.settings) == null ? void 0 : _f.features) == null ? void 0 : _g.tagSuggest) !== false && this.tagSuggestMenu) {
+      const tagMatch = matchObsidianTagQueryAtEnd(textBeforeCursor);
       if (tagMatch) {
-        const query = tagMatch[1];
-        const cursorCoords = this.getCursorScreenCoordinates(target, cursorPosition);
-        this.tagSuggestMenu.show(cursorCoords, query, (tag) => {
-          this.executeTagSelection(tag, content, cursorPosition, tagMatch[0].length);
+        tagRequest = { content, matchLength: tagMatch.matchLength, query: tagMatch.query };
+      } else if (this.tagSuggestMenu.isOpen()) {
+        this.tagSuggestMenu.hide();
+      }
+    }
+    this.scheduleSuggestionMenus(target, cursorPosition, slashRequest, tagRequest);
+  }
+  scheduleSuggestionMenus(target, cursorPosition, slash, tag) {
+    this.pendingSuggestionRequest = slash || tag ? { target, cursorPosition, slash, tag } : null;
+    if (!this.pendingSuggestionRequest || this.suggestionPositionFrame !== null)
+      return;
+    this.suggestionPositionFrame = requestAnimationFrame(() => {
+      this.suggestionPositionFrame = null;
+      const request = this.pendingSuggestionRequest;
+      this.pendingSuggestionRequest = null;
+      if (!request || this.destroyed)
+        return;
+      const coordinates = this.getCursorScreenCoordinates(request.target, request.cursorPosition);
+      if (request.slash && this.slashCommandMenu) {
+        const slashRequest = request.slash;
+        this.slashCommandMenu.show(coordinates, (command) => {
+          this.executeSlashCommand(command, slashRequest.content, request.cursorPosition, slashRequest.matchLength);
         });
-      } else {
-        if (this.tagSuggestMenu.isOpen()) {
-          this.tagSuggestMenu.hide();
-        }
+        this.slashCommandMenu.filter(slashRequest.query);
       }
-    }
-  }
-  /**
-   * 获取光标在屏幕上的坐标（支持 textarea 和 contentEditable）
-   */
-  getCursorScreenCoordinates(element, cursorPosition) {
-    if (element instanceof HTMLTextAreaElement) {
-      return this.getTextareaCursorCoordinates(element, cursorPosition);
-    } else {
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0).cloneRange();
-        range.collapse(true);
-        const rect2 = range.getBoundingClientRect();
-        if (rect2.width > 0 || rect2.height > 0 || rect2.x !== 0 && rect2.y !== 0) {
-          return { x: rect2.left, y: rect2.bottom };
-        }
+      if (request.tag && this.tagSuggestMenu) {
+        const tagRequest = request.tag;
+        this.tagSuggestMenu.show(coordinates, tagRequest.query, (selectedTag) => {
+          this.executeTagSelection(selectedTag, tagRequest.content, request.cursorPosition, tagRequest.matchLength);
+        });
       }
-      const rect = element.getBoundingClientRect();
-      return { x: rect.left, y: rect.bottom };
-    }
-  }
-  /**
-   * 获取 textarea 中光标的屏幕坐标
-   * 使用镜像 div 技术来计算精确位置
-   */
-  getTextareaCursorCoordinates(textarea, cursorPosition) {
-    const mirror = document.createElement("div");
-    const style = window.getComputedStyle(textarea);
-    const properties = [
-      "fontFamily",
-      "fontSize",
-      "fontWeight",
-      "fontStyle",
-      "letterSpacing",
-      "textTransform",
-      "wordSpacing",
-      "textIndent",
-      "whiteSpace",
-      "wordWrap",
-      "wordBreak",
-      "lineHeight",
-      "padding",
-      "paddingTop",
-      "paddingRight",
-      "paddingBottom",
-      "paddingLeft",
-      "border",
-      "borderWidth",
-      "boxSizing"
-    ];
-    mirror.style.position = "absolute";
-    mirror.style.visibility = "hidden";
-    mirror.style.overflow = "hidden";
-    mirror.style.whiteSpace = "pre-wrap";
-    mirror.style.wordWrap = "break-word";
-    properties.forEach((prop) => {
-      mirror.style[prop] = style.getPropertyValue(
-        prop.replace(/([A-Z])/g, "-$1").toLowerCase()
-      );
     });
-    mirror.style.width = textarea.offsetWidth + "px";
-    document.body.appendChild(mirror);
-    const textBeforeCursor = textarea.value.substring(0, cursorPosition);
-    mirror.textContent = textBeforeCursor;
-    const cursorSpan = document.createElement("span");
-    cursorSpan.textContent = "|";
-    mirror.appendChild(cursorSpan);
-    const textareaRect = textarea.getBoundingClientRect();
-    const cursorSpanRect = cursorSpan.getBoundingClientRect();
-    const x = textareaRect.left + (cursorSpanRect.left - mirror.getBoundingClientRect().left);
-    const y = textareaRect.top + (cursorSpanRect.top - mirror.getBoundingClientRect().top) - textarea.scrollTop + parseInt(style.lineHeight || "20");
-    document.body.removeChild(mirror);
-    return { x, y };
+  }
+  getCursorScreenCoordinates(element, cursorPosition) {
+    var _a;
+    if (((_a = this.settings) == null ? void 0 : _a.editor.renderMode) === "live-preview" && this.livePreviewController) {
+      const rect2 = this.livePreviewController.coordsAtPos(cursorPosition);
+      if (rect2)
+        return { x: rect2.left, y: rect2.bottom };
+    }
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0).cloneRange();
+      range.collapse(true);
+      const rect2 = range.getBoundingClientRect();
+      if (rect2.width > 0 || rect2.height > 0 || rect2.x !== 0 || rect2.y !== 0) {
+        return { x: rect2.left, y: rect2.bottom };
+      }
+    }
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left, y: rect.bottom };
   }
   executeSlashCommand(command, content, cursorPosition, matchLength) {
     const slashStartPos = cursorPosition - matchLength;
@@ -8581,8 +13717,7 @@ var _OutlineItem = class {
    * 更新块内容并设置光标位置
    */
   updateBlockContentAndFocus(newContent, cursorPosition) {
-    const contentWithBlockRef = this.restoreBlockRefId(newContent);
-    this.onUpdate(this.block.id, contentWithBlockRef);
+    this.onUpdate(this.block.id, newContent);
     setTimeout(() => {
       var _a;
       if (this.editorElement) {
@@ -8634,9 +13769,9 @@ var _OutlineItem = class {
   }
 };
 var OutlineItem = _OutlineItem;
-// 析构守卫：异步渲染回调写僵尸 DOM 前检查
 // 非列表块占位高度缓存（按 sourcePath+blockId），避免懒渲染挂载时滚动跳动
 OutlineItem.heavyHeightCache = /* @__PURE__ */ new Map();
+OutlineItem.heavyHeightCacheLimit = 1e3;
 // 拖拽相关状态
 // 全局记录当前拖拽中的块ID（解决部分环境 dragover 读取不到 dataTransfer 的问题）
 OutlineItem.currentDraggedId = null;
@@ -9291,513 +14426,177 @@ var EventDelegator = class {
   }
 };
 
-// src/features/vertical-lines.ts
-var VerticalLinesManager = class {
-  constructor(container, editor, onToggleCollapse, indentSize) {
-    this.lines = [];
+// src/features/virtual-vertical-lines.ts
+var BULLET_CENTER_X = 23;
+var DEFAULT_ROW_ANCHOR_Y = 28;
+var VirtualVerticalLinesManager = class {
+  constructor(linesContainer, source, options) {
+    /** 池化的线元素：按需创建，多余隐藏，避免每次滚动全清全建 */
     this.lineElements = [];
-    // 节流机制 - 避免短时间内多次更新
-    this.updateTimer = null;
-    this.pendingUpdate = false;
-    // 缓存机制 - 缓存 DOM 查询结果
-    this.blockElementCache = /* @__PURE__ */ new Map();
-    this.cacheTimeouts = /* @__PURE__ */ new Map();
-    // 保存 timeout 引用以便清理
-    this.cacheTimeout = 200;
-    // 缓存 200ms
-    // MutationObserver - 监听嵌入内容异步渲染完成
-    this.mutationObserver = null;
-    this.mutationDebounceTimer = null;
-    this.MUTATION_DEBOUNCE_MS = 100;
-    // 防抖延迟
-    this.observedContainer = null;
-    // ResizeObserver - 监听容器尺寸变化（窗口resize、侧边栏展开/收起等）
-    this.resizeObserver = null;
-    this.resizeDebounceTimer = null;
-    this.RESIZE_DEBOUNCE_MS = 50;
-    // resize 防抖延迟
-    // 设置引用
-    this.indentSize = UI_CONFIG.indentSize;
-    // 销毁标志 - 防止销毁后继续执行
+    /** 销毁标志 - 防止销毁后继续执行 */
     this.isDestroyed = false;
-    /**
-     * 处理点击事件 - 复用 obsidian-outliner 的点击逻辑
-     */
-    this.onClick = (e) => {
-      e.preventDefault();
-      const clickedElement = e.target;
-      const lineIndex = Number(clickedElement.dataset.index);
-      const line = this.lines[lineIndex];
-      if (line) {
-        this.toggleFolding(line);
+    /** 委托点击：从事件目标向上找带 data-parent-block-id 的线元素 */
+    this.handleClick = (event) => {
+      var _a, _b;
+      if (this.isDestroyed)
+        return;
+      const target = event.target;
+      const lineEl = (_a = target == null ? void 0 : target.closest) == null ? void 0 : _a.call(target, "[data-parent-block-id]");
+      const parentBlockId = (_b = lineEl == null ? void 0 : lineEl.dataset) == null ? void 0 : _b.parentBlockId;
+      if (parentBlockId) {
+        this.onLineClick(parentBlockId);
       }
     };
-    this.editor = editor;
-    this.onToggleCollapse = onToggleCollapse;
-    if (indentSize !== void 0) {
-      this.indentSize = indentSize;
-    }
-    if (getComputedStyle(container).position === "static") {
-      container.style.position = "relative";
-    }
-    this.prepareDom(container);
-    this.initMutationObserver(container);
-    this.initResizeObserver(container);
+    var _a;
+    this.linesContainer = linesContainer;
+    this.source = source;
+    this.indentSize = options.indentSize;
+    this.onLineClick = options.onLineClick;
+    this.debugMode = (_a = options.debugMode) != null ? _a : false;
+    this.linesContainer.addEventListener("click", this.handleClick);
   }
   /**
-   * 创建DOM容器 - 复用 obsidian-outliner 的结构
-   */
-  prepareDom(container) {
-    this.contentContainer = document.createElement("div");
-    this.contentContainer.classList.add("workflowy-vertical-lines-content-container");
-    this.scroller = document.createElement("div");
-    this.scroller.classList.add("workflowy-vertical-lines-scroller");
-    this.scroller.appendChild(this.contentContainer);
-    container.appendChild(this.scroller);
-    this.scroller.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            pointer-events: none;
-            z-index: 1;
-            overflow: hidden;
-        `;
-    this.contentContainer.style.cssText = `
-            position: relative;
-            width: 100%;
-            height: 100%;
-        `;
-  }
-  /**
-   * 初始化 MutationObserver
-   * 监听嵌入内容（Dataview、Excalidraw、PDF 等）的异步渲染完成
-   * 当检测到 DOM 变化时，触发垂直线重新计算
-   */
-  initMutationObserver(container) {
-    this.observedContainer = container;
-    this.mutationObserver = new MutationObserver((mutations) => {
-      let shouldUpdate = false;
-      for (const mutation of mutations) {
-        if (this.isVerticalLineElement(mutation.target)) {
-          continue;
-        }
-        if (mutation.type === "childList") {
-          const hasRelevantChange = this.hasEmbedContent(mutation.addedNodes) || this.hasEmbedContent(mutation.removedNodes) || this.isEmbedRelatedTarget(mutation.target);
-          if (hasRelevantChange) {
-            shouldUpdate = true;
-            break;
-          }
-        } else if (mutation.type === "attributes") {
-          const target = mutation.target;
-          if (this.isEmbedRelatedTarget(target)) {
-            shouldUpdate = true;
-            break;
-          }
-        }
-      }
-      if (shouldUpdate) {
-        this.debouncedUpdate();
-      }
-    });
-    this.mutationObserver.observe(container, {
-      childList: true,
-      // 监听子节点变化
-      subtree: true,
-      // 监听所有后代节点
-      attributes: true,
-      // 监听属性变化
-      attributeFilter: ["class", "style", "data-loaded"]
-      // 只监听特定属性
-    });
-  }
-  /**
-   * 检查元素是否是垂直线相关元素
-   */
-  isVerticalLineElement(element) {
-    if (!element || !element.classList)
-      return false;
-    return element.classList.contains("workflowy-vertical-line") || element.classList.contains("workflowy-vertical-lines-scroller") || element.classList.contains("workflowy-vertical-lines-content-container");
-  }
-  /**
-   * 检查节点列表中是否包含嵌入内容
-   */
-  hasEmbedContent(nodes) {
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const element = node;
-        if (this.isEmbedRelatedTarget(element)) {
-          return true;
-        }
-        if (element.querySelector) {
-          const embedChild = element.querySelector(
-            ".internal-embed, .markdown-embed, .dataview, .block-language-dataview, .excalidraw-svg, .pdf-embed, .image-embed, .file-embed, .cm-embed-block, .embed-container"
-          );
-          if (embedChild) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-  /**
-   * 检查目标元素是否与嵌入内容相关
-   */
-  isEmbedRelatedTarget(element) {
-    if (!element || !element.classList)
-      return false;
-    const embedClasses = [
-      "internal-embed",
-      "markdown-embed",
-      "dataview",
-      "block-language-dataview",
-      "excalidraw-svg",
-      "pdf-embed",
-      "image-embed",
-      "file-embed",
-      "cm-embed-block",
-      "embed-container",
-      "dataview-container",
-      "dataview-result",
-      "table-view-table",
-      "dataview-table"
-    ];
-    for (const cls of embedClasses) {
-      if (element.classList.contains(cls)) {
-        return true;
-      }
-    }
-    if (element.closest) {
-      const embedParent = element.closest(
-        ".internal-embed, .markdown-embed, .dataview, .block-language-dataview"
-      );
-      if (embedParent) {
-        return true;
-      }
-    }
-    return false;
-  }
-  /**
-   * 初始化 ResizeObserver
-   * 监听容器尺寸变化（窗口 resize、侧边栏展开/收起、标签页尺寸调整等）
-   */
-  initResizeObserver(container) {
-    this.resizeObserver = new ResizeObserver(() => {
-      this.debouncedResizeUpdate();
-    });
-    this.resizeObserver.observe(container);
-    if (container.parentElement) {
-      this.resizeObserver.observe(container.parentElement);
-    }
-  }
-  /**
-   * resize 防抖更新
-   */
-  debouncedResizeUpdate() {
-    if (this.resizeDebounceTimer !== null) {
-      clearTimeout(this.resizeDebounceTimer);
-    }
-    this.resizeDebounceTimer = window.setTimeout(() => {
-      this.resizeDebounceTimer = null;
-      this.blockElementCache.clear();
-      this.forceUpdate();
-    }, this.RESIZE_DEBOUNCE_MS);
-  }
-  /**
-   * 防抖更新 - 避免嵌入内容渲染过程中频繁触发更新
-   */
-  debouncedUpdate() {
-    if (this.mutationDebounceTimer !== null) {
-      clearTimeout(this.mutationDebounceTimer);
-    }
-    this.mutationDebounceTimer = window.setTimeout(() => {
-      this.mutationDebounceTimer = null;
-      this.blockElementCache.clear();
-      this.forceUpdate();
-    }, this.MUTATION_DEBOUNCE_MS);
-  }
-  /**
-   * 强制更新（跳过节流）
-   * 用于嵌入内容渲染完成后的更新
-   */
-  forceUpdate() {
-    this.performUpdate();
-  }
-  /**
-   * 更新垂直线 - 主入口方法（节流优化）
-   * 避免短时间内多次调用，合并为一次更新
+   * 重画当前应显示的所有线。
+   * 每次滚动重窗口化后由 view 调用；纯计算 + 池化 DOM 写入，无布局读取。
    */
   update() {
     if (this.isDestroyed)
       return;
-    if (this.updateTimer !== null || this.pendingUpdate) {
-      return;
-    }
-    this.performUpdate();
-    this.updateTimer = window.setTimeout(() => {
-      this.updateTimer = null;
-      this.pendingUpdate = false;
-    }, 50);
-  }
-  /**
-   * 执行实际更新
-   */
-  performUpdate() {
-    if (this.isDestroyed)
-      return;
-    this.calculate();
-    this.updateDom();
-  }
-  /**
-   * 计算垂直线位置 - 避免重复计算
-   */
-  calculate() {
-    this.lines = [];
-    const state = this.editor.getState();
-    this.processBlocks(state.blocks);
-    this.lines.sort(
-      (a, b) => a.top === b.top ? a.left - b.left : a.top - b.top
-    );
-  }
-  /**
-   * 递归处理块列表
-   */
-  processBlocks(blocks) {
-    for (const block of blocks) {
-      if (block.children.length > 0 && !this.editor.isCollapsed(block.id)) {
-        this.calculateLineForBlock(block);
-        this.processBlocks(block.children);
-      }
-    }
-  }
-  /**
-   * 为单个块计算垂直线
-   */
-  calculateLineForBlock(block) {
-    const blockElement = this.getBlockElement(block.id);
-    if (!blockElement) {
-      return;
-    }
-    const rect = blockElement.getBoundingClientRect();
-    const containerRect = this.scroller.parentElement.getBoundingClientRect();
-    const isMobile = document.body.classList.contains("is-mobile");
-    let left;
-    const bulletElement = blockElement.querySelector(".workflowy-bullet");
-    if (bulletElement) {
-      const bulletRect = bulletElement.getBoundingClientRect();
-      left = bulletRect.left + bulletRect.width / 2 - containerRect.left;
-    } else {
-      const displayLevel = parseInt(blockElement.getAttribute("data-level") || "0");
-      if (isMobile) {
-        left = displayLevel * 24 + 27;
-      } else {
-        left = displayLevel * this.indentSize + 23;
-      }
-    }
-    const top = rect.top - containerRect.top;
-    const lastVisibleChild = this.findLastVisibleChild(block);
-    let bottom = rect.bottom - containerRect.top;
-    if (lastVisibleChild) {
-      const lastChildElement = this.getBlockElement(lastVisibleChild.id);
-      if (lastChildElement) {
-        const lastChildRect = lastChildElement.getBoundingClientRect();
-        bottom = lastChildRect.bottom - containerRect.top;
-      }
-    }
-    const contentLine = blockElement.querySelector(".workflowy-content-line");
-    let topOffset;
-    if (contentLine) {
-      topOffset = contentLine.getBoundingClientRect().height;
-    } else {
-      topOffset = isMobile ? 24 : 28;
-    }
-    const height = bottom - top - topOffset;
-    if (height > 20) {
-      this.lines.push({
-        top: top + topOffset,
-        left,
-        height: `${height}px`,
-        blockId: block.id,
-        block
+    const lines = this.calculate();
+    this.render(lines);
+    if (this.debugMode) {
+      console.debug("[VirtualVerticalLines] update", {
+        lines: lines.length,
+        pooled: this.lineElements.length,
+        range: this.source.getVisibleRange()
       });
     }
   }
-  /**
-   * 查找块对应的DOM元素
-   */
-  getBlockElement(blockId) {
-    var _a;
-    const cached = this.blockElementCache.get(blockId);
-    if (cached && document.body.contains(cached)) {
-      return cached;
-    }
-    const element = (_a = this.scroller.parentElement) == null ? void 0 : _a.querySelector(
-      `[data-block-id="${blockId}"]`
-    );
-    if (element) {
-      this.blockElementCache.set(blockId, element);
-      const oldTimeout = this.cacheTimeouts.get(blockId);
-      if (oldTimeout) {
-        clearTimeout(oldTimeout);
-      }
-      const timeoutId = window.setTimeout(() => {
-        this.blockElementCache.delete(blockId);
-        this.cacheTimeouts.delete(blockId);
-      }, this.cacheTimeout);
-      this.cacheTimeouts.set(blockId, timeoutId);
-    }
-    return element;
-  }
-  /**
-   * 递归查找最后一个可见的子项
-   */
-  findLastVisibleChild(block) {
-    if (block.children.length === 0) {
-      return null;
-    }
-    const lastChild = block.children[block.children.length - 1];
-    if (lastChild.children.length > 0 && !this.editor.isCollapsed(lastChild.id)) {
-      const deepestChild = this.findLastVisibleChild(lastChild);
-      return deepestChild || lastChild;
-    }
-    return lastChild;
-  }
-  /**
-   * 检查是否有下一个兄弟节点
-   */
-  hasNextSibling(block) {
-    const allBlocks = getAllBlocks(this.editor.getState().blocks);
-    const currentIndex = allBlocks.findIndex((b) => b.id === block.id);
-    if (currentIndex === -1 || currentIndex === allBlocks.length - 1) {
-      return false;
-    }
-    const nextBlock = allBlocks[currentIndex + 1];
-    return nextBlock.level === block.level;
-  }
-  /**
-   * 更新DOM - 复用 obsidian-outliner 的DOM更新逻辑
-   */
-  updateDom() {
-    const parentElement = this.scroller.parentElement;
-    if (parentElement) {
-      this.contentContainer.style.height = parentElement.scrollHeight + "px";
-    }
-    for (let i = 0; i < this.lines.length; i++) {
-      if (this.lineElements.length === i) {
-        const e2 = document.createElement("div");
-        e2.classList.add("workflowy-vertical-line");
-        e2.dataset.index = String(i);
-        e2.addEventListener("mousedown", this.onClick);
-        this.contentContainer.appendChild(e2);
-        this.lineElements.push(e2);
-      }
-      const l = this.lines[i];
-      const e = this.lineElements[i];
-      e.style.top = Math.round(l.top) + "px";
-      e.style.left = Math.round(l.left) + "px";
-      e.style.height = l.height;
-      e.style.display = "block";
-    }
-    for (let i = this.lines.length; i < this.lineElements.length; i++) {
-      const e = this.lineElements[i];
-      e.style.top = "0px";
-      e.style.left = "0px";
-      e.style.height = "0px";
-      e.style.display = "none";
-    }
-  }
-  /**
-   * 切换折叠状态 - 完全复用 obsidian-outliner 的折叠逻辑
-   * 
-   * 逻辑说明：
-   * 1. 获取当前块的所有直接子项
-   * 2. 检查所有子项的折叠状态
-   * 3. 如果所有子项都已折叠 → 展开所有子项
-   * 4. 如果有任何子项未折叠 → 折叠所有子项
-   * 
-   * 重要：当前块本身不会被折叠，只折叠/展开其直接子项
-   */
-  toggleFolding(line) {
-    const { block } = line;
-    if (block.children.length === 0) {
+  /** 缩进设置变化时由 view 调用；立即按新缩进重画 */
+  setIndentSize(n) {
+    if (this.isDestroyed)
       return;
+    this.indentSize = n;
+    this.update();
+  }
+  /** 销毁（幂等）：移除委托监听与池中所有线元素，容器本身归 view 所有不动 */
+  destroy() {
+    if (this.isDestroyed)
+      return;
+    this.isDestroyed = true;
+    this.linesContainer.removeEventListener("click", this.handleClick);
+    for (const el of this.lineElements) {
+      el.remove();
     }
-    let needToUnfold = true;
-    const blocksToToggle = [];
-    for (const child of block.children) {
-      if (!child.content || child.content.trim() === "") {
-        continue;
-      }
-      if (!this.editor.isCollapsed(child.id)) {
-        needToUnfold = false;
-      }
-      blocksToToggle.push(child.id);
-    }
-    for (const blockId of blocksToToggle) {
-      if (needToUnfold) {
-        this.editor.expand(blockId);
-      } else {
-        this.editor.collapse(blockId);
-      }
-    }
-    this.onToggleCollapse(block.id);
+    this.lineElements = [];
   }
   /**
-   * 销毁垂直线管理器
+   * 计算当前窗口应显示的线段。
+   * 所有 top/height 来自 RowMetric（虚拟内容盒内累积偏移），零布局读取。
    */
-  destroy() {
-    this.isDestroyed = true;
-    if (this.resizeObserver) {
-      this.resizeObserver.disconnect();
-      this.resizeObserver = null;
+  calculate() {
+    const rowCount = this.source.getRowCount();
+    const range = this.source.getVisibleRange();
+    if (rowCount === 0 || range.end <= range.start) {
+      return [];
     }
-    if (this.resizeDebounceTimer !== null) {
-      clearTimeout(this.resizeDebounceTimer);
-      this.resizeDebounceTimer = null;
+    const start = Math.max(0, range.start);
+    const end = Math.min(range.end, rowCount);
+    const parentIndices = /* @__PURE__ */ new Set();
+    for (let i = start; i < end; i++) {
+      const row = this.source.getRow(i);
+      if (row && row.hasChildren && !row.isCollapsed) {
+        parentIndices.add(i);
+      }
     }
-    if (this.mutationObserver) {
-      this.mutationObserver.disconnect();
-      this.mutationObserver = null;
+    let cursor = this.source.getRow(start);
+    while (cursor && cursor.parentId !== null) {
+      const parentIndex = this.source.getRowIndex(cursor.parentId);
+      if (parentIndex < 0 || parentIndex >= cursor.rowIndex)
+        break;
+      parentIndices.add(parentIndex);
+      cursor = this.source.getRow(parentIndex);
     }
-    if (this.mutationDebounceTimer !== null) {
-      clearTimeout(this.mutationDebounceTimer);
-      this.mutationDebounceTimer = null;
+    const sortedIndices = Array.from(parentIndices).sort((a, b) => a - b);
+    const lines = [];
+    for (const p of sortedIndices) {
+      const parentRow = this.source.getRow(p);
+      const parentMetric = this.source.getRowMetric(p);
+      if (!parentRow || !parentMetric)
+        continue;
+      const lastIdx = parentRow.lastDescendantIndex;
+      if (lastIdx <= p)
+        continue;
+      const lastMetric = this.source.getRowMetric(lastIdx);
+      if (!lastMetric)
+        continue;
+      const top = parentMetric.top + this.rowAnchorY(parentMetric);
+      const bottom = lastMetric.top + this.rowAnchorY(lastMetric);
+      const height = bottom - top;
+      if (height <= 0)
+        continue;
+      lines.push({
+        top,
+        left: parentRow.level * this.indentSize + BULLET_CENTER_X,
+        height,
+        parentBlockId: parentRow.blockId
+      });
     }
-    if (this.updateTimer !== null) {
-      clearTimeout(this.updateTimer);
-      this.updateTimer = null;
+    return lines;
+  }
+  /**
+   * 行内锚点 y：即该行自身高度（等价旧实现的 contentLine 实测高度），
+   * 度量异常时退回旧实现的桌面端缺省 28。
+   */
+  rowAnchorY(metric) {
+    return metric.height > 0 ? metric.height : DEFAULT_ROW_ANCHOR_Y;
+  }
+  /**
+   * 池化写入 DOM：前 N 个元素复用/按需创建，多余的隐藏（不销毁，留待复用）。
+   */
+  render(lines) {
+    for (let i = 0; i < lines.length; i++) {
+      if (this.lineElements.length === i) {
+        const el2 = document.createElement("div");
+        el2.classList.add("workflowy-vertical-line");
+        el2.style.position = "absolute";
+        this.linesContainer.appendChild(el2);
+        this.lineElements.push(el2);
+      }
+      const line = lines[i];
+      const el = this.lineElements[i];
+      el.style.top = Math.round(line.top) + "px";
+      el.style.left = Math.round(line.left) + "px";
+      el.style.height = Math.round(line.height) + "px";
+      el.style.display = "block";
+      el.dataset.parentBlockId = line.parentBlockId;
     }
-    this.cacheTimeouts.forEach((timeoutId) => {
-      clearTimeout(timeoutId);
-    });
-    this.cacheTimeouts.clear();
-    this.blockElementCache.clear();
-    this.lineElements.forEach((element) => element.remove());
-    this.lineElements = [];
-    this.lines = [];
-    if (this.scroller.parentElement) {
-      this.scroller.remove();
+    for (let i = lines.length; i < this.lineElements.length; i++) {
+      const el = this.lineElements[i];
+      if (el.style.display !== "none") {
+        el.style.display = "none";
+      }
     }
-    this.contentContainer = null;
-    this.scroller = null;
-    this.editor = null;
-    this.onToggleCollapse = null;
-    this.observedContainer = null;
   }
 };
 
 // src/features/multi-selection.ts
+var import_obsidian9 = require("obsidian");
 var MultiSelectionManager = class {
-  constructor(container, editor, onSelectionChange, onRender) {
+  constructor(container, editor, onSelectionChange, onRender, options = {}) {
     this.selectedBlocks = /* @__PURE__ */ new Set();
     this.isSelecting = false;
     this.selectionStart = null;
     this.selectionBox = null;
     this.justFinishedSelecting = false;
     this.selectionCounter = null;
+    this.lastEditorCursorState = null;
+    this.isDraggingSelection = false;
+    this.autoScrollFrame = null;
+    this.autoScrollDirection = 0;
+    this.lastAutoScrollTime = null;
+    this.lastPointerY = 0;
+    this.activePointerId = null;
     this.updateThrottleTimer = null;
     // 销毁标志 - 防止销毁后继续执行
     this.isDestroyed = false;
@@ -9805,6 +14604,7 @@ var MultiSelectionManager = class {
     this.editor = editor;
     this.onSelectionChange = onSelectionChange;
     this.onRender = onRender;
+    this.virtualSource = options.virtualSource;
     this.bindEvents();
     this.createSelectionBox();
     this.createSelectionCounter();
@@ -9852,9 +14652,9 @@ var MultiSelectionManager = class {
   updateSelectionCounter() {
     if (!this.selectionCounter)
       return;
-    const count = this.selectedBlocks.size;
-    if (count > 0) {
-      this.selectionCounter.textContent = t("features.selectionCount", { count });
+    const count2 = this.selectedBlocks.size;
+    if (count2 > 0) {
+      this.selectionCounter.textContent = t("features.selectionCount", { count: count2 });
       this.selectionCounter.style.display = "block";
     } else {
       this.selectionCounter.style.display = "none";
@@ -9864,39 +14664,41 @@ var MultiSelectionManager = class {
    * 绑定事件监听器
    */
   bindEvents() {
-    this.boundMouseDownHandler = this.handleMouseDown.bind(this);
-    this.boundMouseMoveHandler = this.handleMouseMove.bind(this);
-    this.boundMouseUpHandler = this.handleMouseUp.bind(this);
+    this.boundPointerDownHandler = this.handlePointerDown.bind(this);
+    this.boundPointerMoveHandler = this.handlePointerMove.bind(this);
+    this.boundPointerUpHandler = this.handlePointerUp.bind(this);
+    this.boundPointerCancelHandler = this.handlePointerCancel.bind(this);
     this.boundKeyDownHandler = this.handleKeyDown.bind(this);
     this.boundContainerClickHandler = this.handleContainerClick.bind(this);
-    this.container.addEventListener("mousedown", this.boundMouseDownHandler, true);
-    document.addEventListener("mousemove", this.boundMouseMoveHandler);
-    document.addEventListener("mouseup", this.boundMouseUpHandler);
+    this.container.addEventListener("pointerdown", this.boundPointerDownHandler, true);
+    document.addEventListener("pointermove", this.boundPointerMoveHandler, true);
+    document.addEventListener("pointerup", this.boundPointerUpHandler, true);
+    document.addEventListener("pointercancel", this.boundPointerCancelHandler, true);
     document.addEventListener("keydown", this.boundKeyDownHandler, true);
     this.container.addEventListener("click", this.boundContainerClickHandler);
   }
   /**
-   * 处理鼠标按下事件
+   * 处理指针按下事件
    */
-  handleMouseDown(e) {
-    if (e.button !== 0)
+  handlePointerDown(e) {
+    if (e.button !== 0 || this.isDestroyed)
+      return;
+    if (import_obsidian9.Platform.isMobile || e.pointerType === "touch" || e.pointerType === "pen")
       return;
     const target = e.target;
     const bulletElement = target.closest(".workflowy-bullet");
     if (bulletElement) {
       return;
     }
-    if (target.classList.contains("workflowy-content-editor") || target.tagName === "TEXTAREA") {
+    const gestureTarget = this.getSelectionGestureTarget(target, e);
+    if (!gestureTarget) {
       return;
     }
-    const contentElement = target.closest(".workflowy-content, .workflowy-content-display");
-    if (!contentElement) {
-      return;
-    }
+    const { contentElement, source } = gestureTarget;
     if (target.classList.contains("workflowy-collapse") || target.classList.contains("workflowy-vertical-line") || target.closest(".workflowy-collapse")) {
       return;
     }
-    let blockElement = contentElement.closest("[data-block-id]");
+    let blockElement = contentElement.closest(".workflowy-item[data-block-id]");
     if (!blockElement) {
       const blockId2 = contentElement.getAttribute("data-block-id");
       if (blockId2) {
@@ -9919,36 +14721,48 @@ var MultiSelectionManager = class {
     }
     this.clearSelection();
     this.isSelecting = true;
-    this.selectionStart = { x: e.clientX, y: e.clientY };
-    this.selectionStart.startBlockId = blockId;
-    this.selectionStart.startElement = blockElement;
+    this.isDraggingSelection = false;
+    this.activePointerId = e.pointerId;
+    this.lastPointerY = e.clientY;
+    this.selectionStart = {
+      x: e.clientX,
+      y: e.clientY,
+      startBlockId: blockId,
+      startElement: blockElement,
+      pointerId: e.pointerId,
+      source,
+      requiresBlockExit: gestureTarget.requiresBlockExit,
+      cursorState: source === "editor" ? this.getEditorSurfaceCursorState(contentElement, blockId) : void 0
+    };
   }
   /**
-   * 处理鼠标移动事件
+   * 处理指针移动事件
    */
-  handleMouseMove(e) {
+  handlePointerMove(e) {
     if (this.isDestroyed)
       return;
-    if (!this.isSelecting || !this.selectionStart) {
+    if (!this.isSelecting || !this.selectionStart || this.activePointerId !== e.pointerId) {
       return;
     }
     if (!this.container) {
       return;
     }
+    this.lastPointerY = e.clientY;
     const deltaY = e.clientY - this.selectionStart.y;
     const minDragDistance = 8;
     if (Math.abs(deltaY) < minDragDistance) {
       return;
     }
-    e.preventDefault();
-    this.container.classList.add("selecting");
-    if (this.selectionBox) {
-      this.selectionBox.style.display = "block";
-      this.selectionBox.style.left = `${this.selectionStart.x - 2}px`;
-      this.selectionBox.style.top = `${Math.min(this.selectionStart.y, e.clientY)}px`;
-      this.selectionBox.style.width = "4px";
-      this.selectionBox.style.height = `${Math.abs(deltaY)}px`;
+    if (this.selectionStart.requiresBlockExit && !this.hasPointerMovedToAnotherBlock(e.clientX, e.clientY)) {
+      return;
     }
+    if (!this.isDraggingSelection) {
+      this.beginBlockSelectionGesture(e);
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    this.updateSelectionBox(e.clientY);
+    this.updateAutoScroll(e.clientY);
     if (this.updateThrottleTimer !== null) {
       return;
     }
@@ -9958,31 +14772,52 @@ var MultiSelectionManager = class {
     this.updateSelectionFromVerticalDrag(e.clientY);
   }
   /**
-   * 处理鼠标释放事件
+   * 处理指针释放事件
    */
-  handleMouseUp(e) {
-    if (this.isSelecting) {
-      if (!this.container) {
-        this.isSelecting = false;
-        this.selectionStart = null;
-        return;
-      }
-      this.container.classList.remove("selecting");
-      if (this.selectionBox) {
-        this.selectionBox.style.display = "none";
-      }
-      if (this.selectedBlocks.size === 0) {
-        this.isSelecting = false;
-        this.selectionStart = null;
-        return;
-      }
-      this.isSelecting = false;
-      this.selectionStart = null;
-      this.justFinishedSelecting = true;
-      setTimeout(() => {
-        this.justFinishedSelecting = false;
-      }, 300);
+  handlePointerUp(e) {
+    if (this.activePointerId !== null && this.activePointerId !== e.pointerId) {
+      return;
     }
+    if (this.isSelecting) {
+      this.finishSelectionGesture(e);
+    }
+  }
+  handlePointerCancel(e) {
+    if (this.activePointerId !== null && this.activePointerId !== e.pointerId) {
+      return;
+    }
+    if (this.isSelecting) {
+      this.finishSelectionGesture(e);
+    }
+  }
+  finishSelectionGesture(e) {
+    var _a;
+    if (this.container && this.activePointerId !== null) {
+      try {
+        this.container.releasePointerCapture(this.activePointerId);
+      } catch (e2) {
+      }
+    }
+    this.stopAutoScroll();
+    (_a = this.container) == null ? void 0 : _a.classList.remove("selecting");
+    this.hideSelectionBox();
+    if (e && this.isDraggingSelection) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const hadSelection = this.selectedBlocks.size > 0;
+    this.isSelecting = false;
+    this.isDraggingSelection = false;
+    this.selectionStart = null;
+    this.activePointerId = null;
+    this.autoScrollDirection = 0;
+    if (!hadSelection) {
+      return;
+    }
+    this.justFinishedSelecting = true;
+    setTimeout(() => {
+      this.justFinishedSelecting = false;
+    }, 300);
   }
   /**
    * 基于垂直拖拽更新选择的节点
@@ -9990,6 +14825,19 @@ var MultiSelectionManager = class {
   updateSelectionFromVerticalDrag(currentY) {
     if (!this.selectionStart)
       return;
+    if (this.virtualSource) {
+      const range = this.virtualSource.getVerticalDragRange(this.selectionStart.startBlockId, currentY);
+      if (!range)
+        return;
+      const { orderedBlockIds, startIndex: startIndex2, currentIndex } = range;
+      if (startIndex2 < 0 || currentIndex < 0 || startIndex2 >= orderedBlockIds.length || currentIndex >= orderedBlockIds.length) {
+        return;
+      }
+      const minIndex2 = Math.min(startIndex2, currentIndex);
+      const maxIndex2 = Math.max(startIndex2, currentIndex);
+      this.applyVerticalRangeSelection(orderedBlockIds, minIndex2, maxIndex2);
+      return;
+    }
     if (!this.container) {
       return;
     }
@@ -9997,12 +14845,12 @@ var MultiSelectionManager = class {
     const startElement = this.selectionStart.startElement;
     if (!startBlockId || !startElement)
       return;
-    const blockElements = Array.from(this.container.querySelectorAll("[data-block-id]"));
+    const blockElements = Array.from(this.container.querySelectorAll(".workflowy-item[data-block-id]"));
     const sortedElements = blockElements.map((element) => ({
       element,
       blockId: element.dataset.blockId,
       rect: element.getBoundingClientRect()
-    })).filter((item) => item.blockId).sort((a, b) => a.rect.top - b.rect.top);
+    })).filter((item) => item.blockId && this.isVisibleBlockElement(item.element, item.rect)).sort((a, b) => a.rect.top - b.rect.top);
     if (sortedElements.length === 0)
       return;
     let currentBlockId = null;
@@ -10024,13 +14872,183 @@ var MultiSelectionManager = class {
       return;
     const minIndex = Math.min(startIndex, endIndex);
     const maxIndex = Math.max(startIndex, endIndex);
+    this.applyVerticalRangeSelection(sortedElements.map((item) => item.blockId), minIndex, maxIndex);
+  }
+  applyVerticalRangeSelection(orderedBlockIds, minIndex, maxIndex) {
     const newSelection = /* @__PURE__ */ new Set();
     for (let i = minIndex; i <= maxIndex; i++) {
-      newSelection.add(sortedElements[i].blockId);
+      newSelection.add(orderedBlockIds[i]);
     }
     this.selectedBlocks = newSelection;
     this.updateSelectionDisplay();
     this.onSelectionChange(Array.from(this.selectedBlocks));
+  }
+  getSelectionGestureTarget(target, e) {
+    const editorElement = target.closest(".workflowy-content-editor");
+    if (editorElement) {
+      return {
+        contentElement: editorElement,
+        source: "editor",
+        requiresBlockExit: !e.altKey
+      };
+    }
+    const displayElement = target.closest(".workflowy-content-display");
+    if (displayElement) {
+      return {
+        contentElement: displayElement,
+        source: "display",
+        requiresBlockExit: false
+      };
+    }
+    const contentElement = target.closest(".workflowy-content");
+    if (contentElement) {
+      return {
+        contentElement,
+        source: "content",
+        requiresBlockExit: false
+      };
+    }
+    return null;
+  }
+  beginBlockSelectionGesture(e) {
+    var _a;
+    if (!this.selectionStart)
+      return;
+    this.isDraggingSelection = true;
+    this.lastEditorCursorState = (_a = this.selectionStart.cursorState) != null ? _a : null;
+    this.capturePointer(this.selectionStart.pointerId);
+    this.syncActiveTextareaContent();
+    this.clearNativeSelection();
+    this.container.classList.add("selecting");
+    this.updateSelectionBox(e.clientY);
+  }
+  capturePointer(pointerId) {
+    try {
+      this.container.setPointerCapture(pointerId);
+    } catch (e) {
+    }
+  }
+  hasPointerMovedToAnotherBlock(clientX, clientY) {
+    if (!this.selectionStart)
+      return false;
+    const elementAtPoint = document.elementFromPoint(clientX, clientY);
+    const blockAtPoint = elementAtPoint == null ? void 0 : elementAtPoint.closest(".workflowy-item[data-block-id]");
+    return !!blockAtPoint && blockAtPoint !== this.selectionStart.startElement;
+  }
+  updateSelectionBox(currentY) {
+    if (!this.selectionStart || !this.selectionBox)
+      return;
+    const deltaY = currentY - this.selectionStart.y;
+    this.selectionBox.style.display = "block";
+    this.selectionBox.style.left = `${this.selectionStart.x - 2}px`;
+    this.selectionBox.style.top = `${Math.min(this.selectionStart.y, currentY)}px`;
+    this.selectionBox.style.width = "4px";
+    this.selectionBox.style.height = `${Math.abs(deltaY)}px`;
+  }
+  hideSelectionBox() {
+    if (this.selectionBox) {
+      this.selectionBox.style.display = "none";
+    }
+  }
+  syncActiveTextareaContent() {
+    var _a;
+    if (!this.selectionStart || this.selectionStart.source !== "editor")
+      return;
+    const editorSurface = this.selectionStart.startElement.querySelector(".workflowy-content-editor") || ((_a = this.selectionStart.startElement.closest(".workflowy-item")) == null ? void 0 : _a.querySelector(".workflowy-content-editor"));
+    if (!editorSurface)
+      return;
+    const blockId = this.selectionStart.startBlockId;
+    const block = getAllBlocks(this.editor.getState().blocks).find((candidate) => candidate.id === blockId);
+    if (!block)
+      return;
+    const content = editorSurface.value;
+    if (content !== block.content) {
+      this.editor.updateBlockContent(blockId, content);
+    }
+  }
+  getEditorSurfaceCursorState(editorSurface, blockId) {
+    return {
+      blockId,
+      selectionStart: editorSurface.selectionStart,
+      selectionEnd: editorSurface.selectionEnd
+    };
+  }
+  restoreEditorSurfaceCursor(cursorState) {
+    var _a;
+    const blockElement = (_a = this.container) == null ? void 0 : _a.querySelector(`.workflowy-item[data-block-id="${cursorState.blockId}"]`);
+    const editorSurface = blockElement == null ? void 0 : blockElement.querySelector(".workflowy-content-editor");
+    if (!editorSurface)
+      return;
+    editorSurface.focus();
+    editorSurface.setSelectionRange(cursorState.selectionStart, cursorState.selectionEnd);
+  }
+  clearNativeSelection() {
+    var _a;
+    const activeElement = document.activeElement;
+    if (activeElement == null ? void 0 : activeElement.closest(".workflowy-content-editor")) {
+      activeElement.blur();
+    }
+    (_a = window.getSelection()) == null ? void 0 : _a.removeAllRanges();
+  }
+  isVisibleBlockElement(element, rect) {
+    if (!element.isConnected || rect.width === 0 || rect.height === 0 || element.classList.contains("workflowy-filtered-hidden")) {
+      return false;
+    }
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden";
+  }
+  updateAutoScroll(pointerY) {
+    const scrollContainer = this.getScrollContainer();
+    if (!scrollContainer) {
+      this.stopAutoScroll();
+      return;
+    }
+    const rect = scrollContainer.getBoundingClientRect();
+    const edgeSize = 32;
+    let direction = 0;
+    if (pointerY < rect.top + edgeSize) {
+      direction = -1;
+    } else if (pointerY > rect.bottom - edgeSize) {
+      direction = 1;
+    }
+    this.autoScrollDirection = direction;
+    if (direction === 0) {
+      this.stopAutoScroll();
+      return;
+    }
+    if (this.autoScrollFrame === null) {
+      this.lastAutoScrollTime = this.getNow();
+      this.runAutoScroll();
+    }
+  }
+  runAutoScroll() {
+    const scrollContainer = this.getScrollContainer();
+    if (!scrollContainer || this.autoScrollDirection === 0 || !this.isDraggingSelection) {
+      this.stopAutoScroll();
+      return;
+    }
+    const now = this.getNow();
+    const elapsedMs = this.lastAutoScrollTime === null ? 1e3 / 60 : Math.min(now - this.lastAutoScrollTime, 32);
+    this.lastAutoScrollTime = now;
+    const pixelsPerSecond = 840;
+    scrollContainer.scrollTop += this.autoScrollDirection * pixelsPerSecond * (elapsedMs / 1e3);
+    this.updateSelectionBox(this.lastPointerY);
+    this.updateSelectionFromVerticalDrag(this.lastPointerY);
+    this.autoScrollFrame = requestAnimationFrame(() => this.runAutoScroll());
+  }
+  stopAutoScroll() {
+    if (this.autoScrollFrame !== null) {
+      cancelAnimationFrame(this.autoScrollFrame);
+      this.autoScrollFrame = null;
+    }
+    this.autoScrollDirection = 0;
+    this.lastAutoScrollTime = null;
+  }
+  getNow() {
+    return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+  }
+  getScrollContainer() {
+    return this.container.classList.contains("workflowy-editor") ? this.container : this.container.closest(".workflowy-editor");
   }
   /**
    * 根据选择框更新选中的节点（保留原方法作为备用）
@@ -10038,10 +15056,10 @@ var MultiSelectionManager = class {
   updateSelectionFromBox(x, y, width, height) {
     const selectionRect = { left: x, top: y, right: x + width, bottom: y + height };
     const newSelection = /* @__PURE__ */ new Set();
-    const blockElements = this.container.querySelectorAll("[data-block-id]");
+    const blockElements = this.container.querySelectorAll(".workflowy-item[data-block-id]");
     blockElements.forEach((element) => {
       const rect = element.getBoundingClientRect();
-      if (this.isRectIntersecting(rect, selectionRect)) {
+      if (this.isVisibleBlockElement(element, rect) && this.isRectIntersecting(rect, selectionRect)) {
         const blockId = element.dataset.blockId;
         if (blockId) {
           newSelection.add(blockId);
@@ -10082,7 +15100,7 @@ var MultiSelectionManager = class {
       element.classList.remove("workflowy-selected");
     });
     this.selectedBlocks.forEach((blockId) => {
-      const element = this.container.querySelector(`[data-block-id="${blockId}"]`);
+      const element = this.container.querySelector(`.workflowy-item[data-block-id="${blockId}"]`);
       if (element) {
         element.classList.add("workflowy-selected");
       }
@@ -10120,6 +15138,7 @@ var MultiSelectionManager = class {
         e.stopImmediatePropagation();
         break;
       case "Escape":
+        this.restoreLastEditorCursor();
         this.clearSelection();
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -10292,9 +15311,18 @@ var MultiSelectionManager = class {
    * 清除所有选择
    */
   clearSelection() {
+    var _a;
     this.selectedBlocks.clear();
+    (_a = this.container) == null ? void 0 : _a.classList.remove("selecting");
     this.updateSelectionDisplay();
     this.onSelectionChange([]);
+  }
+  restoreLastEditorCursor() {
+    var _a;
+    const cursorState = this.lastEditorCursorState || ((_a = this.selectionStart) == null ? void 0 : _a.cursorState);
+    if (cursorState) {
+      this.restoreEditorSurfaceCursor(cursorState);
+    }
   }
   /**
    * 获取选中的节点ID列表
@@ -10394,6 +15422,7 @@ var MultiSelectionManager = class {
       this.editor.moveBlock(block.id, targetBlockId, position);
     });
     this.editor.commitTransaction();
+    this.clearSelection();
     this.onRender();
     return true;
   }
@@ -10458,14 +15487,18 @@ var MultiSelectionManager = class {
       window.clearTimeout(this.updateThrottleTimer);
       this.updateThrottleTimer = null;
     }
-    if (this.boundMouseDownHandler) {
-      this.container.removeEventListener("mousedown", this.boundMouseDownHandler, true);
+    this.stopAutoScroll();
+    if (this.boundPointerDownHandler) {
+      this.container.removeEventListener("pointerdown", this.boundPointerDownHandler, true);
     }
-    if (this.boundMouseMoveHandler) {
-      document.removeEventListener("mousemove", this.boundMouseMoveHandler);
+    if (this.boundPointerMoveHandler) {
+      document.removeEventListener("pointermove", this.boundPointerMoveHandler, true);
     }
-    if (this.boundMouseUpHandler) {
-      document.removeEventListener("mouseup", this.boundMouseUpHandler);
+    if (this.boundPointerUpHandler) {
+      document.removeEventListener("pointerup", this.boundPointerUpHandler, true);
+    }
+    if (this.boundPointerCancelHandler) {
+      document.removeEventListener("pointercancel", this.boundPointerCancelHandler, true);
     }
     if (this.boundKeyDownHandler) {
       document.removeEventListener("keydown", this.boundKeyDownHandler, true);
@@ -10670,6 +15703,9 @@ var ZoomManager = class {
   }
 };
 
+// src/ui/navigation-header.ts
+var import_obsidian10 = require("obsidian");
+
 // src/features/theme-manager.ts
 var THEME_DEFS = [
   { id: "default", key: "default" },
@@ -10762,7 +15798,11 @@ var ThemeManager = class {
 
 // src/ui/navigation-header.ts
 var NavigationHeader = class {
-  constructor() {
+  constructor(app, getSourcePath = () => "") {
+    this.app = app;
+    this.getSourcePath = getSourcePath;
+    this.tooltipComponent = new import_obsidian10.Component();
+    this.tooltipRenderToken = 0;
     this.headerElement = null;
     this.searchInput = null;
     this.searchClearButton = null;
@@ -10772,6 +15812,7 @@ var NavigationHeader = class {
     this.themeMenu = null;
     // 事件监听器管理 - 用于清理
     this.eventHandlers = [];
+    this.tooltipComponent.load();
   }
   /**
    * 添加事件监听器并记录以便清理
@@ -10962,13 +16003,16 @@ var NavigationHeader = class {
         delimiter.textContent = "\u203A";
       }
       const breadcrumb = breadcrumbs[i];
+      const ariaLabel = t("ui.nav.jumpToLevelWithTitle", { title: breadcrumb.title });
       const item = this.breadcrumbsContainer.createEl("a", {
         cls: "workflowy-breadcrumb-item",
         attr: {
+          "aria-label": ariaLabel,
           "data-block-id": breadcrumb.blockId || "root"
         }
       });
       item.textContent = breadcrumb.title;
+      this.addMarkdownTooltip(item, breadcrumb.title);
       this.addEventListener(item, "click", (e) => {
         e.preventDefault();
         if (this.onBreadcrumbClick) {
@@ -10979,6 +16023,43 @@ var NavigationHeader = class {
         item.classList.add("current");
       }
     }
+  }
+  addMarkdownTooltip(item, markdown) {
+    this.addEventListener(item, "mouseenter", () => {
+      void this.showMarkdownTooltip(item, markdown);
+    });
+    this.addEventListener(item, "focus", () => {
+      void this.showMarkdownTooltip(item, markdown);
+    });
+  }
+  async showMarkdownTooltip(target, markdown) {
+    const token = ++this.tooltipRenderToken;
+    if (!this.app) {
+      (0, import_obsidian10.displayTooltip)(target, markdown, { placement: "top" });
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    const wrapper = document.createElement("div");
+    wrapper.className = "workflowy-breadcrumb-markdown-tooltip-content";
+    try {
+      await import_obsidian10.MarkdownRenderer.render(
+        this.app,
+        markdown,
+        wrapper,
+        this.getSourcePath(),
+        this.tooltipComponent
+      );
+    } catch (e) {
+      wrapper.textContent = markdown;
+    }
+    if (token !== this.tooltipRenderToken || !target.matches(":hover") && document.activeElement !== target) {
+      return;
+    }
+    fragment.appendChild(wrapper);
+    (0, import_obsidian10.displayTooltip)(target, fragment, {
+      placement: "top",
+      classes: ["workflowy-breadcrumb-markdown-tooltip"]
+    });
   }
   /**
    * 显示头部
@@ -11080,12 +16161,13 @@ var NavigationHeader = class {
     this.themeManager = void 0;
     this.onBreadcrumbClick = void 0;
     this.onSearch = void 0;
+    this.tooltipComponent.unload();
   }
 };
 
 // src/ui/mobile-toolbar.ts
-var import_obsidian7 = require("obsidian");
-(0, import_obsidian7.addIcon)("workflowy-brackets", '<g fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M38 12H22a6 6 0 0 0-6 6v64a6 6 0 0 0 6 6h16"/><path d="M62 12h16a6 6 0 0 1 6 6v64a6 6 0 0 1-6 6H62"/></g>');
+var import_obsidian11 = require("obsidian");
+(0, import_obsidian11.addIcon)("workflowy-brackets", '<g fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M38 12H22a6 6 0 0 0-6 6v64a6 6 0 0 0 6 6h16"/><path d="M62 12h16a6 6 0 0 1 6 6v64a6 6 0 0 1-6 6H62"/></g>');
 var _MobileToolbar = class {
   constructor() {
     this.toolbarEl = null;
@@ -11096,8 +16178,12 @@ var _MobileToolbar = class {
     this.keyboardVisible = false;
     this.pointerStartX = 0;
     this.pointerStartY = 0;
+    this.focusInHandler = null;
+    this.focusOutHandler = null;
+    this.visualViewportHandler = null;
+    this.focusOutTimeout = null;
     this.callbacks = {};
-    if (!import_obsidian7.Platform.isMobile)
+    if (!import_obsidian11.Platform.isMobile)
       return;
   }
   setCallbacks(callbacks) {
@@ -11107,7 +16193,7 @@ var _MobileToolbar = class {
     this.getBlockElement = fn;
   }
   create(container) {
-    if (!import_obsidian7.Platform.isMobile)
+    if (!import_obsidian11.Platform.isMobile)
       return;
     this.toolbarEl = document.createElement("div");
     this.toolbarEl.className = "workflowy-mobile-toolbar";
@@ -11176,7 +16262,7 @@ var _MobileToolbar = class {
     btn.className = `workflowy-mobile-btn workflowy-mobile-btn-${config.id}`;
     btn.setAttribute("data-action", config.action);
     btn.setAttribute("aria-label", config.title);
-    (0, import_obsidian7.setIcon)(btn, config.icon);
+    (0, import_obsidian11.setIcon)(btn, config.icon);
     const needsGuard = !_MobileToolbar.NO_BLUR_GUARD_ACTIONS.has(config.action);
     btn.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -11277,7 +16363,7 @@ var _MobileToolbar = class {
     const content = el.querySelector(".workflowy-content");
     const active = document.activeElement;
     if (active && el.contains(active)) {
-      if (editor && editor.style.display !== "none" && active === editor)
+      if (editor && editor.style.display !== "none" && elementContainsFocus(editor, active))
         return true;
       if (!editor && content && active === content)
         return true;
@@ -11292,7 +16378,7 @@ var _MobileToolbar = class {
     const target = editor || content;
     if (target) {
       target.focus();
-      return document.activeElement === target;
+      return elementContainsFocus(target, document.activeElement);
     }
     return false;
   }
@@ -11304,26 +16390,32 @@ var _MobileToolbar = class {
   setupKeyboardListener() {
     if (!this.toolbarEl)
       return;
-    document.addEventListener("focusin", (e) => {
-      const target = e.target;
+    this.teardownKeyboardListener();
+    this.focusInHandler = (event) => {
+      const target = event.target;
       if (!this.toolbarEl)
         return;
       if (target.classList.contains("workflowy-content-editor") || target.classList.contains("workflowy-content") || target.closest(".workflowy-content-editor") || target.closest(".workflowy-content")) {
         this.showEditBar();
       }
-    });
-    document.addEventListener("focusout", () => {
+    };
+    document.addEventListener("focusin", this.focusInHandler);
+    this.focusOutHandler = () => {
       if (!this.toolbarEl)
         return;
-      setTimeout(() => {
+      if (this.focusOutTimeout !== null)
+        window.clearTimeout(this.focusOutTimeout);
+      this.focusOutTimeout = window.setTimeout(() => {
+        this.focusOutTimeout = null;
         const active = document.activeElement;
         if (!active || active === document.body || !active.classList.contains("workflowy-content-editor") && !active.classList.contains("workflowy-content") && !active.closest(".workflowy-content-editor") && !active.closest(".workflowy-content")) {
           this.showFuncBar();
         }
       }, 200);
-    });
+    };
+    document.addEventListener("focusout", this.focusOutHandler);
     if (window.visualViewport) {
-      const updatePosition = () => {
+      this.visualViewportHandler = () => {
         if (!this.toolbarEl || !window.visualViewport)
           return;
         const kbHeight = window.innerHeight - window.visualViewport.height;
@@ -11335,12 +16427,33 @@ var _MobileToolbar = class {
           this.toolbarEl.style.paddingBottom = "";
         }
       };
-      window.visualViewport.addEventListener("resize", updatePosition);
-      window.visualViewport.addEventListener("scroll", updatePosition);
-      updatePosition();
+      window.visualViewport.addEventListener("resize", this.visualViewportHandler);
+      window.visualViewport.addEventListener("scroll", this.visualViewportHandler);
+      this.visualViewportHandler();
+    }
+  }
+  teardownKeyboardListener() {
+    var _a, _b;
+    if (this.focusInHandler) {
+      document.removeEventListener("focusin", this.focusInHandler);
+      this.focusInHandler = null;
+    }
+    if (this.focusOutHandler) {
+      document.removeEventListener("focusout", this.focusOutHandler);
+      this.focusOutHandler = null;
+    }
+    if (this.visualViewportHandler) {
+      (_a = window.visualViewport) == null ? void 0 : _a.removeEventListener("resize", this.visualViewportHandler);
+      (_b = window.visualViewport) == null ? void 0 : _b.removeEventListener("scroll", this.visualViewportHandler);
+      this.visualViewportHandler = null;
+    }
+    if (this.focusOutTimeout !== null) {
+      window.clearTimeout(this.focusOutTimeout);
+      this.focusOutTimeout = null;
     }
   }
   destroy() {
+    this.teardownKeyboardListener();
     if (this.toolbarEl) {
       this.toolbarEl.remove();
       this.toolbarEl = null;
@@ -11366,6 +16479,9 @@ MobileToolbar.NO_BLUR_GUARD_ACTIONS = /* @__PURE__ */ new Set([
   "onExpandToLevel2",
   "onExpandToLevel3"
 ]);
+function elementContainsFocus(element, activeElement) {
+  return element === activeElement || !!activeElement && element.contains(activeElement);
+}
 
 // src/ui/slash-command-menu.ts
 function localizedUi() {
@@ -11386,6 +16502,12 @@ var SlashCommandMenu = class {
     this.pendingTimeCommand = null;
     // 销毁标志 - 防止销毁后继续执行
     this.isDestroyed = false;
+    this.lastPosition = null;
+    this.renderFrame = null;
+    this.positionFrame = null;
+    this.selectionFrame = null;
+    this.clickOutsideTimeout = null;
+    this.viewportListenersAttached = false;
     // 命令分组（Time 放最前面，符合 TickTickSync 格式）
     this.COMMAND_GROUPS = [
       {
@@ -11435,6 +16557,7 @@ var SlashCommandMenu = class {
     this.container = document.body;
     this.createMenuElement();
     this.boundHandleClickOutside = this.handleClickOutside.bind(this);
+    this.boundHandleViewportChange = this.handleViewportChange.bind(this);
   }
   createMenuElement() {
     this.menuElement = document.createElement("div");
@@ -11453,37 +16576,32 @@ var SlashCommandMenu = class {
     if (this.isDestroyed)
       return;
     this.onSelect = onSelect;
+    this.lastPosition = position;
     this.isVisible = true;
     this.selectedIndex = 0;
     this.filteredCommands = this.getAllCommands();
-    this.renderMenu();
-    this.menuElement.style.left = `${position.x}px`;
-    this.menuElement.style.top = `${position.y + 20}px`;
-    this.menuElement.style.display = "block";
-    this.adjustMenuPosition();
-    setTimeout(() => {
+    this.scheduleMenuUpdate(true);
+    this.attachViewportListeners();
+    this.cancelClickOutsideTimeout();
+    this.clickOutsideTimeout = window.setTimeout(() => {
+      this.clickOutsideTimeout = null;
+      if (!this.isVisible || this.isDestroyed)
+        return;
       document.addEventListener("mousedown", this.boundHandleClickOutside);
     }, 0);
   }
-  adjustMenuPosition() {
-    const rect = this.menuElement.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    if (rect.right > viewportWidth) {
-      this.menuElement.style.left = `${viewportWidth - rect.width - 10}px`;
-    }
-    if (rect.bottom > viewportHeight) {
-      const currentTop = parseInt(this.menuElement.style.top);
-      this.menuElement.style.top = `${currentTop - rect.height - 40}px`;
-    }
-  }
   hide() {
     this.isVisible = false;
+    this.cancelScheduledUpdate();
+    this.cancelClickOutsideTimeout();
     this.menuElement.style.display = "none";
+    this.menuElement.style.visibility = "hidden";
     this.onSelect = null;
+    this.lastPosition = null;
     this.hideDatePicker();
     this.hideTimePicker();
     document.removeEventListener("mousedown", this.boundHandleClickOutside);
+    this.detachViewportListeners();
   }
   handleClickOutside(e) {
     const target = e.target;
@@ -11504,7 +16622,7 @@ var SlashCommandMenu = class {
       );
     }
     this.selectedIndex = 0;
-    this.renderMenu();
+    this.scheduleMenuUpdate(true);
   }
   navigate(direction) {
     if (!this.isVisible || this.filteredCommands.length === 0)
@@ -11514,8 +16632,8 @@ var SlashCommandMenu = class {
     } else {
       this.selectedIndex = (this.selectedIndex + 1) % this.filteredCommands.length;
     }
-    this.renderMenu();
-    this.scrollSelectedIntoView();
+    this.updateSelection();
+    this.scheduleSelectionScroll();
   }
   selectCurrent() {
     if (!this.isVisible || this.filteredCommands.length === 0)
@@ -11651,6 +16769,70 @@ var SlashCommandMenu = class {
     if (selectedEl) {
       selectedEl.scrollIntoView({ block: "nearest" });
     }
+  }
+  scheduleSelectionScroll() {
+    if (this.selectionFrame !== null)
+      window.cancelAnimationFrame(this.selectionFrame);
+    this.selectionFrame = window.requestAnimationFrame(() => {
+      this.selectionFrame = null;
+      if (this.isVisible && !this.isDestroyed)
+        this.scrollSelectedIntoView();
+    });
+  }
+  handleViewportChange() {
+    if (this.isVisible)
+      this.scheduleMenuUpdate(false);
+  }
+  scheduleMenuUpdate(render) {
+    this.cancelScheduledUpdate();
+    this.renderFrame = window.requestAnimationFrame(() => {
+      this.renderFrame = null;
+      if (!this.isVisible || this.isDestroyed || !this.lastPosition)
+        return;
+      if (render)
+        this.renderMenu();
+      prepareFloatingMenu(this.menuElement, { preferredWidth: 320, minWidth: 240, offset: 20, margin: 8 });
+      this.positionFrame = window.requestAnimationFrame(() => {
+        this.positionFrame = null;
+        if (!this.isVisible || this.isDestroyed || !this.lastPosition)
+          return;
+        positionFloatingMenu(this.menuElement, this.lastPosition, { preferredWidth: 320, minWidth: 240, offset: 20, margin: 8 });
+      });
+    });
+  }
+  cancelScheduledUpdate() {
+    if (this.renderFrame !== null)
+      window.cancelAnimationFrame(this.renderFrame);
+    if (this.positionFrame !== null)
+      window.cancelAnimationFrame(this.positionFrame);
+    if (this.selectionFrame !== null)
+      window.cancelAnimationFrame(this.selectionFrame);
+    this.renderFrame = null;
+    this.positionFrame = null;
+    this.selectionFrame = null;
+  }
+  cancelClickOutsideTimeout() {
+    if (this.clickOutsideTimeout !== null)
+      window.clearTimeout(this.clickOutsideTimeout);
+    this.clickOutsideTimeout = null;
+  }
+  attachViewportListeners() {
+    var _a, _b;
+    if (this.viewportListenersAttached)
+      return;
+    this.viewportListenersAttached = true;
+    window.addEventListener("resize", this.boundHandleViewportChange);
+    (_a = window.visualViewport) == null ? void 0 : _a.addEventListener("resize", this.boundHandleViewportChange);
+    (_b = window.visualViewport) == null ? void 0 : _b.addEventListener("scroll", this.boundHandleViewportChange);
+  }
+  detachViewportListeners() {
+    var _a, _b;
+    if (!this.viewportListenersAttached)
+      return;
+    this.viewportListenersAttached = false;
+    window.removeEventListener("resize", this.boundHandleViewportChange);
+    (_a = window.visualViewport) == null ? void 0 : _a.removeEventListener("resize", this.boundHandleViewportChange);
+    (_b = window.visualViewport) == null ? void 0 : _b.removeEventListener("scroll", this.boundHandleViewportChange);
   }
   // ==================== 日期选择器 ====================
   showDatePicker() {
@@ -11979,7 +17161,12 @@ var SlashCommandMenu = class {
    * 销毁 SlashCommandMenu，释放所有资源
    */
   destroy() {
+    if (this.isDestroyed)
+      return;
     this.isDestroyed = true;
+    this.cancelScheduledUpdate();
+    this.cancelClickOutsideTimeout();
+    this.detachViewportListeners();
     document.removeEventListener("mousedown", this.boundHandleClickOutside);
     if (this.menuElement && this.menuElement.parentNode) {
       this.menuElement.parentNode.removeChild(this.menuElement);
@@ -11999,11 +17186,11 @@ var SlashCommandMenu = class {
     this.pendingTimeCommand = null;
     this.filteredCommands = [];
     this.boundHandleClickOutside = null;
+    this.boundHandleViewportChange = null;
   }
 };
 
 // src/features/mobile-dom-patcher.ts
-var import_obsidian8 = require("obsidian");
 var _MobileDOMPatcher = class {
   constructor(deps) {
     this._needsFullSync = false;
@@ -12011,18 +17198,6 @@ var _MobileDOMPatcher = class {
   }
   get needsFullSync() {
     return this._needsFullSync;
-  }
-  syncOrderedSiblingIndices(siblings) {
-    var _a;
-    let orderedListCounter = 0;
-    for (const sibling of siblings) {
-      if (sibling.isOrderedList) {
-        orderedListCounter++;
-        (_a = this.deps.blockElements.get(sibling.id)) == null ? void 0 : _a.updateOrderIndex(orderedListCounter);
-      } else {
-        orderedListCounter = 0;
-      }
-    }
   }
   /**
    * 重置全量同步标记（在全量 renderBlocks 执行后调用）
@@ -12128,71 +17303,12 @@ var _MobileDOMPatcher = class {
   }
   /**
    * 新建块
-   * 创建新块数据 → 创建新 OutlineItem DOM → 插入到目标位置 → 立即聚焦 → 保存
-   * 焦点转移必须在同步上下文中完成，否则移动端浏览器不会弹出键盘
+   * 委托给 view 在同步上下文中修改模型、同步虚拟窗口并聚焦。
    * 返回新块 ID
    */
   patchNewBlock(afterBlockId, initialContent) {
     try {
-      this.deps.syncEditingContentToState({ saveFile: false });
-      const newBlock = this.deps.editor.createNewBlock(afterBlockId, initialContent);
-      const newItem = new OutlineItem(
-        newBlock,
-        this.deps.editor,
-        this.deps.onBlockUpdate,
-        this.deps.onBlockFocus,
-        async () => await this.deps.renderBlocksAndSave(),
-        this.deps.getMultiSelectionManager,
-        this.deps.onBulletClick,
-        this.deps.getZoomedBlockId,
-        this.deps.app,
-        this.deps.getSourcePath(),
-        this.deps.settings,
-        this.deps.getViewId(),
-        computeOrderedListIndex(newBlock.id, this.deps.editor.getState().blocks),
-        this.deps.slashCommandMenu
-      );
-      newItem.onViewUndo = this.deps.onViewUndo;
-      newItem.onViewRedo = this.deps.onViewRedo;
-      const newElement = newItem.getElement();
-      if (afterBlockId) {
-        const afterItem = this.deps.blockElements.get(afterBlockId);
-        if (afterItem) {
-          const afterElement = afterItem.getElement();
-          const nextSibling = afterElement.nextElementSibling;
-          if (nextSibling && nextSibling.classList.contains("workflowy-children")) {
-            nextSibling.after(newElement);
-          } else {
-            afterElement.after(newElement);
-          }
-        } else {
-          const editorContainer = this.deps.container.querySelector(".workflowy-editor");
-          if (editorContainer)
-            editorContainer.appendChild(newElement);
-        }
-      } else {
-        const editorContainer = this.deps.container.querySelector(".workflowy-editor");
-        if (editorContainer)
-          editorContainer.appendChild(newElement);
-      }
-      this.deps.blockElements.set(newBlock.id, newItem);
-      const currentBlocks = this.deps.editor.getState().blocks;
-      const parentBlock = findParentBlock(currentBlocks, newBlock.id);
-      const siblings = parentBlock ? parentBlock.children : currentBlocks;
-      this.syncOrderedSiblingIndices(siblings);
-      newItem.setMobilePatcher({
-        patchNewBlock: (afterBlockId2, initialContent2) => this.patchNewBlock(afterBlockId2, initialContent2),
-        patchDeleteBlock: (blockId) => this.patchDeleteBlock(blockId)
-      });
-      newItem.focus();
-      if (import_obsidian8.Platform.isMobile) {
-        setTimeout(() => {
-          newItem.getElement().scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 50);
-      }
-      this.deps.saveToFile();
-      this._needsFullSync = true;
-      return newBlock.id;
+      return this.deps.insertBlockAndFocus(afterBlockId, initialContent);
     } catch (error) {
       console.error("[MobileDOMPatcher] patchNewBlock failed, falling back:", error);
       this.deps.renderBlocksAndSave();
@@ -12200,76 +17316,12 @@ var _MobileDOMPatcher = class {
     }
   }
   /**
-   * 删除块（移动端局部 DOM 更新）
-   * 删除指定块的 DOM 元素，聚焦到上一个块末尾
-   * 返回需要聚焦的块 ID，失败返回空字符串
+   * 删除块
+   * 委托给 view 修改模型、同步虚拟窗口并聚焦。
    */
   patchDeleteBlock(blockId) {
     try {
-      this.deps.syncEditingContentToState({ saveFile: false });
-      const stateBefore = this.deps.editor.getState();
-      const allBlocks = getAllBlocks(stateBefore.blocks);
-      const currentIndex = allBlocks.findIndex((b) => b.id === blockId);
-      if (currentIndex === -1 || currentIndex === 0 && allBlocks.length === 1) {
-        return false;
-      }
-      const blockToDelete = allBlocks[currentIndex];
-      if (!blockToDelete) {
-        return false;
-      }
-      const prevBlock = currentIndex > 0 ? allBlocks[currentIndex - 1] : null;
-      const nextBlock = currentIndex < allBlocks.length - 1 ? allBlocks[currentIndex + 1] : null;
-      const parentBlock = findParentBlock(stateBefore.blocks, blockId);
-      const siblings = parentBlock ? parentBlock.children : stateBefore.blocks;
-      const safeLocalPatch = blockToDelete.children.length === 0 && !siblings.some((sibling) => sibling.isOrderedList);
-      if (!this.deps.editor.deleteBlock(blockId)) {
-        return false;
-      }
-      if (!safeLocalPatch) {
-        const focusTargetId = (prevBlock == null ? void 0 : prevBlock.id) || (nextBlock == null ? void 0 : nextBlock.id) || (parentBlock == null ? void 0 : parentBlock.id) || null;
-        void this.deps.renderBlocksAndSave().then(() => {
-          requestAnimationFrame(() => {
-            if (!focusTargetId)
-              return;
-            const focusItem = this.deps.blockElements.get(focusTargetId);
-            if (!focusItem)
-              return;
-            if (prevBlock && focusTargetId === prevBlock.id) {
-              focusItem.focusAtEnd();
-            } else {
-              focusItem.focus();
-            }
-          });
-        });
-        this._needsFullSync = false;
-        return true;
-      }
-      const item = this.deps.blockElements.get(blockId);
-      if (item) {
-        item.getElement().remove();
-        item.destroy();
-        this.deps.blockElements.delete(blockId);
-      }
-      if (prevBlock) {
-        const prevItem = this.deps.blockElements.get(prevBlock.id);
-        if (prevItem) {
-          prevItem.focusAtEnd();
-        }
-      } else if (nextBlock) {
-        const nextItem = this.deps.blockElements.get(nextBlock.id);
-        if (nextItem) {
-          nextItem.focus();
-        }
-      }
-      const vlm = this.deps.getVerticalLinesManager();
-      if (vlm) {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => vlm.forceUpdate());
-        });
-      }
-      this.deps.saveToFile();
-      this._needsFullSync = true;
-      return true;
+      return this.deps.deleteBlockAndFocus(blockId);
     } catch (error) {
       console.error("[MobileDOMPatcher] patchDeleteBlock failed, falling back:", error);
       this.deps.renderBlocksAndSave();
@@ -12282,36 +17334,26 @@ var _MobileDOMPatcher = class {
    */
   patchUndoRedo(blocks) {
     try {
-      const allNewBlocks = getAllBlocks(blocks);
-      const currentIds = Array.from(this.deps.blockElements.keys());
-      const nextIds = getFlatBlockIds(blocks);
-      if (allNewBlocks.length !== currentIds.length) {
-        return false;
-      }
-      for (let i = 0; i < nextIds.length; i++) {
-        if (nextIds[i] !== currentIds[i]) {
-          return false;
+      const newBlocksById = /* @__PURE__ */ new Map();
+      const collectBlocks = (items) => {
+        for (const block of items) {
+          newBlocksById.set(block.id, block);
+          collectBlocks(block.children);
         }
-      }
-      for (const newBlock of allNewBlocks) {
-        const item = this.deps.blockElements.get(newBlock.id);
-        if (!item) {
+      };
+      collectBlocks(blocks);
+      for (const [blockId, item] of this.deps.blockElements) {
+        const newBlock = newBlocksById.get(blockId);
+        if (!newBlock)
           return false;
-        }
         const oldBlock = item.getBlock();
         if (!areBlocksEquivalentForRender(oldBlock, newBlock, { ignoreContent: true })) {
           return false;
         }
-      }
-      for (const newBlock of allNewBlocks) {
-        const item = this.deps.blockElements.get(newBlock.id);
-        if (item) {
-          const oldBlock = item.getBlock();
-          if (oldBlock.content !== newBlock.content) {
-            item.updateContent(newBlock.content);
-          } else {
-            item.syncWithBlock(newBlock);
-          }
+        if (oldBlock.content !== newBlock.content) {
+          item.updateContent(newBlock.content);
+        } else {
+          item.syncWithBlock(newBlock);
         }
       }
       this.deps.saveToFile();
@@ -12332,16 +17374,380 @@ var _MobileDOMPatcher = class {
 var MobileDOMPatcher = _MobileDOMPatcher;
 MobileDOMPatcher.INDENT_FLAG = "data-workflowy-indent-active";
 
+// src/features/readable-line-width.ts
+var READABLE_LINE_WIDTH_CONFIG_KEY = "readableLineLength";
+var READABLE_LINE_WIDTH_CLASS = "is-readable-line-width";
+function isReadableLineWidthEnabled(app) {
+  var _a;
+  try {
+    const getConfig = (_a = app.vault) == null ? void 0 : _a.getConfig;
+    return typeof getConfig === "function" && getConfig.call(app.vault, READABLE_LINE_WIDTH_CONFIG_KEY) === true;
+  } catch (_error) {
+    return false;
+  }
+}
+function shouldSyncReadableLineWidth(configKey) {
+  return configKey === void 0 || configKey === READABLE_LINE_WIDTH_CONFIG_KEY;
+}
+function syncReadableLineWidthClass(container, app) {
+  if (!container)
+    return;
+  container.classList.toggle(READABLE_LINE_WIDTH_CLASS, isReadableLineWidthEnabled(app));
+}
+
+// src/performance/outline-performance-profiler.ts
+var emptySchedulerMetrics = () => ({
+  yieldCount: 0,
+  maxSliceMs: 0
+});
+var defaultPerformance = () => performance;
+var defaultObserverFactory = (callback) => {
+  if (typeof PerformanceObserver === "undefined")
+    return null;
+  try {
+    return new PerformanceObserver((list) => {
+      callback(list.getEntries().map((entry) => entry.duration));
+    });
+  } catch (e) {
+    return null;
+  }
+};
+function summarizeOutlineDocument(blocks, isCollapsed) {
+  const stats = {
+    totalBlocks: 0,
+    visibleBlocks: 0,
+    maxLevel: 0,
+    blockTypes: {}
+  };
+  const walk = (items, visible) => {
+    for (const block of items) {
+      stats.totalBlocks++;
+      if (visible)
+        stats.visibleBlocks++;
+      stats.maxLevel = Math.max(stats.maxLevel, block.level);
+      stats.blockTypes[block.type] = (stats.blockTypes[block.type] || 0) + 1;
+      walk(block.children, visible && !isCollapsed(block.id));
+    }
+  };
+  walk(blocks, true);
+  return stats;
+}
+var OutlinePerformanceProfiler = class {
+  constructor(options = {}) {
+    this.history = [];
+    this.reportsById = /* @__PURE__ */ new Map();
+    this.pendingMarkdown = /* @__PURE__ */ new Map();
+    this.activeSessions = /* @__PURE__ */ new Set();
+    this.outputTimers = /* @__PURE__ */ new Map();
+    this.sequence = 0;
+    this.destroyed = false;
+    var _a, _b, _c, _d, _e;
+    this.performanceApi = (_a = options.performanceApi) != null ? _a : defaultPerformance();
+    this.now = (_b = options.now) != null ? _b : () => this.performanceApi.now();
+    this.createLongTaskObserver = (_c = options.createLongTaskObserver) != null ? _c : defaultObserverFactory;
+    this.consoleApi = (_d = options.consoleApi) != null ? _d : console;
+    this.reportDelayMs = (_e = options.reportDelayMs) != null ? _e : 500;
+  }
+  begin(metadata) {
+    if (this.destroyed)
+      return null;
+    const renderId = `outline-render-${Date.now()}-${++this.sequence}`;
+    const session = new OutlinePerformanceSession(this, renderId, metadata);
+    this.activeSessions.add(session);
+    return session;
+  }
+  nowMs() {
+    return this.now();
+  }
+  createObserver(callback) {
+    return this.createLongTaskObserver(callback);
+  }
+  mark(name) {
+    var _a, _b;
+    (_b = (_a = this.performanceApi).mark) == null ? void 0 : _b.call(_a, name);
+  }
+  measure(name, startMark, endMark) {
+    var _a, _b;
+    (_b = (_a = this.performanceApi).measure) == null ? void 0 : _b.call(_a, name, startMark, endMark);
+  }
+  clearMark(name) {
+    var _a, _b;
+    (_b = (_a = this.performanceApi).clearMarks) == null ? void 0 : _b.call(_a, name);
+  }
+  clearMeasure(name) {
+    var _a, _b;
+    (_b = (_a = this.performanceApi).clearMeasures) == null ? void 0 : _b.call(_a, name);
+  }
+  getHistory() {
+    return this.history;
+  }
+  recordMarkdown(renderId, durationMs, lazy) {
+    const report = this.reportsById.get(renderId);
+    if (!report) {
+      const pending = this.pendingMarkdown.get(renderId) || [];
+      pending.push({ durationMs, lazy });
+      this.pendingMarkdown.set(renderId, pending);
+      return;
+    }
+    this.applyMarkdownMetric(report, durationMs, lazy);
+  }
+  applyMarkdownMetric(report, durationMs, lazy) {
+    report.markdown.count++;
+    if (lazy) {
+      report.markdown.lazyCount++;
+      report.markdown.pendingLazyCount = Math.max(0, report.markdown.pendingLazyCount - 1);
+    }
+    report.markdown.totalMs += durationMs;
+    report.markdown.maxMs = Math.max(report.markdown.maxMs, durationMs);
+  }
+  complete(session, report) {
+    this.activeSessions.delete(session);
+    if (this.destroyed)
+      return;
+    this.history.push(report);
+    this.reportsById.set(report.renderId, report);
+    const pendingMarkdown = this.pendingMarkdown.get(report.renderId);
+    if (pendingMarkdown) {
+      for (const metric of pendingMarkdown) {
+        this.applyMarkdownMetric(report, metric.durationMs, metric.lazy);
+      }
+      this.pendingMarkdown.delete(report.renderId);
+    }
+    while (this.history.length > 10) {
+      const removed = this.history.shift();
+      if (removed) {
+        this.reportsById.delete(removed.renderId);
+        this.pendingMarkdown.delete(removed.renderId);
+        const outputTimer = this.outputTimers.get(removed.renderId);
+        if (outputTimer !== void 0) {
+          globalThis.clearTimeout(outputTimer);
+          this.outputTimers.delete(removed.renderId);
+        }
+      }
+    }
+    const timerId = globalThis.setTimeout(() => {
+      this.outputTimers.delete(report.renderId);
+      if (!this.destroyed)
+        this.output(report);
+    }, this.reportDelayMs);
+    this.outputTimers.set(report.renderId, timerId);
+  }
+  destroy() {
+    this.destroyed = true;
+    this.activeSessions.forEach((session) => session.dispose());
+    this.activeSessions.clear();
+    this.outputTimers.forEach((timerId) => globalThis.clearTimeout(timerId));
+    this.outputTimers.clear();
+    this.history.length = 0;
+    this.reportsById.clear();
+    this.pendingMarkdown.clear();
+  }
+  output(report) {
+    const title = `[Workflowy performance] ${report.renderId} ${report.status} ${report.totalMs.toFixed(1)}ms`;
+    this.consoleApi.groupCollapsed(title);
+    this.consoleApi.table(Object.entries(report.phases).map(([phase, durationMs]) => ({
+      phase,
+      durationMs: Number(durationMs.toFixed(2))
+    })));
+    this.consoleApi.table({
+      document: report.document,
+      scheduler: report.scheduler,
+      markdown: report.markdown,
+      verticalLines: report.verticalLines,
+      window: report.window,
+      longTasks: report.longTasks
+    });
+    if (report.warnings.length > 0) {
+      this.consoleApi.warn("Diagnostics:", report.warnings);
+    }
+    this.consoleApi.log("Copyable JSON:", JSON.stringify(report, null, 2));
+    this.consoleApi.groupEnd();
+  }
+};
+var OutlinePerformanceSession = class {
+  constructor(owner, renderId, metadata) {
+    this.phaseStarts = /* @__PURE__ */ new Map();
+    this.phases = {};
+    this.markNames = [];
+    this.measureNames = [];
+    this.observer = null;
+    this.scheduler = emptySchedulerMetrics();
+    this.markdown = { count: 0, lazyCount: 0, pendingLazyCount: 0, totalMs: 0, maxMs: 0 };
+    this.verticalLines = null;
+    this.window = {
+      domNodeCount: 0,
+      totalRowCount: 0,
+      windowSize: 0,
+      windowUpdateMs: 0,
+      measureReconcileMs: 0,
+      flattenMs: 0,
+      scrollRewindowCount: 0
+    };
+    this.longTasks = { count: 0, totalMs: 0, maxMs: 0 };
+    this.domCompletedAtMs = null;
+    this.finished = false;
+    this.owner = owner;
+    this.renderId = renderId;
+    this.metadata = metadata;
+    this.startedAtMs = owner.nowMs();
+    this.startedAt = new Date().toISOString();
+    this.startLongTaskObserver();
+  }
+  recordDuration(phase, durationMs) {
+    this.phases[phase] = (this.phases[phase] || 0) + durationMs;
+  }
+  startPhase(phase) {
+    const markName = `${this.renderId}:${phase}:start`;
+    this.phaseStarts.set(phase, { time: this.owner.nowMs(), markName });
+    this.markNames.push(markName);
+    try {
+      this.owner.mark(markName);
+    } catch (e) {
+    }
+  }
+  endPhase(phase) {
+    const start = this.phaseStarts.get(phase);
+    if (!start)
+      return 0;
+    this.phaseStarts.delete(phase);
+    const duration = this.owner.nowMs() - start.time;
+    this.recordDuration(phase, duration);
+    if (phase === "domBuild" || phase === "windowMount")
+      this.domCompletedAtMs = this.owner.nowMs();
+    const endMark = `${this.renderId}:${phase}:end`;
+    const measureName = `${this.renderId}:${phase}`;
+    this.markNames.push(endMark);
+    this.measureNames.push(measureName);
+    try {
+      this.owner.mark(endMark);
+      this.owner.measure(measureName, start.markName, endMark);
+    } catch (e) {
+    }
+    return duration;
+  }
+  recordScheduler(metrics) {
+    this.scheduler = metrics;
+  }
+  recordPendingLazyMarkdown(count2 = 1) {
+    this.markdown.pendingLazyCount += count2;
+  }
+  recordMarkdown(durationMs, lazy) {
+    this.markdown.count++;
+    if (lazy)
+      this.markdown.lazyCount++;
+    this.markdown.totalMs += durationMs;
+    this.markdown.maxMs = Math.max(this.markdown.maxMs, durationMs);
+  }
+  recordVerticalLines(metrics) {
+    this.verticalLines = metrics;
+  }
+  recordWindow(metrics) {
+    this.window = { ...this.window, ...metrics };
+  }
+  finish(status, details = {}) {
+    var _a;
+    if (this.finished)
+      return;
+    this.finished = true;
+    (_a = this.observer) == null ? void 0 : _a.disconnect();
+    this.observer = null;
+    const finishedAtMs = this.owner.nowMs();
+    const renderMs = finishedAtMs - this.startedAtMs;
+    const totalMs = renderMs + (this.phases.fileRead || 0) + (this.phases.parseMarkdown || 0);
+    const report = {
+      ...this.metadata,
+      renderId: this.renderId,
+      startedAt: this.startedAt,
+      status,
+      cancelReason: details.cancelReason,
+      error: details.error instanceof Error ? details.error.message : details.error ? String(details.error) : void 0,
+      totalMs,
+      postDomMs: this.domCompletedAtMs === null ? 0 : Math.max(0, finishedAtMs - this.domCompletedAtMs),
+      phases: { ...this.phases },
+      scheduler: { ...this.scheduler },
+      markdown: { ...this.markdown },
+      verticalLines: this.verticalLines ? { ...this.verticalLines } : null,
+      window: { ...this.window },
+      longTasks: { ...this.longTasks },
+      warnings: this.buildWarnings(totalMs)
+    };
+    this.cleanupPerformanceEntries();
+    this.owner.complete(this, report);
+  }
+  dispose() {
+    var _a;
+    if (this.finished)
+      return;
+    this.finished = true;
+    (_a = this.observer) == null ? void 0 : _a.disconnect();
+    this.observer = null;
+    this.cleanupPerformanceEntries();
+  }
+  startLongTaskObserver() {
+    var _a, _b;
+    this.observer = this.owner.createObserver((durations) => {
+      for (const duration of durations) {
+        if (duration < 50)
+          continue;
+        this.longTasks.count++;
+        this.longTasks.totalMs += duration;
+        this.longTasks.maxMs = Math.max(this.longTasks.maxMs, duration);
+      }
+    });
+    try {
+      (_a = this.observer) == null ? void 0 : _a.observe({ entryTypes: ["longtask"] });
+    } catch (e) {
+      (_b = this.observer) == null ? void 0 : _b.disconnect();
+      this.observer = null;
+    }
+  }
+  buildWarnings(totalMs) {
+    const warnings = [];
+    if (this.scheduler.maxSliceMs > 16)
+      warnings.push(`Longest render slice was ${this.scheduler.maxSliceMs.toFixed(1)}ms.`);
+    if (this.window.domNodeCount > 600)
+      warnings.push(`Virtual outline mounted ${this.window.domNodeCount} DOM nodes.`);
+    if (this.window.windowUpdateMs > 16)
+      warnings.push(`Virtual window update took ${this.window.windowUpdateMs.toFixed(1)}ms.`);
+    if (this.window.measureReconcileMs > 8)
+      warnings.push(`Row measurement reconciliation took ${this.window.measureReconcileMs.toFixed(1)}ms.`);
+    if (this.longTasks.count > 0)
+      warnings.push(`${this.longTasks.count} main-thread task(s) exceeded 50ms.`);
+    if (this.verticalLines && totalMs > 0 && this.verticalLines.totalMs / totalMs >= 0.3) {
+      warnings.push("Vertical-line layout consumed at least 30% of the render time.");
+    }
+    if (this.markdown.maxMs > 50)
+      warnings.push(`Slowest Markdown render took ${this.markdown.maxMs.toFixed(1)}ms.`);
+    if (this.markdown.count > 100 || this.markdown.pendingLazyCount > 100) {
+      warnings.push("More than 100 Markdown blocks were scheduled during one render.");
+    }
+    return warnings;
+  }
+  cleanupPerformanceEntries() {
+    for (const name of this.markNames) {
+      try {
+        this.owner.clearMark(name);
+      } catch (e) {
+      }
+    }
+    for (const name of this.measureNames) {
+      try {
+        this.owner.clearMeasure(name);
+      } catch (e) {
+      }
+    }
+    this.markNames.length = 0;
+    this.measureNames.length = 0;
+  }
+};
+
 // src/workflowy-view.ts
-var WorkflowyView = class extends import_obsidian9.FileView {
+var WorkflowyView = class extends import_obsidian12.FileView {
   constructor(leaf, plugin) {
     var _a, _b;
     super(leaf);
     this.blockElements = /* @__PURE__ */ new Map();
-    // 阶段3a：非列表块 markdown 懒渲染观察器（仅在视口附近触发真正渲染）
-    this.nodeObserver = null;
     this.containerSelector = null;
-    this.verticalLinesManager = null;
     this.multiSelectionManager = null;
     this.zoomManager = null;
     this.navigationHeader = null;
@@ -12349,6 +17755,20 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     this.mobileToolbar = null;
     this.mobileDOMPatcher = null;
     this.slashCommandMenu = null;
+    // 扁平窗口化虚拟渲染：窗口管理器 + 偏移驱动垂直线
+    this.virtualWindow = null;
+    this.livePreviewController = null;
+    this.virtualContentEl = null;
+    this.virtualLinesEl = null;
+    this.virtualLinesManager = null;
+    // 当前正在编辑的行（滚出视口时保持挂载并可恢复编辑态）
+    this.activeEdit = null;
+    // 搜索过滤：非 null 时 flatten 只保留命中块及其祖先
+    this.searchVisibleBlockIds = null;
+    // 搜索高亮：挂载行时按需重放高亮
+    this.searchHighlight = null;
+    // 行高缓存（key: sourcePath::blockId），跨 rebuild 保持滚动条稳定
+    this.rowHeightCache = /* @__PURE__ */ new Map();
     // 文件同步相关
     this.lastKnownContent = "";
     // 记录最后已知的内容
@@ -12369,21 +17789,25 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     this.lastHandledSubpathAt = 0;
     // 从 Markdown 视图切入时待恢复的源码光标
     this.pendingSourceCursor = null;
+    // Alt+↑/↓ zoom 导航的返回锚点栈。鼠标和面包屑 zoom 不使用该栈。
+    this.keyboardZoomAnchorStack = [];
+    this.pendingKeyboardZoomRestore = null;
     // 视图关闭标志（用于防止异步操作继续）
     this.isClosing = false;
     // wheel 事件处理器（用于正确移除事件监听器）
     this.wheelHandler = null;
     // 编辑器容器缓存（避免重复查询 DOM）
     this.editorContainer = null;
+    // 串行化行模型重建，并让较新的请求取代过期任务。
+    this.renderRequestId = 0;
+    this.renderQueue = Promise.resolve();
+    this.skipNextEditingContentSync = false;
+    this.performanceProfiler = null;
     /**
      * FileView 必需属性：是否允许没有文件
      */
     this.allowNoFile = false;
-    /**
-     * 外部文件变化处理（由插件主类调用）
-     * 当同一文件在其他视图（如 Markdown 编辑器）中被修改时触发
-     */
-    this.onExternalFileChange = (0, import_obsidian9.debounce)(async () => {
+    this.onExternalFileChange = (0, import_obsidian12.debounce)(async () => {
       if (this.isSaving || !this.file) {
         return;
       }
@@ -12398,6 +17822,15 @@ var WorkflowyView = class extends import_obsidian9.FileView {
           return;
         }
         const focusedBlockId = this.editor.getState().focusedBlockId;
+        this.activeEdit = discardLivePreviewForExternalReload(
+          this.livePreviewController,
+          this.activeEdit,
+          (blockId) => {
+            var _a;
+            return (_a = this.virtualWindow) == null ? void 0 : _a.unpin(blockId);
+          }
+        );
+        this.skipNextEditingContentSync = true;
         this.lastKnownContent = newContent;
         this.editor.loadFromMarkdown(newContent, this.getCollapseStateOptions());
         await this.renderBlocks();
@@ -12415,6 +17848,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     }, 300, true);
     this.plugin = plugin;
     this.editor = new BlockEditor();
+    this.syncLivePreviewRuntime();
     this.viewId = `workflowy-view-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.zoomManager = new ZoomManager(
       this.editor,
@@ -12434,13 +17868,54 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     this.slashCommandMenu = new SlashCommandMenu(this.app, this.plugin.settings);
   }
   debugLog(...args) {
-    var _a, _b;
-    if (!((_b = (_a = this.plugin.settings) == null ? void 0 : _a.isolation) == null ? void 0 : _b.debugMode))
+    var _a, _b, _c;
+    if (!((_c = (_b = (_a = this.plugin) == null ? void 0 : _a.settings) == null ? void 0 : _b.isolation) == null ? void 0 : _c.debugMode))
       return;
     console.log(...args);
   }
+  getPerformanceProfiler() {
+    var _a, _b, _c, _d;
+    if (!((_c = (_b = (_a = this.plugin) == null ? void 0 : _a.settings) == null ? void 0 : _b.isolation) == null ? void 0 : _c.debugMode)) {
+      (_d = this.performanceProfiler) == null ? void 0 : _d.destroy();
+      this.performanceProfiler = null;
+      return null;
+    }
+    if (!this.performanceProfiler) {
+      this.performanceProfiler = new OutlinePerformanceProfiler();
+    }
+    return this.performanceProfiler;
+  }
+  syncLivePreviewRuntime() {
+    this.livePreviewController = syncLivePreviewController(
+      this.livePreviewController,
+      this.plugin.settings.editor.renderMode === "live-preview",
+      () => createViewLivePreviewController({
+        app: this.app,
+        onDocumentChange: (blockId, document2) => this.handleBlockUpdate(blockId, document2),
+        onSelectionChange: (blockId, start, end, document2) => this.handleActiveEditChange({
+          blockId,
+          selectionStart: start,
+          selectionEnd: end,
+          pendingContent: document2
+        }),
+        getActiveEdit: () => this.activeEdit,
+        getVirtualWindow: () => this.virtualWindow,
+        getFile: () => this.file,
+        getMenuView: () => this,
+        undo: () => {
+          void this.executeUndo();
+        },
+        redo: () => {
+          void this.executeRedo();
+        }
+      })
+    );
+  }
   getViewType() {
     return WORKFLOWY_VIEW_TYPE;
+  }
+  getMode() {
+    return "source";
   }
   getDisplayText() {
     var _a;
@@ -12459,6 +17934,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       this.container.addClass("animations-enabled");
     }
     this.applyUIStyles();
+    this.syncReadableLineWidth();
     const uniqueId = `workflowy-container-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.container.setAttribute("id", uniqueId);
     this.containerSelector = `#${uniqueId}`;
@@ -12477,15 +17953,9 @@ var WorkflowyView = class extends import_obsidian9.FileView {
           return;
         }
         const target = e.target;
-        const isMod = e.ctrlKey || e.metaKey;
-        const isMarkdownShortcut = isMod && (e.key === "b" || // 加粗
-        e.key === "i" || // 斜体
-        e.key === "k" || // 链接
-        e.shiftKey && e.key === "H");
         const isInLivePreviewEditor = target.classList.contains("workflowy-content-editor") || target.closest(".workflowy-content-editor");
-        if (isMarkdownShortcut && isInLivePreviewEditor) {
+        if (isInLivePreviewEditor)
           return;
-        }
         e.stopImmediatePropagation();
         let contentEl = target.closest(".workflowy-content");
         if (!contentEl && document.activeElement)
@@ -12515,6 +17985,18 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     this.registerDomEvent(document, "keydown", (e) => {
       this.handleGlobalUndoRedoFallback(e);
     }, { capture: true });
+    const vaultEvents = this.app.vault;
+    if (typeof (vaultEvents == null ? void 0 : vaultEvents.on) === "function") {
+      this.registerEvent(
+        vaultEvents.on("config-changed", (key) => {
+          if (shouldSyncReadableLineWidth(key))
+            this.syncReadableLineWidth();
+        })
+      );
+    }
+    this.registerEvent(
+      this.app.workspace.on("css-change", () => this.syncReadableLineWidth())
+    );
     this.createNavigationHeader();
     this.editorContainer = this.container.createDiv("workflowy-editor");
     this.debugLog("[WorkflowyView] Editor container created in onOpen()");
@@ -12543,10 +18025,10 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       })
     );
     this.registerEvent(
-      this.app.workspace.on("workflowy:delete-blocks", (data) => {
-        if (data.viewId === this.viewId) {
+      this.app.workspace.on("workflowy:delete-blocks", (data2) => {
+        if (data2.viewId === this.viewId) {
           this.saveAllEditingContent({ saveFile: false });
-          data.blockIds.forEach((id) => {
+          data2.blockIds.forEach((id) => {
             this.editor.deleteBlock(id);
           });
           void this.renderBlocksAndSave();
@@ -12554,23 +18036,24 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       })
     );
     this.registerEvent(
-      this.app.workspace.on("workflowy:update-block-content", (data) => {
-        if (data.viewId !== this.viewId)
+      this.app.workspace.on("workflowy:update-block-content", (data2) => {
+        if (data2.viewId !== this.viewId)
           return;
         void (async () => {
           try {
             this.saveAllEditingContent({ saveFile: false });
-            this.editor.updateBlockContent(data.blockId, data.content);
+            this.editor.updateBlockContent(data2.blockId, data2.content);
             await this.renderBlocksAndSave();
-            data.complete();
+            data2.complete();
           } catch (error) {
             console.error("[WorkflowyView] Failed to update source block content:", error);
-            data.complete(error);
+            data2.complete(error);
           }
         })();
       })
     );
     this.wheelHandler = (e) => {
+      var _a2;
       if (e.ctrlKey) {
         e.preventDefault();
         const currentSize = this.app.vault.getConfig("baseFontSize") || 16;
@@ -12582,6 +18065,8 @@ var WorkflowyView = class extends import_obsidian9.FileView {
         }
         if (newSize !== currentSize) {
           this.app.vault.setConfig("baseFontSize", newSize);
+          this.rowHeightCache.clear();
+          (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateAllRows();
         }
       }
     };
@@ -12592,10 +18077,12 @@ var WorkflowyView = class extends import_obsidian9.FileView {
         await this.loadFile(state.state.file);
       }
     }
-    this.renderBlocks();
   }
   async onClose() {
+    var _a, _b;
     this.isClosing = true;
+    this.renderRequestId++;
+    (_a = this.livePreviewController) == null ? void 0 : _a.flush();
     this.saveAllEditingContent();
     if (this.file) {
       await this.saveToFile();
@@ -12613,10 +18100,21 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       this.navigationHeader.destroy();
       this.navigationHeader = null;
     }
-    if (this.verticalLinesManager) {
-      this.verticalLinesManager.destroy();
-      this.verticalLinesManager = null;
+    if (this.virtualLinesManager) {
+      this.virtualLinesManager.destroy();
+      this.virtualLinesManager = null;
     }
+    if (this.livePreviewController) {
+      this.livePreviewController.destroy();
+      this.livePreviewController = null;
+    }
+    if (this.virtualWindow) {
+      this.virtualWindow.destroy();
+      this.virtualWindow = null;
+    }
+    this.virtualContentEl = null;
+    this.virtualLinesEl = null;
+    this.activeEdit = null;
     if (this.multiSelectionManager) {
       this.multiSelectionManager.destroy();
       this.multiSelectionManager = null;
@@ -12645,14 +18143,12 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       this.slashCommandMenu.destroy();
       this.slashCommandMenu = null;
     }
-    if (this.nodeObserver) {
-      this.nodeObserver.disconnect();
-      this.nodeObserver = null;
-    }
     this.blockElements.forEach((item) => {
       item.destroy();
     });
     this.blockElements.clear();
+    (_b = this.performanceProfiler) == null ? void 0 : _b.destroy();
+    this.performanceProfiler = null;
   }
   extractSubpathNavigationPayload(payload) {
     if (typeof payload === "string")
@@ -12758,11 +18254,17 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     }
     containerEl.style.setProperty("--workflowy-font-family", fontFamily);
   }
+  syncReadableLineWidth() {
+    syncReadableLineWidthClass(this.container, this.app);
+  }
   /**
    * 创建导航头部（面包屑+搜索框）
    */
   createNavigationHeader() {
-    this.navigationHeader = new NavigationHeader();
+    this.navigationHeader = new NavigationHeader(this.app, () => {
+      var _a;
+      return ((_a = this.file) == null ? void 0 : _a.path) || "";
+    });
     this.navigationHeader.create(this.container);
     if (this.themeManager) {
       this.navigationHeader.setThemeManager(this.themeManager);
@@ -12806,6 +18308,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     if (!this.zoomManager) {
       return;
     }
+    this.clearKeyboardZoomAnchors();
     if (blockId === null) {
       this.zoomManager.zoomOut();
     } else {
@@ -12817,40 +18320,44 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    */
   handleZoomChange(zoomedBlockId) {
     this.updateNavigationHeader();
-    this.renderBlocks();
-    if (zoomedBlockId) {
-      setTimeout(() => {
-        const item = this.blockElements.get(zoomedBlockId);
-        if (item) {
-          item.focus();
-          const element = item.getElement();
-          const contentEl = element.querySelector(".workflowy-content-editor, .workflowy-content");
-          if (contentEl) {
-            if (contentEl instanceof HTMLTextAreaElement) {
-              contentEl.setSelectionRange(contentEl.value.length, contentEl.value.length);
-            } else {
-              const selection = window.getSelection();
-              if (selection) {
-                const range = document.createRange();
-                try {
-                  if (contentEl.childNodes.length > 0) {
-                    range.selectNodeContents(contentEl);
-                    range.collapse(false);
-                  } else {
-                    range.setStart(contentEl, 0);
-                    range.setEnd(contentEl, 0);
-                  }
-                  selection.removeAllRanges();
-                  selection.addRange(range);
-                } catch (error) {
-                  console.error("[WorkflowyView] Error setting cursor to end:", error);
-                }
-              }
-            }
-          }
+    void this.renderBlocks().then(() => {
+      var _a, _b;
+      if (this.isClosing)
+        return;
+      const restoreAnchor = this.pendingKeyboardZoomRestore;
+      this.pendingKeyboardZoomRestore = null;
+      if (restoreAnchor) {
+        this.debugLog("[WorkflowyView] Restoring keyboard zoom anchor:", restoreAnchor);
+        if (this.blockElements.has(restoreAnchor.blockId) || ((_b = (_a = this.virtualWindow) == null ? void 0 : _a.getRowIndex(restoreAnchor.blockId)) != null ? _b : -1) >= 0) {
+          this.restoreCursor(restoreAnchor);
+          return;
         }
-      }, 100);
-    }
+        this.debugLog("[WorkflowyView] Keyboard zoom anchor not rendered, falling back:", {
+          zoomedBlockId,
+          anchorBlockId: restoreAnchor.blockId
+        });
+        this.focusZoomFallback(zoomedBlockId, restoreAnchor.blockId);
+        return;
+      }
+      if (zoomedBlockId) {
+        this.focusZoomTargetAtEnd(zoomedBlockId);
+      }
+    });
+  }
+  focusZoomFallback(zoomedBlockId, anchorBlockId) {
+    var _a;
+    if (zoomedBlockId && this.focusVirtualBlock(zoomedBlockId))
+      return;
+    if (this.focusVirtualBlock(anchorBlockId))
+      return;
+    const firstBlockId = (_a = this.virtualWindow) == null ? void 0 : _a.getBlockIds()[0];
+    if (firstBlockId)
+      this.focusVirtualBlock(firstBlockId);
+  }
+  focusZoomTargetAtEnd(blockId) {
+    var _a;
+    const block = findBlockById(this.editor.getState().blocks, blockId);
+    this.focusVirtualBlock(blockId, (_a = block == null ? void 0 : block.content.length) != null ? _a : 0);
   }
   async loadFile(filePath) {
     this.debugLog("[WorkflowyView] loadFile() called, filePath:", filePath);
@@ -12858,25 +18365,30 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     let file;
     if (typeof filePath === "string") {
       const abstractFile = this.app.vault.getAbstractFileByPath(filePath);
-      if (!(abstractFile instanceof import_obsidian9.TFile)) {
+      if (!(abstractFile instanceof import_obsidian12.TFile)) {
         console.error("[WorkflowyView] File not found or not a TFile:", filePath);
         return;
       }
       file = abstractFile;
-    } else if (filePath instanceof import_obsidian9.TFile) {
+    } else if (filePath instanceof import_obsidian12.TFile) {
       file = filePath;
     } else {
       console.error("[WorkflowyView] Invalid filePath type:", typeof filePath, filePath);
       return;
     }
     this.file = file;
+    const diagnosticsEnabled = this.getPerformanceProfiler() !== null;
+    const fileReadStartedAt = diagnosticsEnabled ? performance.now() : 0;
     const content = await this.app.vault.read(file);
+    const fileReadMs = diagnosticsEnabled ? performance.now() - fileReadStartedAt : 0;
     this.debugLog("[WorkflowyView] File content read, length:", content.length);
     if (this.isClosing)
       return;
+    const parseStartedAt = diagnosticsEnabled ? performance.now() : 0;
     this.editor.loadFromMarkdown(content, this.getCollapseStateOptions(), this.getThinoOptions());
+    const parseMs = diagnosticsEnabled ? performance.now() - parseStartedAt : 0;
     this.debugLog("[WorkflowyView] Content parsed, blocks count:", this.editor.getState().blocks.length);
-    await this.renderBlocks();
+    await this.renderBlocks({ fileCharacters: content.length, fileReadMs, parseMs });
     this.lastKnownContent = content;
     this.isFileLoaded = true;
     const pendingSourceCursor = this.pendingSourceCursor;
@@ -12969,191 +18481,349 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       await this.saveToFile();
     }
   }
-  async renderBlocks() {
-    var _a, _b;
-    this.debugLog("[WorkflowyView] renderBlocks() called");
-    if (this.mobileDOMPatcher) {
-      this.mobileDOMPatcher.resetSyncFlag();
-    }
-    if (!this.editorContainer || !this.editorContainer.isConnected) {
-      this.editorContainer = this.container.querySelector(".workflowy-editor");
-      if (!this.editorContainer) {
-        console.warn("[WorkflowyView] Editor container not found, creating it now");
-        const navHeader = this.container.querySelector(".workflowy-navigation-header");
-        this.editorContainer = this.container.createDiv("workflowy-editor");
-        if (navHeader && navHeader.nextSibling) {
-          this.container.insertBefore(this.editorContainer, navHeader.nextSibling);
-        }
-      }
-    }
-    const editorContainer = this.editorContainer;
-    this.debugLog("[WorkflowyView] Editor container found/created, blocks count:", this.editor.getState().blocks.length);
-    const scrollContainer = editorContainer.parentElement || this.container;
-    const savedScrollTop = scrollContainer.scrollTop;
-    const state = this.editor.getState();
-    if (this.nodeObserver) {
-      this.nodeObserver.disconnect();
-    }
-    const reusableItems = /* @__PURE__ */ new Map();
-    this.blockElements.forEach((item, blockId) => {
-      if (item.canReuseForBlock(state.blocks, blockId)) {
-        const element = item.getElement();
-        if (element && element.parentElement) {
-          reusableItems.set(blockId, { item, element });
-        }
-      }
+  renderBlocks(fileLoadMetrics) {
+    const requestId = ++this.renderRequestId;
+    const queuedRender = this.renderQueue.then(async () => {
+      if (!this.isRenderRequestActive(requestId))
+        return;
+      await this.renderBlocksNow(requestId, fileLoadMetrics);
     });
-    this.blockElements.forEach((item, blockId) => {
-      if (!reusableItems.has(blockId)) {
-        item.destroy();
-      }
+    this.renderQueue = queuedRender.catch((error) => {
+      console.error("[WorkflowyView] Failed to render outline:", error);
     });
-    const hasEditingReuse = import_obsidian9.Platform.isMobile && reusableItems.size > 0 && Array.from(reusableItems.values()).some((r) => {
-      const textarea = r.element.querySelector(".workflowy-content-editor");
-      return textarea && document.activeElement === textarea;
-    });
-    if (hasEditingReuse) {
-      const children = Array.from(editorContainer.childNodes);
-      const reusableElements = new Set(Array.from(reusableItems.values()).map((r) => r.element));
-      for (const child of children) {
-        if (!reusableElements.has(child)) {
-          child.remove();
+    return this.renderQueue;
+  }
+  isRenderRequestActive(requestId) {
+    return !this.isClosing && requestId === this.renderRequestId;
+  }
+  async renderBlocksNow(requestId, fileLoadMetrics) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    let performanceSession = null;
+    try {
+      if (!this.isRenderRequestActive(requestId))
+        return;
+      this.syncLivePreviewRuntime();
+      if (!this.editorContainer || !this.editorContainer.isConnected) {
+        this.editorContainer = this.container.querySelector(".workflowy-editor");
+        if (!this.editorContainer) {
+          const navHeader = this.container.querySelector(".workflowy-navigation-header");
+          this.editorContainer = this.container.createDiv("workflowy-editor");
+          if (navHeader == null ? void 0 : navHeader.nextSibling)
+            this.container.insertBefore(this.editorContainer, navHeader.nextSibling);
         }
       }
-    } else {
-      editorContainer.empty();
-    }
-    this.blockElements.clear();
-    const renderPromises = [];
-    if (this.zoomManager && this.zoomManager.isZoomed()) {
-      const zoomedBlockId = this.zoomManager.getZoomedBlockId();
-      if (zoomedBlockId) {
-        const allBlocks = getAllBlocks(state.blocks);
-        const zoomedBlock = allBlocks.find((b) => b.id === zoomedBlockId);
-        if (zoomedBlock) {
-          await this.renderZoomedBlock(zoomedBlock, editorContainer, false, reusableItems);
-        } else {
-          console.warn("[WorkflowyView] Zoomed block not found, exiting zoom");
-          this.zoomManager.zoomOut();
-          const promises = this.renderBlockList(state.blocks, editorContainer, false, reusableItems);
-          renderPromises.push(...promises);
-        }
-      } else {
-        const promises = this.renderBlockList(state.blocks, editorContainer, false, reusableItems);
-        renderPromises.push(...promises);
+      const state = this.editor.getState();
+      performanceSession = ((_i = this.getPerformanceProfiler()) == null ? void 0 : _i.begin({
+        filePath: ((_a = this.file) == null ? void 0 : _a.path) || "",
+        fileCharacters: (_b = fileLoadMetrics == null ? void 0 : fileLoadMetrics.fileCharacters) != null ? _b : this.lastKnownContent.length,
+        renderMode: ((_d = (_c = this.plugin.settings) == null ? void 0 : _c.editor) == null ? void 0 : _d.renderMode) || "source",
+        verticalLinesEnabled: ((_f = (_e = this.plugin.settings) == null ? void 0 : _e.ui) == null ? void 0 : _f.showVerticalLines) !== false,
+        animationsEnabled: ((_h = (_g = this.plugin.settings) == null ? void 0 : _g.ui) == null ? void 0 : _h.animationsEnabled) === true,
+        platform: import_obsidian12.Platform.isMobile ? "mobile" : "desktop",
+        document: summarizeOutlineDocument(state.blocks, (blockId) => this.editor.isCollapsed(blockId))
+      })) || null;
+      if (fileLoadMetrics) {
+        performanceSession == null ? void 0 : performanceSession.recordDuration("fileRead", fileLoadMetrics.fileReadMs);
+        performanceSession == null ? void 0 : performanceSession.recordDuration("parseMarkdown", fileLoadMetrics.parseMs);
       }
-    } else {
-      const promises = this.renderBlockList(state.blocks, editorContainer, false, reusableItems);
-      renderPromises.push(...promises);
+      const shouldSyncEditingContent = !this.skipNextEditingContentSync;
+      this.skipNextEditingContentSync = false;
+      if (shouldSyncEditingContent)
+        this.saveAllEditingContent({ saveFile: false });
+      this.ensureVirtualWindow(this.editorContainer);
+      this.rebuildRows(void 0, performanceSession);
+      if (!this.isRenderRequestActive(requestId)) {
+        performanceSession == null ? void 0 : performanceSession.finish("cancelled", { cancelReason: "superseded-or-view-closed" });
+        return;
+      }
+      this.initializeVirtualLines();
+      this.initializeMultiSelection(this.editorContainer);
+      performanceSession == null ? void 0 : performanceSession.finish("completed");
+    } catch (error) {
+      performanceSession == null ? void 0 : performanceSession.finish("failed", { error });
+      throw error;
     }
-    await Promise.all(renderPromises);
-    this.debugLog("[WorkflowyView] Async rendering completed, blockElements count:", this.blockElements.size);
-    this.debugLog("[WorkflowyView] Editor container children count:", editorContainer.children.length);
-    if (this.isClosing)
+  }
+  ensureVirtualWindow(editorContainer) {
+    var _a, _b, _c;
+    if (this.virtualWindow && ((_a = this.virtualContentEl) == null ? void 0 : _a.isConnected))
       return;
-    this.cleanupOrphanedRenderNodes(editorContainer);
-    requestAnimationFrame(() => {
-      if (scrollContainer && savedScrollTop > 0) {
-        scrollContainer.scrollTop = savedScrollTop;
+    (_b = this.virtualLinesManager) == null ? void 0 : _b.destroy();
+    this.virtualLinesManager = null;
+    (_c = this.virtualWindow) == null ? void 0 : _c.destroy();
+    this.virtualWindow = null;
+    this.blockElements.forEach((item) => item.destroy());
+    this.blockElements.clear();
+    editorContainer.empty();
+    this.virtualContentEl = editorContainer.createDiv("workflowy-virtual-content");
+    this.virtualLinesEl = this.virtualContentEl.createDiv("workflowy-vertical-lines-scroller");
+    const scrollEl = editorContainer.parentElement || this.container;
+    this.virtualWindow = new VirtualOutlineWindow(this.virtualContentEl, {
+      createItem: (row) => this.createVirtualOutlineItem(row),
+      onUnmount: (row, item, reason) => {
+        var _a2;
+        const outlineItem = item;
+        if (((_a2 = this.activeEdit) == null ? void 0 : _a2.blockId) === row.blockId)
+          this.activeEdit = null;
+        this.blockElements.delete(row.blockId);
+        outlineItem.destroy();
+      },
+      updateItem: (row, item) => this.updateVirtualOutlineItem(row, item),
+      onMounted: (row, item) => {
+        const outlineItem = item;
+        this.blockElements.set(row.blockId, outlineItem);
+        this.applyVirtualRowState(row, outlineItem);
+        void outlineItem.mountViewportRender().then(() => {
+          var _a2;
+          if (this.isClosing)
+            return;
+          this.applySearchState(row, outlineItem);
+          (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateRow(row.blockId);
+        });
+      },
+      onWindowUpdated: () => {
+        var _a2;
+        (_a2 = this.virtualLinesManager) == null ? void 0 : _a2.update();
+        this.updateSelectionDisplay();
+      },
+      getCachedHeight: (row) => {
+        var _a2;
+        return (_a2 = this.rowHeightCache.get(this.rowHeightCacheKey(row.blockId))) != null ? _a2 : null;
+      },
+      setCachedHeight: (row, height) => this.rowHeightCache.set(this.rowHeightCacheKey(row.blockId), height)
+    }, { scrollEl, marginPx: 600 });
+  }
+  rowHeightCacheKey(blockId) {
+    var _a;
+    return `${((_a = this.file) == null ? void 0 : _a.path) || ""}::${blockId}`;
+  }
+  createVirtualOutlineItem(row) {
+    var _a;
+    const item = new OutlineItem(
+      row.block,
+      this.editor,
+      (blockId, content) => this.handleBlockUpdate(blockId, content),
+      (blockId) => this.handleBlockFocus(blockId),
+      async () => await this.renderBlocksAndSave(),
+      () => this.multiSelectionManager,
+      (blockId, options) => this.handleBulletClick(blockId, options),
+      () => {
+        var _a2;
+        return ((_a2 = this.zoomManager) == null ? void 0 : _a2.getZoomedBlockId()) || null;
+      },
+      this.app,
+      ((_a = this.file) == null ? void 0 : _a.path) || "",
+      this.plugin.settings,
+      this.viewId,
+      row.orderIndex,
+      this.slashCommandMenu,
+      true,
+      true,
+      this.livePreviewController || void 0
+    );
+    item.onViewUndo = () => {
+      void this.executeUndo();
+    };
+    item.onViewRedo = () => {
+      void this.executeRedo();
+    };
+    item.onCollapseToggle = (blockId, collapsed) => {
+      var _a2;
+      this.saveAllEditingContent({ saveFile: false });
+      if (collapsed)
+        this.editor.collapse(blockId);
+      else
+        this.editor.expand(blockId);
+      this.rebuildRows(blockId);
+      if ((_a2 = this.plugin.settings.collapseState) == null ? void 0 : _a2.enabled)
+        void this.saveToFile();
+    };
+    item.onEditStateChange = (edit) => this.handleActiveEditChange(edit);
+    item.onNavigateBlock = (blockId, direction) => {
+      var _a2;
+      const navigation = (_a2 = this.virtualWindow) == null ? void 0 : _a2.getAdjacentFocusableItem(blockId, direction);
+      if (!navigation)
+        return false;
+      try {
+        navigation.item.focusAtBoundary(direction === "previous" ? "end" : "start");
+        return true;
+      } finally {
+        navigation.release();
       }
+    };
+    if (import_obsidian12.Platform.isMobile && this.mobileDOMPatcher) {
+      item.setMobilePatcher({
+        patchNewBlock: (afterBlockId, initialContent) => this.mobileDOMPatcher.patchNewBlock(afterBlockId, initialContent),
+        patchDeleteBlock: (blockId) => this.mobileDOMPatcher.patchDeleteBlock(blockId)
+      });
+    }
+    this.updateVirtualOutlineItem(row, item);
+    return item;
+  }
+  updateVirtualOutlineItem(row, item) {
+    if (!item.canSyncWithBlock(row.block))
+      return false;
+    if (item.getBlock().content !== row.block.content)
+      item.updateContent(row.block.content);
+    item.syncWithBlock(row.block);
+    item.setDisplayLevel(row.level);
+    item.updateOrderIndex(row.orderIndex);
+    this.applyVirtualRowState(row, item);
+    return true;
+  }
+  updateSelectionDisplay() {
+    var _a, _b;
+    const selected = new Set((_b = (_a = this.multiSelectionManager) == null ? void 0 : _a.getSelectedBlocks()) != null ? _b : []);
+    this.blockElements.forEach((item, blockId) => {
+      item.getElement().classList.toggle("workflowy-selected", selected.has(blockId));
     });
-    if (state.blocks.length === 0 && !((_a = this.zoomManager) == null ? void 0 : _a.isZoomed())) {
-      const emptyHint = editorContainer.createDiv("workflowy-empty-hint");
+  }
+  applyVirtualRowState(row, item) {
+    var _a;
+    const element = item.getElement();
+    element.classList.toggle("child-of-completed-todo", row.parentCompletedTodo);
+    const selected = ((_a = this.multiSelectionManager) == null ? void 0 : _a.getSelectedBlocks().includes(row.blockId)) === true;
+    element.classList.toggle("workflowy-selected", selected);
+    this.applySearchState(row, item);
+  }
+  applySearchState(row, item) {
+    const element = item.getElement();
+    const highlight = this.searchHighlight;
+    const matched = (highlight == null ? void 0 : highlight.matched.has(row.blockId)) === true;
+    element.classList.toggle("search-matched-node", matched);
+    element.classList.toggle("search-parent-node", !!this.searchVisibleBlockIds && !matched);
+    element.classList.remove("workflowy-filtered-hidden");
+    element.style.display = "";
+    const contentEl = element.querySelector(".workflowy-content-wrapper, .workflowy-content");
+    if (!contentEl)
+      return;
+    if (highlight && matched)
+      this.highlightTextInContent(contentEl, highlight.query, highlight.caseSensitive);
+    else
+      this.removeTextHighlight(contentEl);
+  }
+  handleActiveEditChange(edit) {
+    this.activeEdit = updateViewActiveEdit(this.virtualWindow, this.activeEdit, edit);
+  }
+  rebuildRows(_anchorBlockId, performanceSession) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (!this.virtualWindow)
+      return;
+    if (((_a = this.activeEdit) == null ? void 0 : _a.pendingContent) != null) {
+      this.editor.updateBlockContent(this.activeEdit.blockId, this.activeEdit.pendingContent);
+      this.activeEdit = { ...this.activeEdit, pendingContent: null };
+    }
+    performanceSession == null ? void 0 : performanceSession.startPhase("flatten");
+    const flattenStartedAt = performance.now();
+    const rows = flattenVisibleBlocks(this.editor.getState().blocks, (blockId) => this.editor.isCollapsed(blockId), {
+      zoomRootId: ((_b = this.zoomManager) == null ? void 0 : _b.getZoomedBlockId()) || null,
+      isBlockVisible: this.searchVisibleBlockIds ? (block) => this.searchVisibleBlockIds.has(block.id) : void 0
+    });
+    const flattenMs = performance.now() - flattenStartedAt;
+    performanceSession == null ? void 0 : performanceSession.endPhase("flatten");
+    performanceSession == null ? void 0 : performanceSession.startPhase("windowMount");
+    const windowStartedAt = performance.now();
+    this.virtualWindow.setRows(rows);
+    syncViewLivePreviewAfterRows(
+      this.livePreviewController,
+      this.virtualWindow,
+      this.activeEdit,
+      (item, activeEdit) => item.restoreEditState(activeEdit)
+    );
+    const windowUpdateMs = performance.now() - windowStartedAt;
+    performanceSession == null ? void 0 : performanceSession.endPhase("windowMount");
+    const measureReconcileMs = 0;
+    performanceSession == null ? void 0 : performanceSession.recordWindow({
+      domNodeCount: (_d = (_c = this.virtualContentEl) == null ? void 0 : _c.querySelectorAll("*").length) != null ? _d : 0,
+      totalRowCount: rows.length,
+      windowSize: this.virtualWindow.getMountedCount(),
+      windowUpdateMs,
+      measureReconcileMs,
+      flattenMs,
+      scrollRewindowCount: this.virtualWindow.getScrollRewindowCount()
+    });
+    (_f = (_e = this.editorContainer) == null ? void 0 : _e.querySelector(".workflowy-empty-hint")) == null ? void 0 : _f.remove();
+    if (rows.length === 0 && !((_g = this.zoomManager) == null ? void 0 : _g.isZoomed()) && !this.searchVisibleBlockIds && this.editorContainer) {
+      const emptyHint = this.editorContainer.createDiv("workflowy-empty-hint");
       emptyHint.textContent = t("ui.outline.addNodeHint");
-      emptyHint.style.cssText = `
-                padding-left: 30px;
-                color: var(--text-muted);
-                font-style: italic;
-                cursor: pointer;
-                padding-top: 8px;
-                padding-bottom: 8px;
-            `;
       emptyHint.addEventListener("click", () => {
         const newBlock = this.editor.createNewBlock();
-        this.renderBlocksAndSave();
-        setTimeout(() => {
-          const blockItem = this.blockElements.get(newBlock.id);
-          if (blockItem) {
-            blockItem.focus();
-          }
-        }, 50);
+        this.rebuildRows();
+        this.focusVirtualBlock(newBlock.id, 0);
+        void this.saveToFile();
       });
+    }
+  }
+  initializeVirtualLines() {
+    var _a, _b, _c, _d, _e, _f, _g;
+    (_a = this.virtualLinesManager) == null ? void 0 : _a.destroy();
+    this.virtualLinesManager = null;
+    if (!this.virtualWindow || !this.virtualLinesEl || ((_c = (_b = this.plugin.settings) == null ? void 0 : _b.ui) == null ? void 0 : _c.showVerticalLines) === false)
       return;
-    }
-    if ((_b = this.zoomManager) == null ? void 0 : _b.isZoomed()) {
-      const zoomedBlockId = this.zoomManager.getZoomedBlockId();
-      if (zoomedBlockId && this.blockElements.size === 0) {
-        console.warn("[WorkflowyView] Zoom block has no content, but should still be visible");
+    this.virtualLinesManager = new VirtualVerticalLinesManager(this.virtualLinesEl, this.virtualWindow, {
+      indentSize: ((_e = (_d = this.plugin.settings) == null ? void 0 : _d.ui) == null ? void 0 : _e.indentSize) || UI_CONFIG.indentSize,
+      debugMode: ((_g = (_f = this.plugin.settings) == null ? void 0 : _f.isolation) == null ? void 0 : _g.debugMode) === true,
+      onLineClick: (blockId) => {
+        var _a2;
+        if (this.editor.isCollapsed(blockId))
+          this.editor.expand(blockId);
+        else
+          this.editor.collapse(blockId);
+        this.rebuildRows(blockId);
+        if ((_a2 = this.plugin.settings.collapseState) == null ? void 0 : _a2.enabled)
+          void this.saveToFile();
       }
-    }
-    requestAnimationFrame(() => {
-      this.initializeVerticalLines(editorContainer);
-      this.initializeMultiSelection(editorContainer);
     });
+    this.virtualLinesManager.update();
   }
-  cleanupOrphanedRenderNodes(editorContainer) {
-    const liveElements = new Set(
-      Array.from(this.blockElements.values()).map((item) => item.getElement())
-    );
-    editorContainer.querySelectorAll(".workflowy-item").forEach((node) => {
-      const element = node;
-      if (!liveElements.has(element)) {
-        element.remove();
-      }
-    });
-    editorContainer.querySelectorAll(".workflowy-children").forEach((node) => {
-      const childContainer = node;
-      if (!childContainer.querySelector(".workflowy-item")) {
-        childContainer.remove();
-      }
-    });
+  focusVirtualBlock(blockId, cursorOffset) {
+    if (!this.virtualWindow)
+      return false;
+    const rowIndex = this.virtualWindow.getRowIndex(blockId);
+    if (rowIndex < 0)
+      return false;
+    this.virtualWindow.pin(blockId);
+    this.virtualWindow.scrollToRow(rowIndex, "nearest");
+    const item = this.virtualWindow.getMountedItem(blockId);
+    if (!item)
+      return false;
+    item.focus();
+    if (cursorOffset !== void 0)
+      this.restoreCursorOffset(item, cursorOffset, 0);
+    return true;
   }
-  /**
-   * 初始化垂直线管理器
-   */
-  initializeVerticalLines(editorContainer) {
-    var _a, _b, _c, _d;
-    if (this.verticalLinesManager) {
-      this.verticalLinesManager.destroy();
-      this.verticalLinesManager = null;
-    }
-    if (((_b = (_a = this.plugin.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.showVerticalLines) === false) {
-      return;
-    }
-    const indentSize = (_d = (_c = this.plugin.settings) == null ? void 0 : _c.ui) == null ? void 0 : _d.indentSize;
-    this.verticalLinesManager = new VerticalLinesManager(
-      editorContainer,
-      this.editor,
-      (blockId) => this.handleVerticalLineClick(blockId),
-      indentSize
-    );
-    requestAnimationFrame(() => {
-      if (this.verticalLinesManager) {
-        this.verticalLinesManager.update();
-      }
-    });
-  }
-  /**
-   * 初始化多选管理器
-   */
   initializeMultiSelection(editorContainer) {
     let previousSelection = [];
     if (this.multiSelectionManager) {
       previousSelection = this.multiSelectionManager.getSelectedBlocks();
       this.multiSelectionManager.destroy();
     }
-    this.multiSelectionManager = new MultiSelectionManager(
+    const manager = new MultiSelectionManager(
       editorContainer,
       this.editor,
       (selectedIds) => this.handleSelectionChange(selectedIds),
-      () => this.renderBlocksAndSave()
-      // 渲染并保存（多选拖拽等操作）
+      () => this.renderBlocksAndSave(),
+      {
+        virtualSource: {
+          getVerticalDragRange: (startBlockId, clientY) => {
+            if (!this.virtualWindow)
+              return null;
+            const orderedBlockIds = this.virtualWindow.getBlockIds();
+            return {
+              orderedBlockIds,
+              startIndex: this.virtualWindow.getRowIndex(startBlockId),
+              currentIndex: this.virtualWindow.getRowIndexAtClientY(clientY)
+            };
+          }
+        }
+      }
     );
+    this.multiSelectionManager = manager;
     if (previousSelection.length > 0) {
       requestAnimationFrame(() => {
-        if (this.multiSelectionManager) {
-          this.multiSelectionManager.setSelectedBlocks(previousSelection);
-        }
+        if (this.multiSelectionManager !== manager)
+          return;
+        manager.setSelectedBlocks(previousSelection);
       });
     }
   }
@@ -13166,19 +18836,12 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 处理垂直线点击事件
    * 注意：垂直线管理器已经处理了折叠逻辑，这里只需要更新视图
    */
-  handleVerticalLineClick(blockId) {
-    this.renderBlocks();
-    setTimeout(() => {
-      const item = this.blockElements.get(blockId);
-      if (item) {
-        item.focus();
-      }
-    }, 100);
-  }
-  /**
-   * 处理bullet点击事件（缩放功能）
-   */
-  handleBulletClick(blockId) {
+  handleBulletClick(blockId, options) {
+    if ((options == null ? void 0 : options.source) === "keyboard") {
+      this.prepareKeyboardZoomRestore(options);
+    } else {
+      this.clearKeyboardZoomAnchors();
+    }
     this.editor.focusBlock(blockId);
     this.lastFocusedBlockId = blockId;
     if (!this.zoomManager) {
@@ -13190,190 +18853,52 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       this.zoomManager.zoomIn(blockId);
     }
   }
+  prepareKeyboardZoomRestore(options) {
+    if (!this.zoomManager)
+      return;
+    if (options.direction === "in" && options.cursorState) {
+      this.keyboardZoomAnchorStack.push(options.cursorState);
+      this.pendingKeyboardZoomRestore = options.cursorState;
+      this.debugLog("[WorkflowyView] Pushed keyboard zoom anchor:", options.cursorState);
+      return;
+    }
+    if (options.direction === "out") {
+      const zoomedBlockId = this.zoomManager.getZoomedBlockId();
+      if (zoomedBlockId) {
+        this.pendingKeyboardZoomRestore = this.popKeyboardZoomAnchor(zoomedBlockId);
+        this.debugLog("[WorkflowyView] Popped keyboard zoom anchor:", this.pendingKeyboardZoomRestore);
+      }
+    }
+  }
+  popKeyboardZoomAnchor(blockId) {
+    for (let i = this.keyboardZoomAnchorStack.length - 1; i >= 0; i--) {
+      if (this.keyboardZoomAnchorStack[i].blockId === blockId) {
+        const [anchor] = this.keyboardZoomAnchorStack.splice(i, this.keyboardZoomAnchorStack.length - i);
+        return anchor;
+      }
+    }
+    return {
+      blockId,
+      offset: 0,
+      selectionLength: 0
+    };
+  }
+  clearKeyboardZoomAnchors() {
+    this.keyboardZoomAnchorStack = [];
+    this.pendingKeyboardZoomRestore = null;
+  }
   /**
    * 渲染块列表
    * 方案 E：支持复用包含异步嵌入的 OutlineItem，避免闪烁
    */
-  renderBlockList(blocks, container, parentCompletedTodo = false, reusableItems) {
-    var _a;
-    const renderPromises = [];
-    const useFragment = !import_obsidian9.Platform.isMobile;
-    const target = useFragment ? document.createDocumentFragment() : container;
-    let orderedListCounter = 0;
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      let orderIndex = 1;
-      if (block.isOrderedList) {
-        orderedListCounter++;
-        orderIndex = orderedListCounter;
-      } else {
-        orderedListCounter = 0;
-      }
-      try {
-        let blockItem;
-        let element;
-        const reusable = reusableItems == null ? void 0 : reusableItems.get(block.id);
-        if (reusable) {
-          blockItem = reusable.item;
-          element = reusable.element;
-          blockItem.syncWithBlock(block);
-          blockItem.updateLevel(block.level);
-          if (block.isOrderedList) {
-            blockItem.updateOrderIndex(orderIndex);
-          }
-          reusableItems.delete(block.id);
-        } else {
-          blockItem = new OutlineItem(
-            block,
-            this.editor,
-            (blockId, content) => this.handleBlockUpdate(blockId, content),
-            (blockId) => this.handleBlockFocus(blockId),
-            async () => await this.renderBlocksAndSave(),
-            // 重新渲染并保存（异步）
-            () => this.multiSelectionManager,
-            // 多选管理器获取函数
-            (blockId) => this.handleBulletClick(blockId),
-            // bullet点击回调（用于zoom）
-            () => {
-              var _a2;
-              return ((_a2 = this.zoomManager) == null ? void 0 : _a2.getZoomedBlockId()) || null;
-            },
-            // 获取当前zoom的块ID
-            this.app,
-            // Obsidian App 实例
-            ((_a = this.file) == null ? void 0 : _a.path) || "",
-            // 文件路径
-            this.plugin.settings,
-            // 插件设置
-            this.viewId,
-            // 视图唯一ID（用于跨文档拖拽）
-            orderIndex,
-            // 有序列表序号
-            this.slashCommandMenu,
-            // Slash Command Menu
-            true
-            // 阶段3a：主视图启用非列表块懒渲染
-          );
-          const renderPromise = blockItem.waitForRender();
-          if (renderPromise) {
-            renderPromises.push(renderPromise);
-          }
-          if (import_obsidian9.Platform.isMobile && this.mobileDOMPatcher) {
-            blockItem.setMobilePatcher({
-              patchNewBlock: (afterBlockId, initialContent) => this.mobileDOMPatcher.patchNewBlock(afterBlockId, initialContent),
-              patchDeleteBlock: (blockId) => this.mobileDOMPatcher.patchDeleteBlock(blockId)
-            });
-          }
-          blockItem.onViewUndo = () => this.executeUndo();
-          blockItem.onViewRedo = () => this.executeRedo();
-          blockItem.onCollapseToggle = (blockId, collapsed) => {
-            var _a2;
-            this.saveAllEditingContent({ saveFile: false });
-            if (collapsed) {
-              this.editor.collapse(blockId);
-            } else {
-              this.editor.expand(blockId);
-            }
-            this.patchCollapse(blockId, collapsed);
-            if ((_a2 = this.plugin.settings.collapseState) == null ? void 0 : _a2.enabled) {
-              void this.saveToFile();
-            }
-          };
-          element = blockItem.getElement();
-        }
-        if (parentCompletedTodo) {
-          element.classList.add("child-of-completed-todo");
-        } else {
-          element.classList.remove("child-of-completed-todo");
-        }
-        target.appendChild(element);
-        this.blockElements.set(block.id, blockItem);
-        if (blockItem.needsHeavyRender()) {
-          requestAnimationFrame(() => {
-            if (element.isConnected) {
-              this.observeForHeavyRender(element);
-            }
-          });
-        }
-        if (reusable && import_obsidian9.Platform.isMobile) {
-          const textarea = element.querySelector(".workflowy-content-editor");
-          if (textarea && textarea !== document.activeElement) {
-            textarea.focus();
-          }
-        }
-        if (block.children.length > 0 && !this.editor.isCollapsed(block.id)) {
-          const childContainer = document.createElement("div");
-          childContainer.className = "workflowy-children";
-          target.appendChild(childContainer);
-          const isCompletedTodo = block.isTodo && block.todoCompleted;
-          const childPromises = this.renderBlockList(block.children, childContainer, isCompletedTodo || parentCompletedTodo, reusableItems);
-          renderPromises.push(...childPromises);
-        }
-      } catch (error) {
-        console.error("[WorkflowyView] Error rendering block:", error);
-        console.error("[WorkflowyView] Block data:", block);
-      }
-    }
-    if (useFragment) {
-      container.appendChild(target);
-    }
-    return renderPromises;
-  }
-  /**
-   * 阶段3a：确保懒渲染 observer 存在（首次使用时惰性创建）。
-   * 配置对齐 Daily Notes 的 createSectionObserver：滚动容器为 root，rootMargin 600px 预加载缓冲。
-   */
-  ensureNodeObserver() {
-    var _a;
-    if (this.nodeObserver)
-      return this.nodeObserver;
-    if (typeof IntersectionObserver === "undefined")
-      return null;
-    const root = ((_a = this.editorContainer) == null ? void 0 : _a.parentElement) || this.container;
-    this.nodeObserver = new IntersectionObserver((entries) => {
-      var _a2;
-      for (const entry of entries) {
-        if (!entry.isIntersecting)
-          continue;
-        const el = entry.target;
-        const blockId = el.getAttribute("data-block-id");
-        (_a2 = this.nodeObserver) == null ? void 0 : _a2.unobserve(el);
-        if (!blockId)
-          continue;
-        const item = this.blockElements.get(blockId);
-        if (item) {
-          void item.mountHeavyRender().then(() => {
-            if (!this.isClosing)
-              this.refreshDerivedStateAfterPatch();
-          });
-        }
-      }
-    }, { root, rootMargin: "600px 0px" });
-    return this.nodeObserver;
-  }
-  /**
-   * 阶段3a：注册一个非列表块元素，进入视口附近时触发真正的 markdown 渲染。
-   */
-  observeForHeavyRender(element) {
-    const observer = this.ensureNodeObserver();
-    if (!observer) {
-      const blockId = element.getAttribute("data-block-id");
-      const item = blockId ? this.blockElements.get(blockId) : null;
-      if (item)
-        void item.mountHeavyRender();
-      return;
-    }
-    observer.observe(element);
-  }
   handleBlockUpdate(blockId, content) {
+    var _a;
     this.editor.updateBlockContent(blockId, content);
-    if (this.verticalLinesManager) {
-      requestAnimationFrame(() => {
-        if (this.verticalLinesManager) {
-          this.verticalLinesManager.update();
-        }
-      });
-    }
+    (_a = this.virtualWindow) == null ? void 0 : _a.invalidateRow(blockId);
+    requestAnimationFrame(() => {
+      var _a2;
+      return (_a2 = this.virtualLinesManager) == null ? void 0 : _a2.update();
+    });
     if (this.file) {
       this.saveToFile();
     }
@@ -13383,117 +18908,6 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 缩放后的块显示为第一级（level 0），子块相应调整级别
    * 方案 E：支持复用包含异步嵌入的 OutlineItem
    */
-  async renderZoomedBlock(block, container, parentCompletedTodo = false, reusableItems) {
-    var _a;
-    try {
-      const zoomedBlockCopy = {
-        ...block,
-        level: 0
-      };
-      let blockItem;
-      let element;
-      const reusable = reusableItems == null ? void 0 : reusableItems.get(block.id);
-      if (reusable) {
-        blockItem = reusable.item;
-        element = reusable.element;
-        blockItem.syncWithBlock(zoomedBlockCopy);
-        blockItem.updateLevel(0);
-        reusableItems.delete(block.id);
-      } else {
-        blockItem = new OutlineItem(
-          zoomedBlockCopy,
-          this.editor,
-          (blockId, content) => this.handleBlockUpdate(blockId, content),
-          (blockId) => this.handleBlockFocus(blockId),
-          async () => await this.renderBlocksAndSave(),
-          // 重新渲染并保存
-          () => this.multiSelectionManager,
-          (blockId) => this.handleBulletClick(blockId),
-          () => {
-            var _a2;
-            return ((_a2 = this.zoomManager) == null ? void 0 : _a2.getZoomedBlockId()) || null;
-          },
-          // 获取当前zoom的块ID
-          this.app,
-          // Obsidian App 实例
-          ((_a = this.file) == null ? void 0 : _a.path) || "",
-          // 文件路径
-          this.plugin.settings,
-          // 插件设置
-          this.viewId,
-          // 视图唯一ID（用于跨文档拖拽）
-          1,
-          // orderIndex
-          this.slashCommandMenu
-          // Slash Command Menu
-        );
-        element = blockItem.getElement();
-        blockItem.onViewUndo = () => this.executeUndo();
-        blockItem.onViewRedo = () => this.executeRedo();
-        if (import_obsidian9.Platform.isMobile && this.mobileDOMPatcher) {
-          blockItem.setMobilePatcher({
-            patchNewBlock: (afterBlockId, initialContent) => this.mobileDOMPatcher.patchNewBlock(afterBlockId, initialContent),
-            patchDeleteBlock: (blockId) => this.mobileDOMPatcher.patchDeleteBlock(blockId)
-          });
-        }
-      }
-      if (parentCompletedTodo) {
-        element.classList.add("child-of-completed-todo");
-      } else {
-        element.classList.remove("child-of-completed-todo");
-      }
-      container.appendChild(element);
-      this.blockElements.set(block.id, blockItem);
-      if (reusable && import_obsidian9.Platform.isMobile) {
-        const textarea = element.querySelector(".workflowy-content-editor");
-        if (textarea && textarea !== document.activeElement) {
-          textarea.focus();
-        }
-      }
-      if (block.children.length > 0 && !this.editor.isCollapsed(block.id)) {
-        const childContainer = container.createDiv("workflowy-children");
-        const isCompletedTodo = block.isTodo && block.todoCompleted;
-        const adjustedChildren = this.adjustChildrenLevel(block.children, block.level);
-        const childPromises = this.renderBlockList(adjustedChildren, childContainer, isCompletedTodo || parentCompletedTodo, reusableItems);
-        await Promise.all(childPromises);
-      } else {
-        if (block.children.length === 0) {
-          const emptyHint = container.createDiv("workflowy-empty-hint");
-          emptyHint.textContent = t("ui.outline.addNodeHint");
-          emptyHint.style.cssText = `
-                        padding-left: 60px;
-                        color: var(--text-muted);
-                        font-style: italic;
-                        cursor: pointer;
-                        padding-top: 8px;
-                        padding-bottom: 8px;
-                    `;
-          emptyHint.addEventListener("click", () => {
-            const newBlock = this.editor.createChildBlock(block.id);
-            this.renderBlocksAndSave();
-            setTimeout(() => {
-              const blockItem2 = this.blockElements.get(newBlock.id);
-              if (blockItem2) {
-                blockItem2.focus();
-              }
-            }, 50);
-          });
-        }
-      }
-    } catch (error) {
-      console.error("[WorkflowyView] Error rendering zoomed block:", error);
-    }
-  }
-  /**
-   * 调整子块的level，使其相对于缩放块的原始level
-   */
-  adjustChildrenLevel(children, baseLevel) {
-    return children.map((child) => ({
-      ...child,
-      level: child.level - baseLevel,
-      children: this.adjustChildrenLevel(child.children, baseLevel)
-    }));
-  }
   handleBlockFocus(blockId) {
     this.editor.focusBlock(blockId);
     this.lastFocusedBlockId = blockId;
@@ -13508,7 +18922,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
   }
   // --- Undo/Redo View Layer (Req 7.3) ---
   async executeUndo() {
-    var _a;
+    var _a, _b;
     this.saveAllEditingContent({ saveFile: false });
     const blocksBefore = this.editor.getState().blocks;
     if (!this.editor.undo())
@@ -13533,8 +18947,13 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       this.restoreCursor(cursorState, blocksAfter, blocksBefore);
       return true;
     }
-    if (import_obsidian9.Platform.isMobile && this.mobileDOMPatcher) {
+    if (import_obsidian12.Platform.isMobile && this.mobileDOMPatcher) {
       if (this.mobileDOMPatcher.patchUndoRedo(blocksAfter)) {
+        this.rebuildRows(cursorState == null ? void 0 : cursorState.blockId);
+        (_b = this.virtualWindow) == null ? void 0 : _b.forEachMounted((blockId) => {
+          var _a2;
+          return (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateRow(blockId);
+        });
         this.restoreCursor(cursorState, blocksAfter, blocksBefore);
         return true;
       }
@@ -13544,7 +18963,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     return true;
   }
   async executeRedo() {
-    var _a;
+    var _a, _b;
     this.saveAllEditingContent({ saveFile: false });
     const blocksBefore = this.editor.getState().blocks;
     if (!this.editor.redo())
@@ -13569,8 +18988,13 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       this.restoreCursor(cursorState, blocksAfter, blocksBefore);
       return true;
     }
-    if (import_obsidian9.Platform.isMobile && this.mobileDOMPatcher) {
+    if (import_obsidian12.Platform.isMobile && this.mobileDOMPatcher) {
       if (this.mobileDOMPatcher.patchUndoRedo(blocksAfter)) {
+        this.rebuildRows(cursorState == null ? void 0 : cursorState.blockId);
+        (_b = this.virtualWindow) == null ? void 0 : _b.forEachMounted((blockId) => {
+          var _a2;
+          return (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateRow(blockId);
+        });
         this.restoreCursor(cursorState, blocksAfter, blocksBefore);
         return true;
       }
@@ -13583,36 +19007,35 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * Restore cursor to the given state with degradation (Req 3.4)
    */
   restoreCursor(cursorState, currentBlocks, fallbackReferenceBlocks) {
+    var _a, _b;
     if (!cursorState)
       return;
-    const item = this.blockElements.get(cursorState.blockId);
-    if (item) {
-      item.focus();
+    this.expandAncestors(cursorState.blockId);
+    this.rebuildRows(cursorState.blockId);
+    if (!this.focusVirtualBlock(cursorState.blockId)) {
+      const firstBlockId = (_a = this.virtualWindow) == null ? void 0 : _a.getBlockIds()[0];
+      if (firstBlockId)
+        this.focusVirtualBlock(firstBlockId);
+      return;
+    }
+    const item = (_b = this.virtualWindow) == null ? void 0 : _b.getMountedItem(cursorState.blockId);
+    if (item)
       this.restoreCursorOffset(item, cursorState.offset, cursorState.selectionLength);
-      return;
-    }
-    const directItem = this.blockElements.get(cursorState.blockId);
-    if (directItem) {
-      directItem.focus();
-      return;
-    }
-    const first = this.blockElements.values().next().value;
-    if (first)
-      first.focus();
   }
-  /**
-   * Restore cursor offset via Selection/Range API (Req 3.2)
-   */
   restoreCursorOffset(item, offset, selectionLength) {
+    var _a, _b;
     try {
+      const activeEdit = (_a = this.livePreviewController) == null ? void 0 : _a.getActiveEdit();
+      if ((activeEdit == null ? void 0 : activeEdit.blockId) === item.getBlock().id) {
+        const start = Math.max(0, Math.min(offset, activeEdit.document.length));
+        const end = Math.max(start, Math.min(start + selectionLength, activeEdit.document.length));
+        (_b = this.livePreviewController) == null ? void 0 : _b.setSelection({ ranges: [{ anchor: start, head: end }], mainIndex: 0 });
+        return;
+      }
       const element = item.getElement();
       const contentEl = element.querySelector(".workflowy-content, .workflowy-content-editor");
       if (!contentEl)
         return;
-      if (contentEl instanceof HTMLTextAreaElement) {
-        contentEl.setSelectionRange(offset, offset + selectionLength);
-        return;
-      }
       const selection = window.getSelection();
       if (!selection)
         return;
@@ -13677,10 +19100,13 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * Apply content-only patch to DOM without re-render (Req 4.1.1)
    */
   applyContentOnlyPatch(diff) {
+    var _a;
     const item = this.blockElements.get(diff.blockId);
     if (item) {
       item.updateContent(diff.newContent);
     }
+    this.rebuildRows(diff.blockId);
+    (_a = this.virtualWindow) == null ? void 0 : _a.invalidateRow(diff.blockId);
   }
   collapseAll() {
     const allBlocks = getAllBlocks(this.editor.getState().blocks);
@@ -13733,72 +19159,21 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 高亮搜索模式：高亮匹配的节点，显示所有内容
    */
   handleHighlightSearch(query, caseSensitive) {
-    const allBlocks = getAllBlocks(this.editor.getState().blocks);
-    const matchingBlocks = this.findMatchingBlocks(allBlocks, query, caseSensitive);
-    this.blockElements.forEach((item) => {
-      const element = item.getElement();
-      element.classList.remove("workflowy-filtered-hidden");
-      element.classList.remove("search-matched-node");
-      element.classList.remove("search-parent-node");
-      element.style.display = "";
-    });
-    this.blockElements.forEach((item, blockId) => {
-      const contentEl = item.getElement().querySelector(".workflowy-content-wrapper, .workflowy-content");
-      if (!contentEl)
-        return;
-      if (matchingBlocks.has(blockId)) {
-        this.highlightTextInContent(contentEl, query, caseSensitive);
-      } else {
-        this.removeTextHighlight(contentEl);
-      }
-    });
+    const matchingBlocks = this.findMatchingBlocks(getAllBlocks(this.editor.getState().blocks), query, caseSensitive);
+    this.searchVisibleBlockIds = null;
+    this.searchHighlight = { query, caseSensitive, matched: matchingBlocks };
+    this.rebuildRows();
   }
-  /**
-   * 过滤搜索模式：只显示匹配的节点及其父节点
-   */
   handleFilterSearch(query, caseSensitive, autoExpand) {
     const allBlocks = getAllBlocks(this.editor.getState().blocks);
     const matchingBlocks = this.findMatchingBlocks(allBlocks, query, caseSensitive);
     const visibleBlocks = this.collectVisibleBlocks(allBlocks, matchingBlocks);
-    if (autoExpand) {
+    if (autoExpand)
       this.expandMatchedBlocks(matchingBlocks);
-    }
-    this.blockElements.forEach((item, blockId) => {
-      const element = item.getElement();
-      const contentEl = element.querySelector(".workflowy-content-wrapper, .workflowy-content");
-      const collapseEl = element.querySelector(".workflowy-collapse");
-      const collapsePlaceholder = element.querySelector(".workflowy-collapse-placeholder");
-      const hasChildren = !!(collapseEl || collapsePlaceholder);
-      if (visibleBlocks.has(blockId)) {
-        element.classList.remove("workflowy-filtered-hidden");
-        element.style.display = "";
-        if (matchingBlocks.has(blockId)) {
-          element.classList.add("search-matched-node");
-          element.classList.remove("search-parent-node");
-          if (contentEl) {
-            this.highlightTextInContent(contentEl, query, caseSensitive);
-          }
-        } else {
-          element.classList.remove("search-matched-node");
-          element.classList.add("search-parent-node");
-          if (contentEl) {
-            this.removeTextHighlight(contentEl);
-          }
-        }
-      } else {
-        element.classList.add("workflowy-filtered-hidden");
-        element.style.display = "none";
-        element.classList.remove("search-matched-node");
-        element.classList.remove("search-parent-node");
-        if (contentEl) {
-          this.removeTextHighlight(contentEl);
-        }
-      }
-    });
+    this.searchVisibleBlockIds = visibleBlocks;
+    this.searchHighlight = { query, caseSensitive, matched: matchingBlocks };
+    this.rebuildRows();
   }
-  /**
-   * 查找匹配的节点
-   */
   findMatchingBlocks(blocks, query, caseSensitive) {
     const matchingIds = /* @__PURE__ */ new Set();
     const searchQuery = caseSensitive ? query : query.toLowerCase();
@@ -13959,25 +19334,9 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 清除搜索状态
    */
   clearSearch() {
-    this.blockElements.forEach((item) => {
-      const element = item.getElement();
-      const contentEl = element.querySelector(".workflowy-content-wrapper, .workflowy-content");
-      element.classList.remove("search-match");
-      element.classList.remove("search-matched-node");
-      element.classList.remove("search-parent-node");
-      element.classList.remove("workflowy-filtered-hidden");
-      element.style.display = "";
-      if (contentEl) {
-        this.removeTextHighlight(contentEl);
-      }
-    });
-    if (this.verticalLinesManager) {
-      setTimeout(() => {
-        if (this.verticalLinesManager) {
-          this.verticalLinesManager.update();
-        }
-      }, 50);
-    }
+    this.searchVisibleBlockIds = null;
+    this.searchHighlight = null;
+    this.rebuildRows();
   }
   // 公共方法供插件调用
   async openFile(file) {
@@ -14002,11 +19361,16 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     this.debugLog("[WorkflowyView] Editor container exists:", !!((_a = this.container) == null ? void 0 : _a.querySelector(".workflowy-editor")));
     this.isFileLoaded = false;
     this.file = file;
+    const diagnosticsEnabled = this.getPerformanceProfiler() !== null;
+    const fileReadStartedAt = diagnosticsEnabled ? performance.now() : 0;
     const content = await this.app.vault.read(file);
+    const fileReadMs = diagnosticsEnabled ? performance.now() - fileReadStartedAt : 0;
     this.lastKnownContent = content;
+    const parseStartedAt = diagnosticsEnabled ? performance.now() : 0;
     this.editor.loadFromMarkdown(content, this.getCollapseStateOptions(), this.getThinoOptions());
+    const parseMs = diagnosticsEnabled ? performance.now() - parseStartedAt : 0;
     this.debugLog("[WorkflowyView] Content loaded, blocks count:", this.editor.getState().blocks.length);
-    await this.renderBlocks();
+    await this.renderBlocks({ fileCharacters: content.length, fileReadMs, parseMs });
     this.debugLog("[WorkflowyView] renderBlocks() completed");
     this.isFileLoaded = true;
     this.updateNavigationHeader();
@@ -14036,60 +19400,51 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 在 DOM 中查找标题元素并滚动高亮
    */
   scrollToHeadingInDOM(heading) {
-    const editorContainer = this.editorContainer;
-    if (!editorContainer)
-      return;
-    const headings = editorContainer.querySelectorAll("h1, h2, h3, h4, h5, h6");
-    let targetElement = null;
-    for (let i = 0; i < headings.length; i++) {
-      const h = headings[i];
-      const text = (h.textContent || "").trim();
-      if (text.toLowerCase() === heading.toLowerCase()) {
-        targetElement = h;
+    const target = getAllBlocks(this.editor.getState().blocks).find((block) => {
+      const cleanContent = block.content.trim().replace(/^#+\s*/, "").trim();
+      return cleanContent.toLowerCase() === heading.toLowerCase();
+    });
+    if (target)
+      void this.scrollToBlockAndHighlight(target.id);
+  }
+  expandAncestors(blockId) {
+    const allBlocks = getAllBlocks(this.editor.getState().blocks);
+    let current = allBlocks.find((block) => block.id === blockId) || null;
+    while (current) {
+      const parent = this.findParentBlock(current, allBlocks);
+      if (!parent)
         break;
-      }
-    }
-    if (targetElement) {
-      targetElement.scrollIntoView({ behavior: "smooth", block: "center" });
-      targetElement.classList.add("is-flashing");
-      setTimeout(() => {
-        targetElement.classList.remove("is-flashing");
-      }, 2e3);
-    } else {
-      const allBlocks = getAllBlocks(this.editor.getState().blocks);
-      const targetBlock = allBlocks.find((block) => {
-        const content = block.content.trim();
-        const cleanContent = content.replace(/^#+\s*/, "").trim();
-        return cleanContent.toLowerCase() === heading.toLowerCase();
-      }) || null;
-      if (targetBlock) {
-        void this.scrollToBlockAndHighlight(targetBlock.id);
-      }
+      this.editor.expand(parent.id);
+      current = parent;
     }
   }
-  /**
-   * 滚动到指定块并高亮显示
-   */
   async scrollToBlockAndHighlight(blockId) {
     var _a;
-    const item = this.blockElements.get(blockId);
+    const zoomedBlockId = (_a = this.zoomManager) == null ? void 0 : _a.getZoomedBlockId();
+    if (zoomedBlockId && !this.isBlockInZoomScope(blockId, zoomedBlockId)) {
+      this.zoomManager.zoomOut();
+      await this.renderBlocks();
+    }
+    this.expandAncestors(blockId);
+    if (this.searchVisibleBlockIds && !this.searchVisibleBlockIds.has(blockId)) {
+      this.searchVisibleBlockIds.add(blockId);
+    }
+    this.rebuildRows(blockId);
+    if (!this.virtualWindow)
+      return;
+    const rowIndex = this.virtualWindow.getRowIndex(blockId);
+    if (rowIndex < 0)
+      return;
+    this.virtualWindow.scrollToRow(rowIndex, "center");
+    const item = this.virtualWindow.getMountedItem(blockId);
     if (!item)
       return;
-    if (item.needsHeavyRender()) {
-      (_a = this.nodeObserver) == null ? void 0 : _a.unobserve(item.getElement());
+    if (item.needsHeavyRender())
       await item.mountHeavyRender();
-    }
-    const element = item.getElement();
-    if (!element)
-      return;
-    element.scrollIntoView({ behavior: "smooth", block: "center" });
-    const contentEl = element.querySelector(".workflowy-content-display, .workflowy-content");
-    if (contentEl) {
-      contentEl.classList.add("is-flashing");
-      setTimeout(() => {
-        contentEl.classList.remove("is-flashing");
-      }, 2e3);
-    }
+    const contentEl = item.getElement().querySelector(".workflowy-content-display, .workflowy-content");
+    contentEl == null ? void 0 : contentEl.classList.add("is-flashing");
+    if (contentEl)
+      setTimeout(() => contentEl.classList.remove("is-flashing"), 2e3);
     item.focus();
   }
   /**
@@ -14109,213 +19464,40 @@ var WorkflowyView = class extends import_obsidian9.FileView {
   }
   // 编辑器命令 - 供快捷键调用
   getFocusedBlockId() {
-    return this.editor.getState().focusedBlockId;
+    var _a, _b;
+    const focusedId = this.editor.getState().focusedBlockId;
+    return focusedId && ((_b = (_a = this.virtualWindow) == null ? void 0 : _a.getRowIndex(focusedId)) != null ? _b : -1) >= 0 ? focusedId : null;
+  }
+  executeFocusedVirtualOperation(operation) {
+    this.saveAllEditingContent({ saveFile: false });
+    const focusedId = this.getFocusedBlockId();
+    if (!focusedId)
+      return false;
+    if (!operation(focusedId))
+      return false;
+    this.rebuildRows(focusedId);
+    this.focusVirtualBlock(focusedId);
+    void this.saveToFile();
+    return true;
   }
   executeIndent() {
-    this.saveAllEditingContent({ saveFile: false });
-    const focusedId = this.getFocusedBlockId();
-    if (!focusedId)
-      return false;
-    if (this.editor.indentBlock(focusedId)) {
-      this.renderBlocksAndSave();
-      setTimeout(() => {
-        const item = this.blockElements.get(focusedId);
-        item == null ? void 0 : item.focus();
-      }, 10);
-      return true;
-    }
-    return false;
+    return this.executeFocusedVirtualOperation((blockId) => this.editor.indentBlock(blockId));
   }
   executeOutdent() {
-    this.saveAllEditingContent({ saveFile: false });
-    const focusedId = this.getFocusedBlockId();
-    if (!focusedId)
-      return false;
-    if (this.editor.outdentBlock(focusedId)) {
-      this.renderBlocksAndSave();
-      setTimeout(() => {
-        const item = this.blockElements.get(focusedId);
-        item == null ? void 0 : item.focus();
-      }, 10);
-      return true;
-    }
-    return false;
-  }
-  executeMoveUp() {
-    this.saveAllEditingContent({ saveFile: false });
-    const focusedId = this.getFocusedBlockId();
-    if (!focusedId)
-      return false;
-    if (this.editor.moveBlockUp(focusedId)) {
-      this.renderBlocksAndSave();
-      setTimeout(() => {
-        const item = this.blockElements.get(focusedId);
-        item == null ? void 0 : item.focus();
-      }, 10);
-      return true;
-    }
-    return false;
-  }
-  executeMoveDown() {
-    this.saveAllEditingContent({ saveFile: false });
-    const focusedId = this.getFocusedBlockId();
-    if (!focusedId)
-      return false;
-    if (this.editor.moveBlockDown(focusedId)) {
-      this.renderBlocksAndSave();
-      setTimeout(() => {
-        const item = this.blockElements.get(focusedId);
-        item == null ? void 0 : item.focus();
-      }, 10);
-      return true;
-    }
-    return false;
-  }
-  executeToggleCollapse() {
-    var _a;
-    const focusedId = this.getFocusedBlockId();
-    if (!focusedId)
-      return false;
-    this.saveAllEditingContent({ saveFile: false });
-    if (this.editor.toggleCollapse(focusedId)) {
-      this.patchCollapse(focusedId, this.editor.isCollapsed(focusedId));
-      if ((_a = this.plugin.settings.collapseState) == null ? void 0 : _a.enabled) {
-        void this.saveToFile();
-      }
-      setTimeout(() => {
-        const item = this.blockElements.get(focusedId);
-        item == null ? void 0 : item.focus();
-      }, 10);
-      return true;
-    }
-    return false;
-  }
-  /**
-   * 阶段3b：折叠/展开的局部 DOM 更新，避免全量 renderBlocks 重建整棵树。
-   * 折叠：销毁并移除该节点的 .workflowy-children 容器及其下所有 OutlineItem，同步清理状态。
-   * 展开：在该节点后重建 .workflowy-children 容器，对直接子节点走 fragment 渲染（递归遵守各自折叠态）。
-   * zoom 态、找不到节点、移动端复用等复杂场景回退全量 renderBlocks。
-   */
-  patchCollapse(blockId, collapsed) {
-    var _a;
-    this.saveAllEditingContent({ saveFile: false });
-    if (((_a = this.zoomManager) == null ? void 0 : _a.getZoomedBlockId()) || import_obsidian9.Platform.isMobile) {
-      void this.renderBlocks();
-      return;
-    }
-    const item = this.blockElements.get(blockId);
-    const element = item == null ? void 0 : item.getElement();
-    if (!item || !element || !element.isConnected) {
-      this.renderBlocks();
-      return;
-    }
-    const block = findBlockById(this.editor.getState().blocks, blockId);
-    if (!block || block.children.length === 0) {
-      this.renderBlocks();
-      return;
-    }
-    const childContainer = element.nextElementSibling;
-    const hasChildContainer = !!childContainer && childContainer.classList.contains("workflowy-children");
-    if (collapsed) {
-      if (!hasChildContainer) {
-        item.refreshCollapseIndicator();
-        return;
-      }
-      this.teardownChildContainer(childContainer);
-      item.refreshCollapseIndicator();
-    } else {
-      if (hasChildContainer) {
-        this.teardownChildContainer(childContainer);
-      }
-      const newChildContainer = document.createElement("div");
-      newChildContainer.className = "workflowy-children";
-      const parentCompletedTodo = this.isBlockUnderCompletedTodo(blockId);
-      const isCompletedTodo = block.isTodo === true && block.todoCompleted === true;
-      const promises = this.renderBlockList(
-        block.children,
-        newChildContainer,
-        isCompletedTodo || parentCompletedTodo
-      );
-      element.insertAdjacentElement("afterend", newChildContainer);
-      item.refreshCollapseIndicator();
-      void Promise.all(promises).then(() => {
-        if (this.isClosing)
-          return;
-        this.refreshDerivedStateAfterPatch();
-      });
-    }
-    this.refreshDerivedStateAfterPatch();
-  }
-  /**
-   * 阶段3b：销毁一个 .workflowy-children 容器下的所有 OutlineItem，清理状态并移除 DOM。
-   */
-  teardownChildContainer(childContainer) {
-    var _a;
-    const hiddenIds = [];
-    const items = childContainer.querySelectorAll(".workflowy-item[data-block-id]");
-    items.forEach((el) => {
-      const id = el.getAttribute("data-block-id");
-      if (id)
-        hiddenIds.push(id);
-    });
-    for (const id of hiddenIds) {
-      const childItem = this.blockElements.get(id);
-      if (childItem) {
-        (_a = this.nodeObserver) == null ? void 0 : _a.unobserve(childItem.getElement());
-        childItem.destroy();
-        this.blockElements.delete(id);
-      }
-    }
-    if (this.multiSelectionManager && hiddenIds.length > 0) {
-      const remaining = this.multiSelectionManager.getSelectedBlocks().filter((id) => !hiddenIds.includes(id));
-      this.multiSelectionManager.setSelectedBlocks(remaining);
-    }
-    childContainer.remove();
-  }
-  /**
-   * 阶段3b：折叠/展开后刷新派生视图状态（垂直线）。
-   */
-  refreshDerivedStateAfterPatch() {
-    requestAnimationFrame(() => {
-      if (this.verticalLinesManager) {
-        this.verticalLinesManager.update();
-      }
-      if (this.editorContainer) {
-        this.initializeMultiSelection(this.editorContainer);
-      }
-    });
-  }
-  /**
-   * 判断某块是否位于「已完成待办」的祖先链下（用于 child-of-completed-todo 派生类）。
-   */
-  isBlockUnderCompletedTodo(blockId) {
-    const blocks = this.editor.getState().blocks;
-    const walk = (list, underCompleted) => {
-      for (const b of list) {
-        if (b.id === blockId) {
-          return underCompleted;
-        }
-        if (b.children.length > 0) {
-          const childUnder = underCompleted || b.isTodo === true && b.todoCompleted === true;
-          const found = walk(b.children, childUnder);
-          if (found !== null)
-            return found;
-        }
-      }
-      return null;
-    };
-    return walk(blocks, false) === true;
+    return this.executeFocusedVirtualOperation((blockId) => this.editor.outdentBlock(blockId));
   }
   executeDeleteBlock() {
-    this.saveAllEditingContent({ saveFile: false });
     const focusedId = this.getFocusedBlockId();
-    if (!focusedId)
-      return false;
-    if (this.editor.deleteBlock(focusedId)) {
-      this.renderBlocksAndSave();
-      return true;
-    }
-    return false;
+    return focusedId ? this.deleteBlockAndFocus(focusedId) : false;
+  }
+  executeMoveUp() {
+    return this.executeFocusedVirtualOperation((blockId) => this.editor.moveBlockUp(blockId));
+  }
+  executeMoveDown() {
+    return this.executeFocusedVirtualOperation((blockId) => this.editor.moveBlockDown(blockId));
+  }
+  executeToggleCollapse() {
+    return this.executeFocusedVirtualOperation((blockId) => this.editor.toggleCollapse(blockId));
   }
   async restorePendingSourceCursor(anchor) {
     const sourceMap = this.editor.getSourceMap();
@@ -14351,17 +19533,19 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     return prefixRange.toString().length;
   }
   getCurrentOutlineCursorState() {
-    var _a, _b;
+    var _a, _b, _c;
+    const activeEdit = (_a = this.livePreviewController) == null ? void 0 : _a.getActiveEdit();
+    if (activeEdit) {
+      const range = activeEdit.selection.ranges[activeEdit.selection.mainIndex || 0];
+      return { blockId: activeEdit.blockId, offset: Math.min(range.anchor, range.head) };
+    }
     const activeElement = document.activeElement;
     const activeInView = !!activeElement && this.container.contains(activeElement);
     const contentEl = activeInView ? activeElement.closest(".workflowy-content-editor, .workflowy-content") : null;
-    const itemEl = (_b = (_a = contentEl || activeElement) == null ? void 0 : _a.closest) == null ? void 0 : _b.call(_a, ".workflowy-item[data-block-id]");
+    const itemEl = (_c = (_b = contentEl || activeElement) == null ? void 0 : _b.closest) == null ? void 0 : _c.call(_b, ".workflowy-item[data-block-id]");
     const blockId = (itemEl == null ? void 0 : itemEl.getAttribute("data-block-id")) || this.lastFocusedBlockId;
     if (!blockId)
       return null;
-    if (contentEl instanceof HTMLTextAreaElement) {
-      return { blockId, offset: contentEl.selectionStart || 0 };
-    }
     if (contentEl && contentEl.isContentEditable) {
       return { blockId, offset: this.getContentEditableOffset(contentEl) };
     }
@@ -14388,10 +19572,19 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 刷新视图（用于设置更改后重新渲染）
    */
   refresh() {
-    var _a, _b;
+    var _a, _b, _c, _d;
     this.saveAllEditingContent();
+    this.activeEdit = null;
+    (_a = this.virtualLinesManager) == null ? void 0 : _a.destroy();
+    this.virtualLinesManager = null;
+    (_b = this.virtualWindow) == null ? void 0 : _b.destroy();
+    this.virtualWindow = null;
+    this.virtualContentEl = null;
+    this.virtualLinesEl = null;
+    this.blockElements.clear();
+    this.rowHeightCache.clear();
     this.applyUIStyles();
-    if ((_b = (_a = this.plugin.settings) == null ? void 0 : _a.ui) == null ? void 0 : _b.animationsEnabled) {
+    if ((_d = (_c = this.plugin.settings) == null ? void 0 : _c.ui) == null ? void 0 : _d.animationsEnabled) {
       this.container.addClass("animations-enabled");
     } else {
       this.container.removeClass("animations-enabled");
@@ -14402,7 +19595,16 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 保存所有正在编辑的内容（Live Preview 模式）
    */
   saveAllEditingContent(options = {}) {
+    var _a;
     let savedCount = 0;
+    if (((_a = this.activeEdit) == null ? void 0 : _a.pendingContent) != null) {
+      const current = findBlockById(this.editor.getState().blocks, this.activeEdit.blockId);
+      if (current && current.content !== this.activeEdit.pendingContent) {
+        this.editor.updateBlockContent(this.activeEdit.blockId, this.activeEdit.pendingContent);
+        savedCount++;
+      }
+      this.activeEdit = { ...this.activeEdit, pendingContent: null };
+    }
     const currentBlocks = new Map(
       getAllBlocks(this.editor.getState().blocks).map((block) => [block.id, block])
     );
@@ -14480,9 +19682,40 @@ var WorkflowyView = class extends import_obsidian9.FileView {
   /**
    * 初始化移动端工具栏
    */
+  insertBlockAndFocus(afterBlockId, initialContent) {
+    var _a, _b;
+    this.saveAllEditingContent({ saveFile: false });
+    const newBlock = this.editor.createNewBlock(afterBlockId, initialContent);
+    this.rebuildRows(newBlock.id);
+    (_a = this.virtualWindow) == null ? void 0 : _a.pin(newBlock.id);
+    this.focusVirtualBlock(newBlock.id, (_b = initialContent == null ? void 0 : initialContent.length) != null ? _b : 0);
+    void this.saveToFile();
+    return newBlock.id;
+  }
+  deleteBlockAndFocus(blockId) {
+    var _a, _b, _c, _d;
+    this.saveAllEditingContent({ saveFile: false });
+    const rows = flattenVisibleBlocks(this.editor.getState().blocks, (id) => this.editor.isCollapsed(id), {
+      zoomRootId: ((_a = this.zoomManager) == null ? void 0 : _a.getZoomedBlockId()) || null
+    });
+    const rowIndex = rows.findIndex((row) => row.blockId === blockId);
+    const focusTargetId = rowIndex > 0 ? rows[rowIndex - 1].blockId : rowIndex >= 0 && rowIndex + 1 < rows.length ? rows[rowIndex + 1].blockId : null;
+    if (!this.editor.deleteBlock(blockId))
+      return false;
+    if (((_b = this.activeEdit) == null ? void 0 : _b.blockId) === blockId)
+      this.activeEdit = null;
+    this.rebuildRows(focusTargetId || void 0);
+    if (focusTargetId) {
+      (_c = this.virtualWindow) == null ? void 0 : _c.pin(focusTargetId);
+      const target = findBlockById(this.editor.getState().blocks, focusTargetId);
+      this.focusVirtualBlock(focusTargetId, (_d = target == null ? void 0 : target.content.length) != null ? _d : 0);
+    }
+    void this.saveToFile();
+    return true;
+  }
   initMobileToolbar() {
     var _a, _b;
-    if (!import_obsidian9.Platform.isMobile) {
+    if (!import_obsidian12.Platform.isMobile) {
       return;
     }
     if (((_b = (_a = this.plugin.settings) == null ? void 0 : _a.features) == null ? void 0 : _b.mobileToolbar) === false) {
@@ -14495,8 +19728,9 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       saveToFile: () => this.saveToFile(),
       renderBlocksAndSave: () => this.renderBlocksAndSave(),
       syncEditingContentToState: (options) => this.saveAllEditingContent(options),
+      insertBlockAndFocus: (afterBlockId, initialContent) => this.insertBlockAndFocus(afterBlockId, initialContent),
+      deleteBlockAndFocus: (blockId) => this.deleteBlockAndFocus(blockId),
       settings: this.plugin.settings,
-      getVerticalLinesManager: () => this.verticalLinesManager,
       app: this.app,
       getSourcePath: () => {
         var _a2;
@@ -14506,7 +19740,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
       slashCommandMenu: this.slashCommandMenu,
       onBlockUpdate: (blockId, content) => this.handleBlockUpdate(blockId, content),
       onBlockFocus: (blockId) => this.handleBlockFocus(blockId),
-      onBulletClick: (blockId) => this.handleBulletClick(blockId),
+      onBulletClick: (blockId, options) => this.handleBulletClick(blockId, options),
       onViewUndo: () => {
         void this.executeUndo();
       },
@@ -14820,6 +20054,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
    * 执行格式化操作（桌面端使用，保持原有逻辑）
    */
   executeFormatting(marker) {
+    var _a;
     const focusedBlockId = this.getFocusedBlockId();
     if (!focusedBlockId)
       return;
@@ -14829,7 +20064,7 @@ var WorkflowyView = class extends import_obsidian9.FileView {
     const element = item.getElement();
     const editorEl = element.querySelector(".workflowy-content-editor");
     const contentEl = element.querySelector(".workflowy-content");
-    if (editorEl && editorEl === document.activeElement) {
+    if (editorEl && ((_a = this.livePreviewController) == null ? void 0 : _a.isActive(editorEl)) && this.livePreviewController.hasFocus()) {
       const start = editorEl.selectionStart;
       const end = editorEl.selectionEnd;
       const text = editorEl.value;
@@ -15630,10 +20865,10 @@ var DEFAULT_SETTINGS = {
 };
 
 // src/settings-tab.ts
-var import_obsidian13 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 
 // src/daily-notes/daily-notes-file-service.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 var DailyNotesFileService = class {
   constructor(app, configProvider, options) {
     this.app = app;
@@ -15713,7 +20948,7 @@ var DailyNotesFileService = class {
       return [];
     return this.app.vault.getMarkdownFiles().filter((file) => {
       const cache = this.app.metadataCache.getFileCache(file);
-      return !!cache && ((0, import_obsidian10.getAllTags)(cache) || []).includes(target);
+      return !!cache && ((0, import_obsidian13.getAllTags)(cache) || []).includes(target);
     });
   }
   canIncludeExplicitTarget(file) {
@@ -15731,7 +20966,7 @@ var DailyNotesFileService = class {
         if (!target)
           return false;
         const cache = this.app.metadataCache.getFileCache(file);
-        return !!cache && ((0, import_obsidian10.getAllTags)(cache) || []).includes(target);
+        return !!cache && ((0, import_obsidian13.getAllTags)(cache) || []).includes(target);
       }
       case "daily":
       default:
@@ -15741,14 +20976,14 @@ var DailyNotesFileService = class {
   filterByRange(files) {
     if (this.options.selectedRange === "all")
       return files;
-    const now = (0, import_obsidian10.moment)();
+    const now = (0, import_obsidian13.moment)();
     return files.filter((file) => this.isInRange(this.getFileDate(file), now, this.options.selectedRange));
   }
   getFileDate(file) {
     if (this.options.selectionMode === "daily") {
       return this.configProvider.getDateFromFile(file);
     }
-    return (0, import_obsidian10.moment)(file.stat[this.getRangeTimeField()]);
+    return (0, import_obsidian13.moment)(file.stat[this.getRangeTimeField()]);
   }
   isInRange(fileDate, now, range) {
     if (!fileDate.isValid())
@@ -15761,21 +20996,21 @@ var DailyNotesFileService = class {
       case "year":
         return fileDate.isSame(now, "year");
       case "last-week":
-        return fileDate.isBetween((0, import_obsidian10.moment)(now).subtract(1, "week").startOf("week"), (0, import_obsidian10.moment)(now).subtract(1, "week").endOf("week"), void 0, "[]");
+        return fileDate.isBetween((0, import_obsidian13.moment)(now).subtract(1, "week").startOf("week"), (0, import_obsidian13.moment)(now).subtract(1, "week").endOf("week"), void 0, "[]");
       case "last-month":
-        return fileDate.isBetween((0, import_obsidian10.moment)(now).subtract(1, "month").startOf("month"), (0, import_obsidian10.moment)(now).subtract(1, "month").endOf("month"), void 0, "[]");
+        return fileDate.isBetween((0, import_obsidian13.moment)(now).subtract(1, "month").startOf("month"), (0, import_obsidian13.moment)(now).subtract(1, "month").endOf("month"), void 0, "[]");
       case "last-year":
-        return fileDate.isBetween((0, import_obsidian10.moment)(now).subtract(1, "year").startOf("year"), (0, import_obsidian10.moment)(now).subtract(1, "year").endOf("year"), void 0, "[]");
+        return fileDate.isBetween((0, import_obsidian13.moment)(now).subtract(1, "year").startOf("year"), (0, import_obsidian13.moment)(now).subtract(1, "year").endOf("year"), void 0, "[]");
       case "quarter":
         return fileDate.isSame(now, "quarter");
       case "last-quarter":
-        return fileDate.isBetween((0, import_obsidian10.moment)(now).subtract(1, "quarter").startOf("quarter"), (0, import_obsidian10.moment)(now).subtract(1, "quarter").endOf("quarter"), void 0, "[]");
+        return fileDate.isBetween((0, import_obsidian13.moment)(now).subtract(1, "quarter").startOf("quarter"), (0, import_obsidian13.moment)(now).subtract(1, "quarter").endOf("quarter"), void 0, "[]");
       case "custom": {
         const custom = this.options.customRange;
         if (!custom)
           return false;
-        const start = (0, import_obsidian10.moment)(custom.start).startOf("day");
-        const end = (0, import_obsidian10.moment)(custom.end).endOf("day");
+        const start = (0, import_obsidian13.moment)(custom.start).startOf("day");
+        const end = (0, import_obsidian13.moment)(custom.end).endOf("day");
         return start.isValid() && end.isValid() && fileDate.isBetween(start, end, void 0, "[]");
       }
       default:
@@ -15821,7 +21056,7 @@ var DailyNotesFileService = class {
   }
   normalizeFolder(folder) {
     const trimmed = folder.trim().replace(/^\/+|\/+$/g, "");
-    return trimmed ? (0, import_obsidian10.normalizePath)(trimmed) : "";
+    return trimmed ? (0, import_obsidian13.normalizePath)(trimmed) : "";
   }
   normalizeTag(tag) {
     const trimmed = tag.trim();
@@ -15849,7 +21084,7 @@ function normalizeDailyNotesPreset(preset) {
   const target = preset.type === "folder" ? preset.target.trim().replace(/^\/+|\/+$/g, "") : preset.target.trim().replace(/^#/, "");
   return {
     type: preset.type,
-    target: target ? (0, import_obsidian10.normalizePath)(target) : ""
+    target: target ? (0, import_obsidian13.normalizePath)(target) : ""
   };
 }
 function isSamePreset(left, right) {
@@ -15858,10 +21093,10 @@ function isSamePreset(left, right) {
 }
 
 // src/license/license-renderer.ts
-var import_obsidian12 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 
 // src/license/license-manager.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 var LicenseManager = class {
   constructor(plugin) {
     this.TRIAL_DAYS = 7;
@@ -15956,15 +21191,15 @@ hQIDAQAB
       const trimmedKey = licenseKey.trim();
       const isValid = await this.validateLicenseKey(trimmedKey);
       if (!isValid) {
-        new import_obsidian11.Notice(t("license.notice.keyInvalid"));
+        new import_obsidian14.Notice(t("license.notice.keyInvalid"));
         return false;
       }
       await this.saveLicenseData({ licenseKey: trimmedKey });
-      new import_obsidian11.Notice(t("license.notice.keyActivated"));
+      new import_obsidian14.Notice(t("license.notice.keyActivated"));
       return true;
     } catch (error) {
       console.error("\u8BBE\u7F6E\u6CE8\u518C\u7801\u5931\u8D25:", error);
-      new import_obsidian11.Notice(t("license.notice.keyVerifyFailed"));
+      new import_obsidian14.Notice(t("license.notice.keyVerifyFailed"));
       return false;
     }
   }
@@ -15977,10 +21212,10 @@ hQIDAQAB
     if (licenseInfo.isPlusUser)
       return;
     if (licenseInfo.trialDaysLeft > 0) {
-      new import_obsidian11.Notice(t("license.trialRemaining", { days: licenseInfo.trialDaysLeft }), 5e3);
+      new import_obsidian14.Notice(t("license.trialRemaining", { days: licenseInfo.trialDaysLeft }), 5e3);
       return;
     }
-    new import_obsidian11.Notice(t("license.trialExpired"), 7e3);
+    new import_obsidian14.Notice(t("license.trialExpired"), 7e3);
   }
   async getLicenseKey() {
     const licenseData = await this.loadLicenseData();
@@ -15989,7 +21224,7 @@ hQIDAQAB
   async clearLicense() {
     await this.saveLicenseData({ licenseKey: void 0 });
     localStorage.removeItem(`${this.STORAGE_KEY}-trial`);
-    new import_obsidian11.Notice(t("license.notice.cleared"));
+    new import_obsidian14.Notice(t("license.notice.cleared"));
   }
   async processConsoleCommand(cmd) {
     const raw = cmd.trim();
@@ -16035,8 +21270,8 @@ hQIDAQAB
       return { licenseKey: licenseKey || void 0 };
     }
     try {
-      const data = await this.plugin.loadData();
-      const licenseData = data == null ? void 0 : data.licenseData;
+      const data2 = await this.plugin.loadData();
+      const licenseData = data2 == null ? void 0 : data2.licenseData;
       if (!licenseData || typeof licenseData !== "object")
         return {};
       const licenseKey = licenseData.licenseKey;
@@ -16074,12 +21309,12 @@ hQIDAQAB
   }
   async getDeviceId() {
     try {
-      if (!import_obsidian11.Platform.isMobile) {
+      if (!import_obsidian14.Platform.isMobile) {
         const macAddress = this.getRealMacAddress();
         if (macAddress && macAddress !== "UNKNOWN")
           return `DESKTOP-MAC:${macAddress}`;
       }
-      const persistentId = await this.getOrCreatePersistentDeviceId(import_obsidian11.Platform.isMobile ? "mobile" : "desktop-fallback");
+      const persistentId = await this.getOrCreatePersistentDeviceId(import_obsidian14.Platform.isMobile ? "mobile" : "desktop-fallback");
       if (persistentId)
         return persistentId;
       const fingerprint = await this.getRuntimeFallbackFingerprint();
@@ -16090,7 +21325,7 @@ hQIDAQAB
     }
   }
   getRealMacAddress() {
-    if (import_obsidian11.Platform.isMobile)
+    if (import_obsidian14.Platform.isMobile)
       return "UNKNOWN";
     try {
       const os = require("os");
@@ -16216,10 +21451,10 @@ hQIDAQAB
       return "webgl-error";
     }
   }
-  async verifyRSASignature(data, signature) {
+  async verifyRSASignature(data2, signature) {
     const publicKey = await this.importRSAPublicKey(this.PUBLIC_KEY_PEM);
     const signatureBuffer = this.base64ToArrayBuffer(signature);
-    const dataBuffer = new TextEncoder().encode(data);
+    const dataBuffer = new TextEncoder().encode(data2);
     return crypto.subtle.verify(
       { name: "RSA-PSS", saltLength: 32 },
       publicKey,
@@ -16324,10 +21559,10 @@ async function createLicenseContent(container, plugin) {
       const sequence = await licenseManager.generateSequenceNumber();
       sequenceInput.input.value = sequence;
       await copyText(sequence);
-      new import_obsidian12.Notice(t("license.notice.serialGenerated"));
+      new import_obsidian15.Notice(t("license.notice.serialGenerated"));
     } catch (error) {
       console.error("\u751F\u6210\u5E8F\u5217\u53F7\u5931\u8D25:", error);
-      new import_obsidian12.Notice(t("license.notice.serialFailed"));
+      new import_obsidian15.Notice(t("license.notice.serialFailed"));
     }
   });
   const licenseRow = renderInputRow(panel, {
@@ -16341,7 +21576,7 @@ async function createLicenseContent(container, plugin) {
   licenseRow.button.addEventListener("click", async () => {
     const licenseKey = licenseRow.input.value.trim();
     if (!licenseKey) {
-      new import_obsidian12.Notice(t("license.notice.enterKey"));
+      new import_obsidian15.Notice(t("license.notice.enterKey"));
       return;
     }
     await licenseManager.setLicenseKey(licenseKey);
@@ -16379,7 +21614,7 @@ function renderStatus(container, isPlusUser, trialDaysLeft) {
     }
   });
   const statusIcon = status.createSpan({ cls: "workflowy-license-status-icon", attr: { "aria-hidden": "true" } });
-  (0, import_obsidian12.setIcon)(statusIcon, isPlusUser ? "badge-check" : trialDaysLeft > 0 ? "clock" : "badge-alert");
+  (0, import_obsidian15.setIcon)(statusIcon, isPlusUser ? "badge-check" : trialDaysLeft > 0 ? "clock" : "badge-alert");
   status.createSpan({ text: statusText });
 }
 function renderInputRow(container, options) {
@@ -16449,7 +21684,7 @@ async function resolveImageSrc(plugin, localFileName, fallbackUrl) {
   const manifest = plugin.manifest;
   if (!manifest.dir)
     return fallbackUrl;
-  const localPath = (0, import_obsidian12.normalizePath)(`${manifest.dir}/image/${localFileName}`);
+  const localPath = (0, import_obsidian15.normalizePath)(`${manifest.dir}/image/${localFileName}`);
   try {
     const exists = await plugin.app.vault.adapter.exists(localPath);
     if (!exists)
@@ -16469,7 +21704,7 @@ async function copyText(text) {
 }
 
 // src/settings-tab.ts
-var WorkflowySettingTab = class extends import_obsidian13.PluginSettingTab {
+var WorkflowySettingTab = class extends import_obsidian16.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -16488,204 +21723,204 @@ var WorkflowySettingTab = class extends import_obsidian13.PluginSettingTab {
     hotkeyInfo.createEl("p", {
       text: t("settings.hotkeys.info2")
     });
-    const openHotkeysButton = new import_obsidian13.Setting(containerEl).setName(t("settings.hotkeys.openButton.name")).setDesc(t("settings.hotkeys.openButton.desc")).addButton((button) => button.setButtonText(t("settings.hotkeys.openButton.button")).setCta().onClick(() => {
+    const openHotkeysButton = new import_obsidian16.Setting(containerEl).setName(t("settings.hotkeys.openButton.name")).setDesc(t("settings.hotkeys.openButton.desc")).addButton((button) => button.setButtonText(t("settings.hotkeys.openButton.button")).setCta().onClick(() => {
       this.app.setting.open();
       this.app.setting.openTabById("hotkeys");
     }));
     containerEl.createEl("h2", { text: t("settings.headers.ui") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.ui.indentSize.name")).setDesc(t("settings.ui.indentSize.desc")).addSlider((slider) => slider.setLimits(10, 60, 5).setValue(this.plugin.settings.ui.indentSize).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.ui.indentSize.name")).setDesc(t("settings.ui.indentSize.desc")).addSlider((slider) => slider.setLimits(10, 60, 5).setValue(this.plugin.settings.ui.indentSize).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.ui.indentSize = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.ui.showBullets.name")).setDesc(t("settings.ui.showBullets.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showBullets).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.ui.showBullets.name")).setDesc(t("settings.ui.showBullets.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showBullets).onChange(async (value) => {
       this.plugin.settings.ui.showBullets = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.ui.showCollapseIndicators.name")).setDesc(t("settings.ui.showCollapseIndicators.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showCollapseIndicators).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.ui.showCollapseIndicators.name")).setDesc(t("settings.ui.showCollapseIndicators.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showCollapseIndicators).onChange(async (value) => {
       this.plugin.settings.ui.showCollapseIndicators = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.ui.showVerticalLines.name")).setDesc(t("settings.ui.showVerticalLines.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showVerticalLines).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.ui.showVerticalLines.name")).setDesc(t("settings.ui.showVerticalLines.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.showVerticalLines).onChange(async (value) => {
       this.plugin.settings.ui.showVerticalLines = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.ui.animationsEnabled.name")).setDesc(t("settings.ui.animationsEnabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.animationsEnabled).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.ui.animationsEnabled.name")).setDesc(t("settings.ui.animationsEnabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.ui.animationsEnabled).onChange(async (value) => {
       this.plugin.settings.ui.animationsEnabled = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.ui.fontAndLineHeight.name")).setDesc(t("settings.ui.fontAndLineHeight.desc"));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.ui.fontFamily.name")).setDesc(t("settings.ui.fontFamily.desc")).addDropdown((dropdown) => dropdown.addOption("theme", t("settings.ui.fontFamily.options.theme")).addOption("system", t("settings.ui.fontFamily.options.system")).addOption("custom", t("settings.ui.fontFamily.options.custom")).setValue(this.plugin.settings.ui.fontFamily).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.ui.fontAndLineHeight.name")).setDesc(t("settings.ui.fontAndLineHeight.desc"));
+    new import_obsidian16.Setting(containerEl).setName(t("settings.ui.fontFamily.name")).setDesc(t("settings.ui.fontFamily.desc")).addDropdown((dropdown) => dropdown.addOption("theme", t("settings.ui.fontFamily.options.theme")).addOption("system", t("settings.ui.fontFamily.options.system")).addOption("custom", t("settings.ui.fontFamily.options.custom")).setValue(this.plugin.settings.ui.fontFamily).onChange(async (value) => {
       this.plugin.settings.ui.fontFamily = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
       this.display();
     }));
     if (this.plugin.settings.ui.fontFamily === "custom") {
-      new import_obsidian13.Setting(containerEl).setName(t("settings.ui.customFontFamily.name")).setDesc(t("settings.ui.customFontFamily.desc")).addText((text) => text.setPlaceholder(t("settings.ui.customFontFamily.placeholder")).setValue(this.plugin.settings.ui.customFontFamily).onChange(async (value) => {
+      new import_obsidian16.Setting(containerEl).setName(t("settings.ui.customFontFamily.name")).setDesc(t("settings.ui.customFontFamily.desc")).addText((text) => text.setPlaceholder(t("settings.ui.customFontFamily.placeholder")).setValue(this.plugin.settings.ui.customFontFamily).onChange(async (value) => {
         this.plugin.settings.ui.customFontFamily = value;
         await this.plugin.saveSettings();
         this.plugin.refreshAllViews();
       }));
     }
     containerEl.createEl("h2", { text: t("settings.headers.features") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.features.slashCommand.name")).setDesc(t("settings.features.slashCommand.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.slashCommand).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.features.slashCommand.name")).setDesc(t("settings.features.slashCommand.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.slashCommand).onChange(async (value) => {
       this.plugin.settings.features.slashCommand = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.features.tagSuggest.name")).setDesc(t("settings.features.tagSuggest.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.tagSuggest).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.features.tagSuggest.name")).setDesc(t("settings.features.tagSuggest.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.tagSuggest).onChange(async (value) => {
       this.plugin.settings.features.tagSuggest = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.features.linkSuggest.name")).setDesc(t("settings.features.linkSuggest.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.linkSuggest).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.features.linkSuggest.name")).setDesc(t("settings.features.linkSuggest.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.linkSuggest).onChange(async (value) => {
       this.plugin.settings.features.linkSuggest = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.features.mobileToolbar.name")).setDesc(t("settings.features.mobileToolbar.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.mobileToolbar).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.features.mobileToolbar.name")).setDesc(t("settings.features.mobileToolbar.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.mobileToolbar).onChange(async (value) => {
       this.plugin.settings.features.mobileToolbar = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
     containerEl.createEl("h2", { text: t("settings.headers.editor") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.editor.autoSave.name")).setDesc(t("settings.editor.autoSave.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.editor.autoSave).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.editor.autoSave.name")).setDesc(t("settings.editor.autoSave.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.editor.autoSave).onChange(async (value) => {
       this.plugin.settings.editor.autoSave = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.editor.autoSaveDelay.name")).setDesc(t("settings.editor.autoSaveDelay.desc")).addSlider((slider) => slider.setLimits(500, 5e3, 500).setValue(this.plugin.settings.editor.autoSaveDelay).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.editor.autoSaveDelay.name")).setDesc(t("settings.editor.autoSaveDelay.desc")).addSlider((slider) => slider.setLimits(500, 5e3, 500).setValue(this.plugin.settings.editor.autoSaveDelay).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.editor.autoSaveDelay = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.editor.placeholder.name")).setDesc(t("settings.editor.placeholder.desc")).addText((text) => text.setPlaceholder(t("settings.editor.placeholder.placeholder")).setValue(this.plugin.settings.editor.placeholder).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.editor.placeholder.name")).setDesc(t("settings.editor.placeholder.desc")).addText((text) => text.setPlaceholder(t("settings.editor.placeholder.placeholder")).setValue(this.plugin.settings.editor.placeholder).onChange(async (value) => {
       this.plugin.settings.editor.placeholder = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.editor.renderMode.name")).setDesc(t("settings.editor.renderMode.desc")).addDropdown((dropdown) => dropdown.addOption("source", t("settings.editor.renderMode.options.source")).addOption("live-preview", t("settings.editor.renderMode.options.livePreview")).setValue(this.plugin.settings.editor.renderMode).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.editor.renderMode.name")).setDesc(t("settings.editor.renderMode.desc")).addDropdown((dropdown) => dropdown.addOption("source", t("settings.editor.renderMode.options.source")).addOption("live-preview", t("settings.editor.renderMode.options.livePreview")).setValue(this.plugin.settings.editor.renderMode).onChange(async (value) => {
       this.plugin.settings.editor.renderMode = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.editor.attachmentPath.name")).setDesc(t("settings.editor.attachmentPath.desc")).addDropdown((dropdown) => dropdown.addOption("default", t("settings.editor.attachmentPath.options.default")).addOption("custom", t("settings.editor.attachmentPath.options.custom")).setValue(this.plugin.settings.editor.attachmentPath).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.editor.attachmentPath.name")).setDesc(t("settings.editor.attachmentPath.desc")).addDropdown((dropdown) => dropdown.addOption("default", t("settings.editor.attachmentPath.options.default")).addOption("custom", t("settings.editor.attachmentPath.options.custom")).setValue(this.plugin.settings.editor.attachmentPath).onChange(async (value) => {
       this.plugin.settings.editor.attachmentPath = value;
       await this.plugin.saveSettings();
       this.display();
     }));
     if (this.plugin.settings.editor.attachmentPath === "custom") {
-      new import_obsidian13.Setting(containerEl).setName(t("settings.editor.customAttachmentPath.name")).setDesc(t("settings.editor.customAttachmentPath.desc")).addText((text) => text.setPlaceholder(t("settings.editor.customAttachmentPath.placeholder")).setValue(this.plugin.settings.editor.customAttachmentPath).onChange(async (value) => {
+      new import_obsidian16.Setting(containerEl).setName(t("settings.editor.customAttachmentPath.name")).setDesc(t("settings.editor.customAttachmentPath.desc")).addText((text) => text.setPlaceholder(t("settings.editor.customAttachmentPath.placeholder")).setValue(this.plugin.settings.editor.customAttachmentPath).onChange(async (value) => {
         this.plugin.settings.editor.customAttachmentPath = value;
         await this.plugin.saveSettings();
       }));
     }
     containerEl.createEl("h2", { text: t("settings.headers.search") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.search.mode.name")).setDesc(t("settings.search.mode.desc")).addDropdown((dropdown) => dropdown.addOption("highlight", t("settings.search.mode.options.highlight")).addOption("filter", t("settings.search.mode.options.filter")).setValue(this.plugin.settings.search.mode).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.search.mode.name")).setDesc(t("settings.search.mode.desc")).addDropdown((dropdown) => dropdown.addOption("highlight", t("settings.search.mode.options.highlight")).addOption("filter", t("settings.search.mode.options.filter")).setValue(this.plugin.settings.search.mode).onChange(async (value) => {
       this.plugin.settings.search.mode = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.search.caseSensitive.name")).setDesc(t("settings.search.caseSensitive.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.search.caseSensitive).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.search.caseSensitive.name")).setDesc(t("settings.search.caseSensitive.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.search.caseSensitive).onChange(async (value) => {
       this.plugin.settings.search.caseSensitive = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.search.autoExpandMatches.name")).setDesc(t("settings.search.autoExpandMatches.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.search.autoExpandMatches).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.search.autoExpandMatches.name")).setDesc(t("settings.search.autoExpandMatches.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.search.autoExpandMatches).onChange(async (value) => {
       this.plugin.settings.search.autoExpandMatches = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h2", { text: t("settings.headers.dragDrop") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dragDrop.enabled.name")).setDesc(t("settings.dragDrop.enabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.enabled).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dragDrop.enabled.name")).setDesc(t("settings.dragDrop.enabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.enabled).onChange(async (value) => {
       this.plugin.settings.dragDrop.enabled = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dragDrop.showDropIndicators.name")).setDesc(t("settings.dragDrop.showDropIndicators.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.showDropIndicators).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dragDrop.showDropIndicators.name")).setDesc(t("settings.dragDrop.showDropIndicators.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.showDropIndicators).onChange(async (value) => {
       this.plugin.settings.dragDrop.showDropIndicators = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dragDrop.allowNestedDrop.name")).setDesc(t("settings.dragDrop.allowNestedDrop.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.allowNestedDrop).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dragDrop.allowNestedDrop.name")).setDesc(t("settings.dragDrop.allowNestedDrop.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dragDrop.allowNestedDrop).onChange(async (value) => {
       this.plugin.settings.dragDrop.allowNestedDrop = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.features.crossDocumentDrag.name")).setDesc(t("settings.features.crossDocumentDrag.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.crossDocumentDrag).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.features.crossDocumentDrag.name")).setDesc(t("settings.features.crossDocumentDrag.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.crossDocumentDrag).onChange(async (value) => {
       this.plugin.settings.features.crossDocumentDrag = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.features.autoBlockId.name")).setDesc(t("settings.features.autoBlockId.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.autoBlockId).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.features.autoBlockId.name")).setDesc(t("settings.features.autoBlockId.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.features.autoBlockId).onChange(async (value) => {
       this.plugin.settings.features.autoBlockId = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h2", { text: t("settings.headers.collapseState") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.collapseState.enabled.name")).setDesc(t("settings.collapseState.enabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.collapseState.enabled).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.collapseState.enabled.name")).setDesc(t("settings.collapseState.enabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.collapseState.enabled).onChange(async (value) => {
       this.plugin.settings.collapseState.enabled = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.collapseState.marker.name")).setDesc(t("settings.collapseState.marker.desc")).addText((text) => text.setPlaceholder(t("settings.collapseState.marker.placeholder")).setValue(this.plugin.settings.collapseState.marker).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.collapseState.marker.name")).setDesc(t("settings.collapseState.marker.desc")).addText((text) => text.setPlaceholder(t("settings.collapseState.marker.placeholder")).setValue(this.plugin.settings.collapseState.marker).onChange(async (value) => {
       if (value.trim()) {
         this.plugin.settings.collapseState.marker = value.trim();
         await this.plugin.saveSettings();
       }
     }));
     containerEl.createEl("h2", { text: t("settings.headers.thino") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.thino.enabled.name")).setDesc(t("settings.thino.enabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.thino.enabled).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.thino.enabled.name")).setDesc(t("settings.thino.enabled.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.thino.enabled).onChange(async (value) => {
       this.plugin.settings.thino.enabled = value;
       await this.plugin.saveSettings();
       this.plugin.refreshAllViews();
       this.display();
     }));
     if (this.plugin.settings.thino.enabled) {
-      new import_obsidian13.Setting(containerEl).setName(t("settings.thino.autoTimestamp.name")).setDesc(t("settings.thino.autoTimestamp.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.thino.autoTimestamp).onChange(async (value) => {
+      new import_obsidian16.Setting(containerEl).setName(t("settings.thino.autoTimestamp.name")).setDesc(t("settings.thino.autoTimestamp.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.thino.autoTimestamp).onChange(async (value) => {
         this.plugin.settings.thino.autoTimestamp = value;
         await this.plugin.saveSettings();
       }));
-      new import_obsidian13.Setting(containerEl).setName(t("settings.thino.timestampFormat.name")).setDesc(t("settings.thino.timestampFormat.desc")).addDropdown((dropdown) => dropdown.addOption("HH:mm", t("settings.thino.timestampFormat.options.hhmm")).addOption("HH:mm:ss", t("settings.thino.timestampFormat.options.hhmmss")).setValue(this.plugin.settings.thino.timestampFormat).onChange(async (value) => {
+      new import_obsidian16.Setting(containerEl).setName(t("settings.thino.timestampFormat.name")).setDesc(t("settings.thino.timestampFormat.desc")).addDropdown((dropdown) => dropdown.addOption("HH:mm", t("settings.thino.timestampFormat.options.hhmm")).addOption("HH:mm:ss", t("settings.thino.timestampFormat.options.hhmmss")).setValue(this.plugin.settings.thino.timestampFormat).onChange(async (value) => {
         this.plugin.settings.thino.timestampFormat = value;
         await this.plugin.saveSettings();
       }));
     }
     renderLicenseSettings(containerEl, this.plugin);
     containerEl.createEl("h2", { text: t("settings.headers.dailyNotes") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.showRibbon.name")).setDesc(t("settings.dailyNotes.showRibbon.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dailyNotes.showRibbon).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.showRibbon.name")).setDesc(t("settings.dailyNotes.showRibbon.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dailyNotes.showRibbon).onChange(async (value) => {
       this.plugin.settings.dailyNotes.showRibbon = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.initialBatchSize.name")).setDesc(t("settings.dailyNotes.initialBatchSize.desc")).addSlider((slider) => slider.setLimits(1, 10, 1).setValue(this.plugin.settings.dailyNotes.initialBatchSize).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.initialBatchSize.name")).setDesc(t("settings.dailyNotes.initialBatchSize.desc")).addSlider((slider) => slider.setLimits(1, 10, 1).setValue(this.plugin.settings.dailyNotes.initialBatchSize).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.dailyNotes.initialBatchSize = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.unloadDelay.name")).setDesc(t("settings.dailyNotes.unloadDelay.desc")).addSlider((slider) => slider.setLimits(500, 1e4, 500).setValue(this.plugin.settings.dailyNotes.unloadDelay).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.unloadDelay.name")).setDesc(t("settings.dailyNotes.unloadDelay.desc")).addSlider((slider) => slider.setLimits(500, 1e4, 500).setValue(this.plugin.settings.dailyNotes.unloadDelay).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.dailyNotes.unloadDelay = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.createTodayOnStartup.name")).setDesc(t("settings.dailyNotes.createTodayOnStartup.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dailyNotes.createTodayOnStartup).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.createTodayOnStartup.name")).setDesc(t("settings.dailyNotes.createTodayOnStartup.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dailyNotes.createTodayOnStartup).onChange(async (value) => {
       this.plugin.settings.dailyNotes.createTodayOnStartup = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.openOnStartup.name")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dailyNotes.openOnStartup).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.openOnStartup.name")).addToggle((toggle) => toggle.setValue(this.plugin.settings.dailyNotes.openOnStartup).onChange(async (value) => {
       this.plugin.settings.dailyNotes.openOnStartup = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: t("settings.headers.dailyNotesFallback") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.fallbackFolder.name")).setDesc(t("settings.dailyNotes.fallbackFolder.desc")).addText((text) => text.setPlaceholder(t("settings.dailyNotes.fallbackFolder.placeholder")).setValue(this.plugin.settings.dailyNotes.fallback.folder).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.fallbackFolder.name")).setDesc(t("settings.dailyNotes.fallbackFolder.desc")).addText((text) => text.setPlaceholder(t("settings.dailyNotes.fallbackFolder.placeholder")).setValue(this.plugin.settings.dailyNotes.fallback.folder).onChange(async (value) => {
       this.plugin.settings.dailyNotes.fallback.folder = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.fallbackFormat.name")).addText((text) => text.setPlaceholder("YYYY-MM-DD").setValue(this.plugin.settings.dailyNotes.fallback.format).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.fallbackFormat.name")).addText((text) => text.setPlaceholder("YYYY-MM-DD").setValue(this.plugin.settings.dailyNotes.fallback.format).onChange(async (value) => {
       this.plugin.settings.dailyNotes.fallback.format = value || "YYYY-MM-DD";
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.fallbackTemplate.name")).setDesc(t("settings.dailyNotes.fallbackTemplate.desc")).addText((text) => text.setPlaceholder(t("settings.dailyNotes.fallbackTemplate.placeholder")).setValue(this.plugin.settings.dailyNotes.fallback.template).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.fallbackTemplate.name")).setDesc(t("settings.dailyNotes.fallbackTemplate.desc")).addText((text) => text.setPlaceholder(t("settings.dailyNotes.fallbackTemplate.placeholder")).setValue(this.plugin.settings.dailyNotes.fallback.template).onChange(async (value) => {
       this.plugin.settings.dailyNotes.fallback.template = value;
       await this.plugin.saveSettings();
     }));
     if (this.plugin.settings.dailyNotes.presets.length > 0) {
       containerEl.createEl("h3", { text: t("settings.headers.dailyNotesPresets") });
       this.plugin.settings.dailyNotes.presets.forEach((preset) => {
-        new import_obsidian13.Setting(containerEl).setName(t("settings.dailyNotes.presetLabel", {
+        new import_obsidian16.Setting(containerEl).setName(t("settings.dailyNotes.presetLabel", {
           type: preset.type === "folder" ? t("settings.dailyNotes.presetFolder") : t("settings.dailyNotes.presetTag"),
           target: preset.target
         })).addButton((button) => button.setButtonText(t("common.button.delete")).setWarning().onClick(async () => {
@@ -16699,23 +21934,23 @@ var WorkflowySettingTab = class extends import_obsidian13.PluginSettingTab {
       });
     }
     containerEl.createEl("h2", { text: t("settings.headers.advanced") });
-    new import_obsidian13.Setting(containerEl).setName(t("settings.advanced.strictMode.name")).setDesc(t("settings.advanced.strictMode.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.isolation.strictMode).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.advanced.strictMode.name")).setDesc(t("settings.advanced.strictMode.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.isolation.strictMode).onChange(async (value) => {
       this.plugin.settings.isolation.strictMode = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.advanced.enableAssertions.name")).setDesc(t("settings.advanced.enableAssertions.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.isolation.enableAssertions).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.advanced.enableAssertions.name")).setDesc(t("settings.advanced.enableAssertions.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.isolation.enableAssertions).onChange(async (value) => {
       this.plugin.settings.isolation.enableAssertions = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.advanced.debugMode.name")).setDesc(t("settings.advanced.debugMode.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.isolation.debugMode).onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.advanced.debugMode.name")).setDesc(t("settings.advanced.debugMode.desc")).addToggle((toggle) => toggle.setValue(this.plugin.settings.isolation.debugMode).onChange(async (value) => {
       this.plugin.settings.isolation.debugMode = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.advanced.healthCheckInterval.name")).setDesc(t("settings.advanced.healthCheckInterval.desc")).addSlider((slider) => slider.setLimits(1e4, 12e4, 1e4).setValue(this.plugin.settings.isolation.healthCheckInterval).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.advanced.healthCheckInterval.name")).setDesc(t("settings.advanced.healthCheckInterval.desc")).addSlider((slider) => slider.setLimits(1e4, 12e4, 1e4).setValue(this.plugin.settings.isolation.healthCheckInterval).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.isolation.healthCheckInterval = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian13.Setting(containerEl).setName(t("settings.reset.name")).setDesc(t("settings.reset.desc")).addButton((button) => button.setButtonText(t("common.button.reset")).setWarning().onClick(async () => {
+    new import_obsidian16.Setting(containerEl).setName(t("settings.reset.name")).setDesc(t("settings.reset.desc")).addButton((button) => button.setButtonText(t("common.button.reset")).setWarning().onClick(async () => {
       if (confirm(t("settings.reset.confirm"))) {
         await this.plugin.resetSettings();
         this.display();
@@ -16725,21 +21960,33 @@ var WorkflowySettingTab = class extends import_obsidian13.PluginSettingTab {
 };
 
 // src/daily-notes/workflowy-daily-notes-view.ts
-var import_obsidian18 = require("obsidian");
+var import_obsidian21 = require("obsidian");
 
 // src/ui/daily-notes-outline-renderer.ts
-var import_obsidian14 = require("obsidian");
+var import_obsidian17 = require("obsidian");
 var DailyNotesOutlineRenderer = class {
   constructor(containerEl, config) {
     this.config = config;
+    this.tooltipComponent = new import_obsidian17.Component();
+    this.tooltipRenderToken = 0;
     this.blockElements = /* @__PURE__ */ new Map();
-    this.verticalLinesManager = null;
+    this.virtualWindow = null;
+    this.livePreviewController = null;
+    this.virtualContentEl = null;
+    this.virtualLinesEl = null;
+    this.virtualLinesManager = null;
+    this.activeEdit = null;
+    this.rowHeightCache = /* @__PURE__ */ new Map();
     this.multiSelectionManager = null;
     this.fileDropHandler = null;
     this.mobileToolbar = null;
     this.mobileDOMPatcher = null;
     this.isCreatingRootBlock = false;
     this.isCreatingZoomChildBlock = false;
+    this.destroyed = false;
+    this.renderGeneration = 0;
+    this.keyboardZoomAnchorStack = [];
+    this.pendingKeyboardZoomRestore = null;
     this.handlePaste = async (event) => {
       var _a;
       const hasImage = !!((_a = event.clipboardData) == null ? void 0 : _a.files) && Array.from(event.clipboardData.files).some((file) => file.type.startsWith("image/"));
@@ -16757,76 +22004,254 @@ var DailyNotesOutlineRenderer = class {
       await this.fileDropHandler.handleDrop(event, false);
     };
     this.containerEl = containerEl;
+    this.tooltipComponent.load();
     this.editorContainer = this.containerEl.createDiv("workflowy-container");
     this.editorContainer.createDiv("workflowy-editor");
+    syncReadableLineWidthClass(this.editorContainer, this.config.app);
     const uniqueId = `daily-notes-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     this.editorContainer.dataset.dailyNotesId = uniqueId;
     this.containerSelector = `[data-daily-notes-id="${uniqueId}"]`;
+    this.syncLivePreviewRuntime();
     this.slashCommandMenu = new SlashCommandMenu(this.config.app, this.config.settings);
     this.zoomManager = new ZoomManager(this.config.editor, () => this.config.sourcePath.split("/").pop() || this.config.sourcePath);
     this.zoomManager.setOnZoomChange(() => {
-      void this.render();
+      void this.handleZoomChange();
     });
     this.applyTheme();
     this.registerKeyboardEvents();
     this.registerFileDropAndPaste();
     this.initMobileToolbar();
   }
+  debugLog(...args) {
+    var _a, _b;
+    if (!((_b = (_a = this.config.settings) == null ? void 0 : _a.isolation) == null ? void 0 : _b.debugMode))
+      return;
+    console.log(...args);
+  }
+  syncLivePreviewRuntime() {
+    this.livePreviewController = syncLivePreviewController(
+      this.livePreviewController,
+      this.config.settings.editor.renderMode === "live-preview",
+      () => createViewLivePreviewController({
+        app: this.config.app,
+        onDocumentChange: (blockId, document2) => this.config.onBlockUpdate(blockId, document2),
+        onSelectionChange: (blockId, start, end, document2) => this.handleActiveEditChange({
+          blockId,
+          selectionStart: start,
+          selectionEnd: end,
+          pendingContent: document2
+        }),
+        getActiveEdit: () => this.activeEdit,
+        getVirtualWindow: () => this.virtualWindow,
+        getFile: this.config.getFile,
+        getMenuView: this.config.getMenuView,
+        undo: () => {
+          void this.executeUndo();
+        },
+        redo: () => {
+          void this.executeRedo();
+        }
+      })
+    );
+  }
   async render() {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
+    if (this.destroyed)
+      return;
+    this.syncLivePreviewRuntime();
+    this.renderGeneration++;
     const editorEl = this.editorContainer.querySelector(".workflowy-editor");
     if (!editorEl)
       return;
-    if (this.mobileDOMPatcher) {
-      this.mobileDOMPatcher.resetSyncFlag();
-    }
-    const previousSelection = (_b = (_a = this.multiSelectionManager) == null ? void 0 : _a.getSelectedBlocks()) != null ? _b : [];
-    const scrollContainer = editorEl.parentElement || this.editorContainer;
-    const savedScrollTop = scrollContainer.scrollTop;
-    const blocks = this.getVisibleBlocks();
-    const reusableItems = /* @__PURE__ */ new Map();
-    this.blockElements.forEach((item, blockId) => {
-      if (item.canReuseForBlock(blocks, blockId)) {
-        const element = item.getElement();
-        if (element && element.parentElement) {
-          reusableItems.set(blockId, { item, element });
-        }
-      }
-    });
-    this.blockElements.forEach((item, blockId) => {
-      if (!reusableItems.has(blockId)) {
-        item.destroy();
-      }
-    });
-    const hasEditingReuse = import_obsidian14.Platform.isMobile && reusableItems.size > 0 && Array.from(reusableItems.values()).some(({ element }) => {
-      const textarea = element.querySelector(".workflowy-content-editor");
-      return !!textarea && document.activeElement === textarea;
-    });
-    if (hasEditingReuse) {
-      const reusableElements = new Set(Array.from(reusableItems.values()).map(({ element }) => element));
-      Array.from(editorEl.childNodes).forEach((child) => {
-        if (!reusableElements.has(child)) {
-          child.remove();
-        }
-      });
-    } else {
-      editorEl.empty();
-    }
-    this.blockElements.clear();
-    const renderPromises = this.renderBlockList(blocks, editorEl, false, reusableItems);
-    await Promise.all(renderPromises);
-    this.cleanupOrphanedRenderNodes(editorEl);
-    this.renderRootAddNodeHint(blocks, editorEl);
+    (_a = this.mobileDOMPatcher) == null ? void 0 : _a.resetSyncFlag();
+    const previousSelection = (_c = (_b = this.multiSelectionManager) == null ? void 0 : _b.getSelectedBlocks()) != null ? _c : [];
+    this.ensureVirtualWindow(editorEl);
+    this.rebuildRows();
+    this.removeAddNodeHints(editorEl);
+    this.renderRootAddNodeHint(this.config.editor.getState().blocks, editorEl);
     this.renderZoomAddChildHint(editorEl);
-    requestAnimationFrame(() => {
-      if (scrollContainer && savedScrollTop > 0) {
-        scrollContainer.scrollTop = savedScrollTop;
-      }
-    });
     this.initializeVerticalLines(editorEl);
     this.initializeMultiSelection(editorEl, previousSelection);
     this.updateZoomNavigation();
-    (_d = (_c = this.config).onRender) == null ? void 0 : _d.call(_c);
+    (_e = (_d = this.config).onRender) == null ? void 0 : _e.call(_d);
+  }
+  ensureVirtualWindow(editorEl) {
+    var _a;
+    if (this.virtualWindow && ((_a = this.virtualContentEl) == null ? void 0 : _a.isConnected))
+      return;
+    this.resetVirtualRendering();
+    editorEl.empty();
+    this.virtualContentEl = editorEl.createDiv("workflowy-virtual-content");
+    this.virtualLinesEl = this.virtualContentEl.createDiv("workflowy-vertical-lines-scroller");
+    this.virtualWindow = new VirtualOutlineWindow(this.virtualContentEl, {
+      createItem: (row) => this.createVirtualOutlineItem(row),
+      onUnmount: (row, item, _reason) => {
+        var _a2;
+        const outlineItem = item;
+        if (((_a2 = this.activeEdit) == null ? void 0 : _a2.blockId) === row.blockId)
+          this.activeEdit = null;
+        this.blockElements.delete(row.blockId);
+        outlineItem.destroy();
+      },
+      updateItem: (row, item) => this.updateVirtualOutlineItem(row, item),
+      onMounted: (row, item) => {
+        const outlineItem = item;
+        this.blockElements.set(row.blockId, outlineItem);
+        this.applyVirtualRowState(row, outlineItem);
+        void outlineItem.mountViewportRender().then(() => {
+          var _a2, _b, _c;
+          if (this.destroyed || this.blockElements.get(row.blockId) !== outlineItem)
+            return;
+          (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateRow(row.blockId);
+          (_c = (_b = this.config).onRender) == null ? void 0 : _c.call(_b);
+        });
+      },
+      onWindowUpdated: () => {
+        var _a2;
+        (_a2 = this.virtualLinesManager) == null ? void 0 : _a2.update();
+        this.updateSelectionDisplay();
+      },
+      getCachedHeight: (row) => {
+        var _a2;
+        return (_a2 = this.rowHeightCache.get(this.rowHeightCacheKey(row.blockId))) != null ? _a2 : null;
+      },
+      setCachedHeight: (row, height) => this.rowHeightCache.set(this.rowHeightCacheKey(row.blockId), height)
+    }, { marginPx: 600 });
+  }
+  resetVirtualRendering() {
+    var _a, _b;
+    this.activeEdit = null;
+    (_a = this.virtualLinesManager) == null ? void 0 : _a.destroy();
+    this.virtualLinesManager = null;
+    (_b = this.virtualWindow) == null ? void 0 : _b.destroy();
+    this.virtualWindow = null;
+    this.virtualContentEl = null;
+    this.virtualLinesEl = null;
+    this.blockElements.clear();
+    this.rowHeightCache.clear();
+  }
+  rowHeightCacheKey(blockId) {
+    return `${this.config.sourcePath}::${blockId}`;
+  }
+  createVirtualOutlineItem(row) {
+    var _a;
+    const item = new OutlineItem(
+      row.block,
+      this.config.editor,
+      (blockId, content) => {
+        var _a2;
+        (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateRow(blockId);
+        this.config.onBlockUpdate(blockId, content);
+      },
+      (blockId) => {
+        var _a2, _b;
+        return (_b = (_a2 = this.config).onBlockFocus) == null ? void 0 : _b.call(_a2, blockId);
+      },
+      () => {
+        void this.renderAndPersist();
+      },
+      () => this.multiSelectionManager,
+      (blockId, options) => this.handleBulletClick(blockId, options),
+      () => this.zoomManager.getZoomedBlockId(),
+      this.config.app,
+      this.config.sourcePath,
+      this.config.settings,
+      this.config.viewId,
+      row.orderIndex,
+      this.slashCommandMenu,
+      true,
+      true,
+      (_a = this.livePreviewController) != null ? _a : void 0
+    );
+    item.onViewUndo = () => {
+      void this.executeUndo();
+    };
+    item.onViewRedo = () => {
+      void this.executeRedo();
+    };
+    item.onCollapseToggle = (blockId, collapsed) => {
+      this.saveAllEditingContent();
+      if (collapsed)
+        this.config.editor.collapse(blockId);
+      else
+        this.config.editor.expand(blockId);
+      this.rebuildRows(blockId);
+      void this.config.onPersist();
+    };
+    item.onEditStateChange = (edit) => this.handleActiveEditChange(edit);
+    item.onNavigateBlock = (blockId, direction) => {
+      var _a2;
+      const navigation = (_a2 = this.virtualWindow) == null ? void 0 : _a2.getAdjacentFocusableItem(blockId, direction);
+      if (!navigation)
+        return false;
+      try {
+        navigation.item.focusAtBoundary(direction === "previous" ? "end" : "start");
+        return true;
+      } finally {
+        navigation.release();
+      }
+    };
+    if (import_obsidian17.Platform.isMobile && this.mobileDOMPatcher) {
+      item.setMobilePatcher({
+        patchNewBlock: (afterBlockId, initialContent) => this.mobileDOMPatcher.patchNewBlock(afterBlockId, initialContent),
+        patchDeleteBlock: (blockId) => this.mobileDOMPatcher.patchDeleteBlock(blockId)
+      });
+    }
+    this.updateVirtualOutlineItem(row, item);
+    return item;
+  }
+  updateVirtualOutlineItem(row, item) {
+    if (!item.canSyncWithBlock(row.block))
+      return false;
+    if (item.getBlock().content !== row.block.content)
+      item.updateContent(row.block.content);
+    item.syncWithBlock(row.block);
+    item.setDisplayLevel(row.level);
+    item.updateOrderIndex(row.orderIndex);
+    this.applyVirtualRowState(row, item);
+    return true;
+  }
+  applyVirtualRowState(row, item) {
+    var _a;
+    const element = item.getElement();
+    element.classList.toggle("child-of-completed-todo", row.parentCompletedTodo);
+    const selected = ((_a = this.multiSelectionManager) == null ? void 0 : _a.getSelectedBlocks().includes(row.blockId)) === true;
+    element.classList.toggle("workflowy-selected", selected);
+  }
+  updateSelectionDisplay() {
+    var _a, _b;
+    const selected = new Set((_b = (_a = this.multiSelectionManager) == null ? void 0 : _a.getSelectedBlocks()) != null ? _b : []);
+    this.blockElements.forEach((item, blockId) => {
+      item.getElement().classList.toggle("workflowy-selected", selected.has(blockId));
+    });
+  }
+  handleActiveEditChange(edit) {
+    this.activeEdit = updateViewActiveEdit(this.virtualWindow, this.activeEdit, edit);
+  }
+  rebuildRows(_anchorBlockId) {
+    var _a, _b, _c;
+    if (!this.virtualWindow)
+      return;
+    if (((_a = this.activeEdit) == null ? void 0 : _a.pendingContent) != null) {
+      this.config.editor.updateBlockContent(this.activeEdit.blockId, this.activeEdit.pendingContent);
+      this.activeEdit = { ...this.activeEdit, pendingContent: null };
+    }
+    const rows = flattenVisibleBlocks(
+      this.config.editor.getState().blocks,
+      (blockId) => this.config.editor.isCollapsed(blockId),
+      { zoomRootId: this.zoomManager.getZoomedBlockId() }
+    );
+    this.virtualWindow.setRows(rows);
+    syncViewLivePreviewAfterRows(
+      this.livePreviewController,
+      this.virtualWindow,
+      this.activeEdit,
+      (item, activeEdit) => item.restoreEditState(activeEdit)
+    );
+    (_c = (_b = this.config).onRender) == null ? void 0 : _c.call(_b);
+  }
+  removeAddNodeHints(editorEl) {
+    editorEl.querySelectorAll(".workflowy-root-add-node-hint, .workflowy-zoom-add-child-hint").forEach((element) => element.remove());
   }
   async renderAndPersist() {
     await this.render();
@@ -16838,10 +22263,32 @@ var DailyNotesOutlineRenderer = class {
   zoomOut() {
     if (!this.zoomManager.isZoomed())
       return;
+    this.clearKeyboardZoomAnchors();
     this.zoomManager.zoomOut();
   }
+  async handleZoomChange() {
+    var _a;
+    await this.render();
+    if (this.destroyed)
+      return;
+    const restoreAnchor = this.pendingKeyboardZoomRestore;
+    this.pendingKeyboardZoomRestore = null;
+    if (!restoreAnchor) {
+      const zoomedBlockId = this.zoomManager.getZoomedBlockId();
+      if (zoomedBlockId) {
+        const block = findBlockById(this.config.editor.getState().blocks, zoomedBlockId);
+        this.focusVirtualBlock(zoomedBlockId, (_a = block == null ? void 0 : block.content.length) != null ? _a : 0);
+      }
+      return;
+    }
+    this.debugLog("[DailyNotesOutlineRenderer] Restoring keyboard zoom anchor:", restoreAnchor);
+    this.restoreCursor(restoreAnchor);
+  }
   refreshTheme() {
+    var _a;
     this.applyTheme();
+    this.rowHeightCache.clear();
+    (_a = this.virtualWindow) == null ? void 0 : _a.invalidateAllRows();
   }
   async navigateToSubpath(subpath) {
     if (!subpath)
@@ -16877,6 +22324,7 @@ var DailyNotesOutlineRenderer = class {
     return await this.executeFocusedBlockOperation((blockId) => this.config.editor.toggleCollapse(blockId));
   }
   async executeDeleteBlock() {
+    var _a;
     const blockId = this.getFocusedBlockId();
     if (!blockId)
       return false;
@@ -16884,8 +22332,11 @@ var DailyNotesOutlineRenderer = class {
     const focusTargetId = this.getDeleteFocusTargetId(blockId);
     if (!this.config.editor.deleteBlock(blockId))
       return false;
+    if (((_a = this.activeEdit) == null ? void 0 : _a.blockId) === blockId)
+      this.activeEdit = null;
     this.ensureZoomTargetExists();
-    await this.renderAndPersist();
+    this.rebuildRows(focusTargetId || void 0);
+    await this.config.onPersist();
     if (focusTargetId)
       this.focusRenderedBlock(focusTargetId);
     return true;
@@ -16900,7 +22351,8 @@ var DailyNotesOutlineRenderer = class {
     }
     if (!changed)
       return false;
-    await this.renderAndPersist();
+    this.rebuildRows();
+    await this.config.onPersist();
     return true;
   }
   async expandAll() {
@@ -16912,15 +22364,34 @@ var DailyNotesOutlineRenderer = class {
     }
     if (!changed)
       return false;
-    await this.renderAndPersist();
+    this.rebuildRows();
+    await this.config.onPersist();
     return true;
   }
+  discardEditingForExternalReload() {
+    this.activeEdit = discardLivePreviewForExternalReload(
+      this.livePreviewController,
+      this.activeEdit,
+      (blockId) => {
+        var _a;
+        return (_a = this.virtualWindow) == null ? void 0 : _a.unpin(blockId);
+      }
+    );
+  }
   saveAllEditingContent() {
+    var _a;
+    if (((_a = this.activeEdit) == null ? void 0 : _a.pendingContent) != null) {
+      const block = findBlockById(this.config.editor.getState().blocks, this.activeEdit.blockId);
+      if (block && block.content !== this.activeEdit.pendingContent) {
+        this.config.editor.updateBlockContent(this.activeEdit.blockId, this.activeEdit.pendingContent);
+      }
+      this.activeEdit = { ...this.activeEdit, pendingContent: null };
+    }
     this.blockElements.forEach((item, blockId) => {
       const content = item.getEditableContentSnapshot();
       if (content === null)
         return;
-      const block = getAllBlocks(this.config.editor.getState().blocks).find((candidate) => candidate.id === blockId);
+      const block = findBlockById(this.config.editor.getState().blocks, blockId);
       if (!block || block.content === content)
         return;
       this.config.editor.updateBlockContent(blockId, content);
@@ -16934,31 +22405,32 @@ var DailyNotesOutlineRenderer = class {
     if (!operation(blockId))
       return false;
     this.ensureZoomTargetExists();
-    await this.renderAndPersist();
+    this.rebuildRows(blockId);
+    await this.config.onPersist();
     this.focusRenderedBlock(blockId);
     return true;
   }
   getFocusedBlockId() {
-    var _a;
+    var _a, _b, _c;
     const activeElement = document.activeElement;
     const activeBlockEl = (_a = activeElement == null ? void 0 : activeElement.closest) == null ? void 0 : _a.call(activeElement, `${this.containerSelector} .workflowy-item`);
     const activeBlockId = activeBlockEl == null ? void 0 : activeBlockEl.dataset.blockId;
-    if (activeBlockId && this.blockElements.has(activeBlockId))
+    if (activeBlockId && ((_b = this.virtualWindow) == null ? void 0 : _b.getRowIndex(activeBlockId)) >= 0)
       return activeBlockId;
     const focusedBlockId = this.config.editor.getState().focusedBlockId;
-    if (focusedBlockId && this.blockElements.has(focusedBlockId))
+    if (focusedBlockId && ((_c = this.virtualWindow) == null ? void 0 : _c.getRowIndex(focusedBlockId)) >= 0)
       return focusedBlockId;
     return null;
   }
   getDeleteFocusTargetId(blockId) {
-    var _a;
-    const allBlocks = getAllBlocks(this.config.editor.getState().blocks);
-    const currentIndex = allBlocks.findIndex((block) => block.id === blockId);
+    var _a, _b;
+    const visibleBlockIds = (_b = (_a = this.virtualWindow) == null ? void 0 : _a.getBlockIds()) != null ? _b : [];
+    const currentIndex = visibleBlockIds.indexOf(blockId);
     if (currentIndex < 0)
       return null;
     if (currentIndex > 0)
-      return allBlocks[currentIndex - 1].id;
-    return ((_a = allBlocks[currentIndex + 1]) == null ? void 0 : _a.id) || null;
+      return visibleBlockIds[currentIndex - 1];
+    return visibleBlockIds[currentIndex + 1] || null;
   }
   ensureZoomTargetExists() {
     if (!this.zoomManager.isZoomed())
@@ -16969,6 +22441,7 @@ var DailyNotesOutlineRenderer = class {
       this.zoomManager.zoomOut();
   }
   async revealBlock(blockId) {
+    var _a;
     const allBlocks = getAllBlocks(this.config.editor.getState().blocks);
     if (!allBlocks.some((block) => block.id === blockId))
       return false;
@@ -16976,9 +22449,8 @@ var DailyNotesOutlineRenderer = class {
       this.zoomManager.zoomOut();
     }
     const expanded = this.expandAncestors(blockId);
-    if (expanded || !this.blockElements.has(blockId)) {
+    if (expanded || ((_a = this.virtualWindow) == null ? void 0 : _a.getRowIndex(blockId)) < 0)
       await this.render();
-    }
     return this.scrollToBlockAndHighlight(blockId);
   }
   async revealHeading(heading) {
@@ -17022,8 +22494,13 @@ var DailyNotesOutlineRenderer = class {
     return false;
   }
   scrollToBlockAndHighlight(blockId) {
-    var _a, _b;
-    const item = this.blockElements.get(blockId);
+    var _a, _b, _c, _d;
+    const rowIndex = (_b = (_a = this.virtualWindow) == null ? void 0 : _a.getRowIndex(blockId)) != null ? _b : -1;
+    if (rowIndex < 0 || !this.virtualWindow)
+      return false;
+    this.virtualWindow.pin(blockId);
+    this.virtualWindow.scrollToRow(rowIndex, "center");
+    const item = this.virtualWindow.getMountedItem(blockId);
     if (!item)
       return false;
     const element = item.getElement();
@@ -17037,7 +22514,7 @@ var DailyNotesOutlineRenderer = class {
     }
     item.focus();
     this.config.editor.focusBlock(blockId);
-    (_b = (_a = this.config).onBlockFocus) == null ? void 0 : _b.call(_a, blockId);
+    (_d = (_c = this.config).onBlockFocus) == null ? void 0 : _d.call(_c, blockId);
     return true;
   }
   registerKeyboardEvents() {
@@ -17051,10 +22528,8 @@ var DailyNotesOutlineRenderer = class {
         if (isMultiSelectionKey)
           return;
         const target = e.target;
-        const isMod = e.ctrlKey || e.metaKey;
-        const isMarkdownShortcut = isMod && (e.key === "b" || e.key === "i" || e.key === "k" || e.shiftKey && e.key === "H");
         const isInEditor = target.classList.contains("workflowy-content-editor") || !!target.closest(".workflowy-content-editor");
-        if (isMarkdownShortcut && isInEditor)
+        if (isInEditor)
           return;
         e.stopImmediatePropagation();
         const contentEl = target.closest(".workflowy-content, .workflowy-content-editor, .workflowy-content-display");
@@ -17121,7 +22596,7 @@ var DailyNotesOutlineRenderer = class {
   }
   initMobileToolbar() {
     var _a;
-    if (!import_obsidian14.Platform.isMobile || ((_a = this.config.settings.features) == null ? void 0 : _a.mobileToolbar) === false)
+    if (!import_obsidian17.Platform.isMobile || ((_a = this.config.settings.features) == null ? void 0 : _a.mobileToolbar) === false)
       return;
     this.mobileDOMPatcher = new MobileDOMPatcher({
       editor: this.config.editor,
@@ -17133,8 +22608,31 @@ var DailyNotesOutlineRenderer = class {
         this.saveAllEditingContent();
         return 0;
       },
+      insertBlockAndFocus: (afterBlockId, initialContent) => {
+        var _a2;
+        this.saveAllEditingContent();
+        const newBlock = this.config.editor.createNewBlock(afterBlockId, initialContent);
+        this.rebuildRows(newBlock.id);
+        this.focusRenderedBlock(newBlock.id, (_a2 = initialContent == null ? void 0 : initialContent.length) != null ? _a2 : 0);
+        void this.config.onPersist();
+        return newBlock.id;
+      },
+      deleteBlockAndFocus: (blockId) => {
+        var _a2;
+        this.saveAllEditingContent();
+        const focusTargetId = this.getDeleteFocusTargetId(blockId);
+        if (!this.config.editor.deleteBlock(blockId))
+          return false;
+        if (((_a2 = this.activeEdit) == null ? void 0 : _a2.blockId) === blockId)
+          this.activeEdit = null;
+        this.ensureZoomTargetExists();
+        this.rebuildRows(focusTargetId || void 0);
+        if (focusTargetId)
+          this.focusRenderedBlock(focusTargetId);
+        void this.config.onPersist();
+        return true;
+      },
       settings: this.config.settings,
-      getVerticalLinesManager: () => this.verticalLinesManager,
       app: this.config.app,
       getSourcePath: () => this.config.sourcePath,
       getViewId: () => this.config.viewId,
@@ -17144,7 +22642,7 @@ var DailyNotesOutlineRenderer = class {
         var _a2, _b;
         return (_b = (_a2 = this.config).onBlockFocus) == null ? void 0 : _b.call(_a2, blockId);
       },
-      onBulletClick: (blockId) => this.handleBulletClick(blockId),
+      onBulletClick: (blockId, options) => this.handleBulletClick(blockId, options),
       onViewUndo: () => {
         void this.executeUndo();
       },
@@ -17352,6 +22850,7 @@ var DailyNotesOutlineRenderer = class {
   async toggleRenderMode() {
     this.saveAllEditingContent();
     this.config.settings.editor.renderMode = this.config.settings.editor.renderMode === "live-preview" ? "source" : "live-preview";
+    this.resetVirtualRendering();
     await this.render();
   }
   async expandToLevel(level) {
@@ -17382,14 +22881,16 @@ var DailyNotesOutlineRenderer = class {
       if (index > 0) {
         navigationEl.createSpan({ cls: "workflowy-daily-note-zoom-delimiter", text: "\u203A" });
       }
+      const ariaLabel = t("ui.nav.jumpToLevelWithTitle", { title: breadcrumb.title });
       const item = navigationEl.createEl("button", {
         cls: "workflowy-daily-note-zoom-item",
         text: breadcrumb.title,
         attr: {
           type: "button",
-          title: t("ui.nav.jumpToLevel")
+          "aria-label": ariaLabel
         }
       });
+      this.addMarkdownTooltip(item, breadcrumb.title);
       item.toggleClass("current", index === breadcrumbs.length - 1);
       item.addEventListener("click", (event) => {
         event.preventDefault();
@@ -17398,9 +22899,43 @@ var DailyNotesOutlineRenderer = class {
       });
     });
   }
+  addMarkdownTooltip(item, markdown) {
+    item.addEventListener("mouseenter", () => {
+      void this.showMarkdownTooltip(item, markdown);
+    });
+    item.addEventListener("focus", () => {
+      void this.showMarkdownTooltip(item, markdown);
+    });
+  }
+  async showMarkdownTooltip(target, markdown) {
+    const token = ++this.tooltipRenderToken;
+    const fragment = document.createDocumentFragment();
+    const wrapper = document.createElement("div");
+    wrapper.className = "workflowy-breadcrumb-markdown-tooltip-content";
+    try {
+      await import_obsidian17.MarkdownRenderer.render(
+        this.config.app,
+        markdown,
+        wrapper,
+        this.config.sourcePath,
+        this.tooltipComponent
+      );
+    } catch (e) {
+      wrapper.textContent = markdown;
+    }
+    if (token !== this.tooltipRenderToken || !target.matches(":hover") && document.activeElement !== target) {
+      return;
+    }
+    fragment.appendChild(wrapper);
+    (0, import_obsidian17.displayTooltip)(target, fragment, {
+      placement: "top",
+      classes: ["workflowy-breadcrumb-markdown-tooltip"]
+    });
+  }
   handleZoomBreadcrumbClick(breadcrumb) {
     if (breadcrumb.blockId === this.zoomManager.getZoomedBlockId())
       return;
+    this.clearKeyboardZoomAnchors();
     if (!breadcrumb.blockId) {
       this.zoomManager.zoomOut();
       return;
@@ -17414,25 +22949,6 @@ var DailyNotesOutlineRenderer = class {
     navigationEl.empty();
     navigationEl.removeClass("is-zoomed");
     navigationEl.addClass("is-empty");
-  }
-  getVisibleBlocks() {
-    const blocks = this.config.editor.getState().blocks;
-    const zoomedBlockId = this.zoomManager.getZoomedBlockId();
-    if (!zoomedBlockId)
-      return blocks;
-    const zoomedBlock = getAllBlocks(blocks).find((block) => block.id === zoomedBlockId);
-    if (!zoomedBlock) {
-      this.zoomManager.zoomOut();
-      return blocks;
-    }
-    return [this.adjustZoomedBlockLevel(zoomedBlock, zoomedBlock.level)];
-  }
-  adjustZoomedBlockLevel(block, baseLevel) {
-    return {
-      ...block,
-      level: block.level - baseLevel,
-      children: block.children.map((child) => this.adjustZoomedBlockLevel(child, baseLevel))
-    };
   }
   renderRootAddNodeHint(blocks, editorContainer) {
     if (this.zoomManager.isZoomed() || blocks.length > 0)
@@ -17477,7 +22993,7 @@ var DailyNotesOutlineRenderer = class {
       this.focusRenderedBlock(newBlock.id);
     } catch (error) {
       console.error("[DailyNotesOutlineRenderer] Failed to create root block:", error);
-      new import_obsidian14.Notice(t("ui.dailyNotesOutline.addNodeFailed"));
+      new import_obsidian17.Notice(t("ui.dailyNotesOutline.addNodeFailed"));
     } finally {
       this.isCreatingRootBlock = false;
       if (hintEl.isConnected)
@@ -17498,57 +23014,93 @@ var DailyNotesOutlineRenderer = class {
       this.focusRenderedBlock(newBlock.id);
     } catch (error) {
       console.error("[DailyNotesOutlineRenderer] Failed to create zoom child block:", error);
-      new import_obsidian14.Notice(t("ui.dailyNotesOutline.addNodeFailed"));
+      new import_obsidian17.Notice(t("ui.dailyNotesOutline.addNodeFailed"));
     } finally {
       this.isCreatingZoomChildBlock = false;
       if (hintEl.isConnected)
         hintEl.disabled = false;
     }
   }
-  focusRenderedBlock(blockId) {
+  focusRenderedBlock(blockId, cursorOffset) {
     window.setTimeout(() => {
-      var _a;
-      (_a = this.blockElements.get(blockId)) == null ? void 0 : _a.focus();
+      this.focusVirtualBlock(blockId, cursorOffset, 0);
     }, 50);
   }
-  initializeVerticalLines(editorContainer) {
-    var _a;
-    (_a = this.verticalLinesManager) == null ? void 0 : _a.destroy();
-    this.verticalLinesManager = null;
-    if (this.config.settings.ui.showVerticalLines === false)
+  focusVirtualBlock(blockId, cursorOffset, selectionLength = 0) {
+    if (!this.virtualWindow)
+      return false;
+    const rowIndex = this.virtualWindow.getRowIndex(blockId);
+    if (rowIndex < 0)
+      return false;
+    this.virtualWindow.pin(blockId);
+    this.virtualWindow.scrollToRow(rowIndex, "nearest");
+    const item = this.virtualWindow.getMountedItem(blockId);
+    if (!item)
+      return false;
+    item.focus();
+    if (cursorOffset !== void 0)
+      this.restoreCursorOffset(item, cursorOffset, selectionLength);
+    return true;
+  }
+  initializeVerticalLines(_editorContainer) {
+    var _a, _b;
+    (_a = this.virtualLinesManager) == null ? void 0 : _a.destroy();
+    this.virtualLinesManager = null;
+    if (this.config.settings.ui.showVerticalLines === false || !this.virtualWindow || !this.virtualLinesEl)
       return;
-    this.verticalLinesManager = new VerticalLinesManager(
-      editorContainer,
-      this.config.editor,
-      (blockId) => this.handleVerticalLineClick(blockId),
-      this.config.settings.ui.indentSize
-    );
-    this.verticalLinesManager.update();
+    this.virtualLinesManager = new VirtualVerticalLinesManager(this.virtualLinesEl, this.virtualWindow, {
+      indentSize: this.config.settings.ui.indentSize,
+      debugMode: ((_b = this.config.settings.isolation) == null ? void 0 : _b.debugMode) === true,
+      onLineClick: (blockId) => {
+        this.config.editor.toggleCollapse(blockId);
+        this.rebuildRows(blockId);
+        void this.config.onPersist();
+      }
+    });
+    this.virtualLinesManager.update();
   }
   initializeMultiSelection(editorContainer, previousSelection) {
     var _a;
     (_a = this.multiSelectionManager) == null ? void 0 : _a.destroy();
-    this.multiSelectionManager = new MultiSelectionManager(
+    const generation = this.renderGeneration;
+    const manager = new MultiSelectionManager(
       editorContainer,
       this.config.editor,
       () => void 0,
       () => {
         void this.renderAndPersist();
+      },
+      {
+        virtualSource: {
+          getVerticalDragRange: (startBlockId, clientY) => {
+            if (!this.virtualWindow)
+              return null;
+            const orderedBlockIds = this.virtualWindow.getBlockIds();
+            return {
+              orderedBlockIds,
+              startIndex: this.virtualWindow.getRowIndex(startBlockId),
+              currentIndex: this.virtualWindow.getRowIndexAtClientY(clientY)
+            };
+          }
+        }
       }
     );
+    this.multiSelectionManager = manager;
     if (previousSelection.length > 0) {
       window.requestAnimationFrame(() => {
-        var _a2;
-        (_a2 = this.multiSelectionManager) == null ? void 0 : _a2.setSelectedBlocks(previousSelection);
+        if (this.destroyed || generation !== this.renderGeneration || this.multiSelectionManager !== manager)
+          return;
+        manager.setSelectedBlocks(previousSelection);
       });
     }
   }
-  handleVerticalLineClick(blockId) {
-    this.config.editor.toggleCollapse(blockId);
-    void this.renderAndPersist();
-  }
-  handleBulletClick(blockId) {
+  handleBulletClick(blockId, options) {
     var _a, _b;
+    if ((options == null ? void 0 : options.source) === "keyboard") {
+      this.prepareKeyboardZoomRestore(options);
+    } else {
+      this.clearKeyboardZoomAnchors();
+    }
     this.config.editor.focusBlock(blockId);
     (_b = (_a = this.config).onBlockFocus) == null ? void 0 : _b.call(_a, blockId);
     if (this.zoomManager.getZoomedBlockId() === blockId) {
@@ -17557,91 +23109,40 @@ var DailyNotesOutlineRenderer = class {
     }
     this.zoomManager.zoomIn(blockId);
   }
-  renderBlockList(blocks, container, parentCompletedTodo = false, reusableItems) {
-    const renderPromises = [];
-    let orderedListCounter = 0;
-    for (const block of blocks) {
-      const orderIndex = block.isOrderedList ? ++orderedListCounter : 1;
-      if (!block.isOrderedList)
-        orderedListCounter = 0;
-      try {
-        let blockItem;
-        let element;
-        const reusable = reusableItems == null ? void 0 : reusableItems.get(block.id);
-        if (reusable) {
-          blockItem = reusable.item;
-          element = reusable.element;
-          blockItem.syncWithBlock(block);
-          blockItem.updateLevel(block.level);
-          if (block.isOrderedList)
-            blockItem.updateOrderIndex(orderIndex);
-          reusableItems.delete(block.id);
-        } else {
-          blockItem = new OutlineItem(
-            block,
-            this.config.editor,
-            (blockId, content) => this.config.onBlockUpdate(blockId, content),
-            (blockId) => {
-              var _a, _b;
-              return (_b = (_a = this.config).onBlockFocus) == null ? void 0 : _b.call(_a, blockId);
-            },
-            () => {
-              void this.renderAndPersist();
-            },
-            () => this.multiSelectionManager,
-            (blockId) => this.handleBulletClick(blockId),
-            () => this.zoomManager.getZoomedBlockId(),
-            this.config.app,
-            this.config.sourcePath,
-            this.config.settings,
-            this.config.viewId,
-            orderIndex,
-            this.slashCommandMenu
-          );
-          if (import_obsidian14.Platform.isMobile && this.mobileDOMPatcher) {
-            blockItem.setMobilePatcher({
-              patchNewBlock: (afterBlockId, initialContent) => this.mobileDOMPatcher.patchNewBlock(afterBlockId, initialContent),
-              patchDeleteBlock: (blockId) => this.mobileDOMPatcher.patchDeleteBlock(blockId)
-            });
-          }
-          const renderPromise = blockItem.waitForRender();
-          if (renderPromise)
-            renderPromises.push(renderPromise);
-          element = blockItem.getElement();
-        }
-        blockItem.onViewUndo = () => {
-          void this.executeUndo();
-        };
-        blockItem.onViewRedo = () => {
-          void this.executeRedo();
-        };
-        element.toggleClass("child-of-completed-todo", parentCompletedTodo);
-        container.appendChild(element);
-        this.blockElements.set(block.id, blockItem);
-        if (reusable && import_obsidian14.Platform.isMobile) {
-          const textarea = element.querySelector(".workflowy-content-editor");
-          if (textarea && textarea !== document.activeElement) {
-            textarea.focus();
-          }
-        }
-        if (block.children.length > 0 && !this.config.editor.isCollapsed(block.id)) {
-          const childContainer = container.createDiv("workflowy-children");
-          const childPromises = this.renderBlockList(
-            block.children,
-            childContainer,
-            parentCompletedTodo || block.isTodo && !!block.todoCompleted,
-            reusableItems
-          );
-          renderPromises.push(...childPromises);
-        }
-      } catch (error) {
-        console.error("[DailyNotesOutlineRenderer] Failed to render block:", error);
+  prepareKeyboardZoomRestore(options) {
+    if (options.direction === "in" && options.cursorState) {
+      this.keyboardZoomAnchorStack.push(options.cursorState);
+      this.pendingKeyboardZoomRestore = options.cursorState;
+      this.debugLog("[DailyNotesOutlineRenderer] Pushed keyboard zoom anchor:", options.cursorState);
+      return;
+    }
+    if (options.direction === "out") {
+      const zoomedBlockId = this.zoomManager.getZoomedBlockId();
+      if (zoomedBlockId) {
+        this.pendingKeyboardZoomRestore = this.popKeyboardZoomAnchor(zoomedBlockId);
+        this.debugLog("[DailyNotesOutlineRenderer] Popped keyboard zoom anchor:", this.pendingKeyboardZoomRestore);
       }
     }
-    return renderPromises;
+  }
+  popKeyboardZoomAnchor(blockId) {
+    for (let i = this.keyboardZoomAnchorStack.length - 1; i >= 0; i--) {
+      if (this.keyboardZoomAnchorStack[i].blockId === blockId) {
+        const [anchor] = this.keyboardZoomAnchorStack.splice(i, this.keyboardZoomAnchorStack.length - i);
+        return anchor;
+      }
+    }
+    return {
+      blockId,
+      offset: 0,
+      selectionLength: 0
+    };
+  }
+  clearKeyboardZoomAnchors() {
+    this.keyboardZoomAnchorStack = [];
+    this.pendingKeyboardZoomRestore = null;
   }
   async executeUndo() {
-    var _a;
+    var _a, _b;
     this.saveAllEditingContent();
     const blocksBefore = this.config.editor.getState().blocks;
     if (!this.config.editor.undo())
@@ -17656,7 +23157,12 @@ var DailyNotesOutlineRenderer = class {
       this.restoreCursor(cursorState, blocksAfter, blocksBefore);
       return;
     }
-    if (import_obsidian14.Platform.isMobile && ((_a = this.mobileDOMPatcher) == null ? void 0 : _a.patchUndoRedo(blocksAfter))) {
+    if (import_obsidian17.Platform.isMobile && ((_a = this.mobileDOMPatcher) == null ? void 0 : _a.patchUndoRedo(blocksAfter))) {
+      this.rebuildRows(cursorState == null ? void 0 : cursorState.blockId);
+      (_b = this.virtualWindow) == null ? void 0 : _b.forEachMounted((blockId) => {
+        var _a2;
+        return (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateRow(blockId);
+      });
       await this.config.onPersist();
       this.restoreCursor(cursorState, blocksAfter, blocksBefore);
       return;
@@ -17665,7 +23171,7 @@ var DailyNotesOutlineRenderer = class {
     this.restoreCursor(cursorState, blocksAfter, blocksBefore);
   }
   async executeRedo() {
-    var _a;
+    var _a, _b;
     this.saveAllEditingContent();
     const blocksBefore = this.config.editor.getState().blocks;
     if (!this.config.editor.redo())
@@ -17680,7 +23186,12 @@ var DailyNotesOutlineRenderer = class {
       this.restoreCursor(cursorState, blocksAfter, blocksBefore);
       return;
     }
-    if (import_obsidian14.Platform.isMobile && ((_a = this.mobileDOMPatcher) == null ? void 0 : _a.patchUndoRedo(blocksAfter))) {
+    if (import_obsidian17.Platform.isMobile && ((_a = this.mobileDOMPatcher) == null ? void 0 : _a.patchUndoRedo(blocksAfter))) {
+      this.rebuildRows(cursorState == null ? void 0 : cursorState.blockId);
+      (_b = this.virtualWindow) == null ? void 0 : _b.forEachMounted((blockId) => {
+        var _a2;
+        return (_a2 = this.virtualWindow) == null ? void 0 : _a2.invalidateRow(blockId);
+      });
       await this.config.onPersist();
       this.restoreCursor(cursorState, blocksAfter, blocksBefore);
       return;
@@ -17734,45 +23245,48 @@ var DailyNotesOutlineRenderer = class {
     return changedBlock;
   }
   applyContentOnlyPatch(diff) {
-    var _a;
+    var _a, _b;
     (_a = this.blockElements.get(diff.blockId)) == null ? void 0 : _a.updateContent(diff.newContent);
+    this.rebuildRows(diff.blockId);
+    (_b = this.virtualWindow) == null ? void 0 : _b.invalidateRow(diff.blockId);
   }
   restoreCursor(cursorState, currentBlocks, fallbackReferenceBlocks) {
+    var _a;
     if (!cursorState)
       return;
-    const item = this.blockElements.get(cursorState.blockId);
-    if (item) {
-      item.focus();
-      this.restoreCursorOffset(item, cursorState.offset, cursorState.selectionLength);
+    if (this.focusVirtualBlock(cursorState.blockId, cursorState.offset, cursorState.selectionLength))
       return;
-    }
     const referenceTrees = [currentBlocks, fallbackReferenceBlocks].filter(
       (blocks) => Array.isArray(blocks)
     );
     for (const referenceBlocks of referenceTrees) {
       const candidates = getCursorDegradationCandidates(cursorState.blockId, referenceBlocks);
       for (const candidateId of candidates) {
-        const candidateItem = this.blockElements.get(candidateId);
-        if (candidateItem) {
-          candidateItem.focus();
+        if (this.focusVirtualBlock(candidateId))
           return;
-        }
       }
     }
-    const first = this.blockElements.values().next().value;
-    if (first)
-      first.focus();
+    const firstBlockId = (_a = this.virtualWindow) == null ? void 0 : _a.getBlockIds()[0];
+    if (firstBlockId)
+      this.focusVirtualBlock(firstBlockId);
   }
   restoreCursorOffset(item, offset, selectionLength) {
+    var _a, _b;
     try {
+      const activeEdit = (_a = this.livePreviewController) == null ? void 0 : _a.getActiveEdit();
+      if ((activeEdit == null ? void 0 : activeEdit.blockId) === item.getBlock().id) {
+        const safeOffset2 = Math.min(Math.max(0, offset), activeEdit.document.length);
+        const safeEnd2 = Math.min(safeOffset2 + Math.max(0, selectionLength), activeEdit.document.length);
+        (_b = this.livePreviewController) == null ? void 0 : _b.setSelection({
+          ranges: [{ anchor: safeOffset2, head: safeEnd2 }],
+          mainIndex: 0
+        });
+        return;
+      }
       const element = item.getElement();
       const contentEl = element.querySelector(".workflowy-content, .workflowy-content-editor");
       if (!contentEl)
         return;
-      if (contentEl instanceof HTMLTextAreaElement) {
-        contentEl.setSelectionRange(offset, offset + selectionLength);
-        return;
-      }
       const selection = window.getSelection();
       if (!selection)
         return;
@@ -17790,30 +23304,16 @@ var DailyNotesOutlineRenderer = class {
     } catch (e) {
     }
   }
-  cleanupOrphanedRenderNodes(editorContainer) {
-    const liveElements = new Set(Array.from(this.blockElements.values()).map((item) => item.getElement()));
-    editorContainer.querySelectorAll(".workflowy-item").forEach((node) => {
-      const element = node;
-      if (!liveElements.has(element))
-        element.remove();
-    });
-    editorContainer.querySelectorAll(".workflowy-children").forEach((node) => {
-      const childContainer = node;
-      if (!childContainer.querySelector(".workflowy-item"))
-        childContainer.remove();
-    });
-  }
   destroyRenderedItems() {
-    var _a, _b;
-    (_a = this.verticalLinesManager) == null ? void 0 : _a.destroy();
-    this.verticalLinesManager = null;
-    (_b = this.multiSelectionManager) == null ? void 0 : _b.destroy();
+    var _a;
+    (_a = this.multiSelectionManager) == null ? void 0 : _a.destroy();
     this.multiSelectionManager = null;
-    this.blockElements.forEach((item) => item.destroy());
-    this.blockElements.clear();
+    this.resetVirtualRendering();
   }
   destroy() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e;
+    this.destroyed = true;
+    this.renderGeneration++;
     EventDelegator.getInstance().unregisterEvent("keydown", this.containerSelector);
     this.editorContainer.removeEventListener("paste", this.handlePaste, true);
     this.editorContainer.removeEventListener("drop", this.handleDrop, true);
@@ -17823,9 +23323,13 @@ var DailyNotesOutlineRenderer = class {
     this.mobileToolbar = null;
     (_c = this.mobileDOMPatcher) == null ? void 0 : _c.destroy();
     this.mobileDOMPatcher = null;
+    (_d = this.livePreviewController) == null ? void 0 : _d.flush();
+    (_e = this.livePreviewController) == null ? void 0 : _e.destroy();
+    this.livePreviewController = null;
     this.destroyRenderedItems();
     this.zoomManager.destroy();
     this.slashCommandMenu.destroy();
+    this.tooltipComponent.unload();
     this.clearZoomNavigation();
     this.editorContainer.empty();
   }
@@ -17884,6 +23388,7 @@ var DailyNoteSection = class {
     };
     this.containerEl = options.parentEl.createDiv({ cls: "workflowy-daily-note-section" });
     this.containerEl.dataset.path = options.file.path;
+    syncReadableLineWidthClass(this.containerEl, options.plugin.app);
     const headerEl = this.containerEl.createDiv({ cls: "workflowy-daily-note-header" });
     this.collapseButton = headerEl.createEl("button", {
       cls: "workflowy-daily-note-collapse",
@@ -18042,6 +23547,8 @@ var DailyNoteSection = class {
           onPersist: () => this.saveToFile(),
           onBlockFocus: () => this.activate(),
           onRender: () => this.scheduleHeightCapture(),
+          getFile: () => this.options.file,
+          getMenuView: () => this.options.hostLeaf.view,
           zoomNavigationEl: this.zoomNavigationEl
         }
       );
@@ -18133,20 +23640,20 @@ var DailyNoteSection = class {
   }
   registerCrossDocumentEvents() {
     this.unregisterCrossDocumentEvents();
-    const deleteBlocksHandler = (data) => {
+    const deleteBlocksHandler = (data2) => {
       const expectedViewId = `daily-notes-${this.options.file.path}`;
-      if (data.viewId !== expectedViewId || !this.editor || !this.renderer || this.destroyed)
+      if (data2.viewId !== expectedViewId || !this.editor || !this.renderer || this.destroyed)
         return;
       this.saveAllEditingContent();
-      data.blockIds.forEach((blockId) => this.editor.deleteBlock(blockId));
+      data2.blockIds.forEach((blockId) => this.editor.deleteBlock(blockId));
       void this.renderer.renderAndPersist();
     };
-    const updateBlockContentHandler = (data) => {
+    const updateBlockContentHandler = (data2) => {
       const expectedViewId = `daily-notes-${this.options.file.path}`;
-      if (data.viewId !== expectedViewId)
+      if (data2.viewId !== expectedViewId)
         return;
       if (!this.editor || !this.renderer || this.destroyed) {
-        data.complete(new Error(`Daily note section is not available: ${this.options.file.path}`));
+        data2.complete(new Error(`Daily note section is not available: ${this.options.file.path}`));
         return;
       }
       this.cancelUnload();
@@ -18154,12 +23661,12 @@ var DailyNoteSection = class {
       void (async () => {
         try {
           this.saveAllEditingContent();
-          this.editor.updateBlockContent(data.blockId, data.content);
+          this.editor.updateBlockContent(data2.blockId, data2.content);
           await this.renderer.renderAndPersist();
-          data.complete();
+          data2.complete();
         } catch (error) {
           console.error("[DailyNoteSection] Failed to update source block content:", error);
-          data.complete(error);
+          data2.complete(error);
         } finally {
           this.activeCrossDocumentTransactions = Math.max(0, this.activeCrossDocumentTransactions - 1);
         }
@@ -18187,6 +23694,7 @@ var DailyNoteSection = class {
       const content = await this.options.plugin.app.vault.read(this.options.file);
       if (content === this.lastKnownContent)
         return;
+      this.renderer.discardEditingForExternalReload();
       this.editor.loadFromMarkdown(
         content,
         this.options.plugin.settings.collapseState,
@@ -18279,6 +23787,12 @@ var DailyNoteSection = class {
     this.editorEl.style.minHeight = `${this.lastHeight}px`;
   }
   measureContentHeight() {
+    const virtualContent = this.editorEl.find(".workflowy-virtual-content");
+    if (virtualContent) {
+      const virtualHeight = Number.parseFloat(virtualContent.style.height || "0");
+      const hintCount = this.editorEl.querySelectorAll(".workflowy-empty-hint").length;
+      return Math.max(0, virtualHeight) + hintCount * 44;
+    }
     const candidates = [
       this.editorEl.find(".workflowy-container"),
       this.editorEl.find(".workflowy-editor"),
@@ -18302,7 +23816,7 @@ var DailyNoteSection = class {
         return (_a2 = this.resizeObserver) == null ? void 0 : _a2.observe(target);
       });
     }
-    if (typeof MutationObserver !== "undefined") {
+    if (typeof MutationObserver !== "undefined" && !this.editorEl.find(".workflowy-virtual-content")) {
       this.mutationObserver = new MutationObserver(() => this.scheduleHeightCapture());
       const root = (_a = this.editorEl.find(".workflowy-container")) != null ? _a : this.editorEl;
       this.mutationObserver.observe(root, {
@@ -18379,10 +23893,10 @@ var DailyNoteSection = class {
 };
 
 // src/daily-notes/daily-notes-config-provider.ts
-var import_obsidian16 = require("obsidian");
+var import_obsidian19 = require("obsidian");
 
 // node_modules/obsidian-daily-notes-interface/dist/index.mjs
-var import_obsidian15 = require("obsidian");
+var import_obsidian18 = require("obsidian");
 function validateString(value) {
   return typeof value === "string" ? value : "";
 }
@@ -18504,13 +24018,13 @@ async function ensureFolderExists(path) {
 async function getNotePath(directory, filename) {
   if (!filename.endsWith(".md"))
     filename += ".md";
-  const path = (0, import_obsidian15.normalizePath)(join(directory, filename));
+  const path = (0, import_obsidian18.normalizePath)(join(directory, filename));
   await ensureFolderExists(path);
   return path;
 }
 async function getTemplateInfo(template) {
   const { metadataCache, vault } = window.app;
-  const templatePath = (0, import_obsidian15.normalizePath)(template);
+  const templatePath = (0, import_obsidian18.normalizePath)(template);
   if (templatePath === "/")
     return ["", null];
   try {
@@ -18518,7 +24032,7 @@ async function getTemplateInfo(template) {
     return [await vault.cachedRead(templateFile), window.app.foldManager.load(templateFile)];
   } catch (err) {
     console.error(`Failed to read the daily note template '${templatePath}'`, err);
-    new import_obsidian15.Notice("Failed to read the daily note template");
+    new import_obsidian18.Notice("Failed to read the daily note template");
     return ["", null];
   }
 }
@@ -18587,18 +24101,18 @@ async function createDailyNote(date) {
     return createdFile;
   } catch (err) {
     console.error(`Failed to create file: '${normalizedPath}'`, err);
-    new import_obsidian15.Notice("Unable to create new file.");
+    new import_obsidian18.Notice("Unable to create new file.");
   }
 }
 function getAllDailyNotes() {
   const { vault } = window.app;
   const { folder = "" } = getDailyNoteSettings();
-  const dailyNotesFolder = vault.getAbstractFileByPath((0, import_obsidian15.normalizePath)(folder));
-  if (!(dailyNotesFolder instanceof import_obsidian15.TFolder))
+  const dailyNotesFolder = vault.getAbstractFileByPath((0, import_obsidian18.normalizePath)(folder));
+  if (!(dailyNotesFolder instanceof import_obsidian18.TFolder))
     throw new DailyNotesFolderMissingError("Failed to find daily notes folder");
   const dailyNotes3 = {};
-  import_obsidian15.Vault.recurseChildren(dailyNotesFolder, (note) => {
-    if (note instanceof import_obsidian15.TFile) {
+  import_obsidian18.Vault.recurseChildren(dailyNotesFolder, (note) => {
+    if (note instanceof import_obsidian18.TFile) {
       const date = getDateFromFile(note, "day");
       if (date) {
         const dateString = getDateUID(date, "day");
@@ -18654,7 +24168,7 @@ var DailyNotesConfigProvider = class {
     return this.scanDailyNotes(config);
   }
   getDailyNoteForDate(date) {
-    const targetDate = (0, import_obsidian16.moment)(date).startOf("day");
+    const targetDate = (0, import_obsidian19.moment)(date).startOf("day");
     if (!targetDate.isValid())
       return null;
     const config = this.getConfig();
@@ -18663,10 +24177,10 @@ var DailyNotesConfigProvider = class {
     ) || null;
   }
   getTodayNote() {
-    return this.getDailyNoteForDate((0, import_obsidian16.moment)());
+    return this.getDailyNoteForDate((0, import_obsidian19.moment)());
   }
   async createDailyNoteForDate(date) {
-    const targetDate = (0, import_obsidian16.moment)(date).startOf("day");
+    const targetDate = (0, import_obsidian19.moment)(date).startOf("day");
     if (!targetDate.isValid())
       return null;
     const existing = this.getDailyNoteForDate(targetDate);
@@ -18677,19 +24191,19 @@ var DailyNotesConfigProvider = class {
       return await createDailyNote(targetDate) || null;
     }
     const relativePath = `${targetDate.format(config.format)}.md`;
-    const path = (0, import_obsidian16.normalizePath)(config.folder ? `${config.folder}/${relativePath}` : relativePath);
+    const path = (0, import_obsidian19.normalizePath)(config.folder ? `${config.folder}/${relativePath}` : relativePath);
     const parentPath = path.split("/").slice(0, -1).join("/");
     if (parentPath)
       await this.ensureFolder(parentPath);
     return await this.app.vault.create(path, await this.getTemplateContent(config.template, config.format, targetDate));
   }
   async createTodayNote() {
-    return await this.createDailyNoteForDate((0, import_obsidian16.moment)());
+    return await this.createDailyNoteForDate((0, import_obsidian19.moment)());
   }
   getDateFromFile(file, config = this.getConfig()) {
     const relativePath = config.folder && file.path.startsWith(`${config.folder}/`) ? file.path.slice(config.folder.length + 1) : file.path;
     const pathWithoutExtension = relativePath.replace(/\.md$/i, "");
-    return (0, import_obsidian16.moment)(pathWithoutExtension, config.format, true);
+    return (0, import_obsidian19.moment)(pathWithoutExtension, config.format, true);
   }
   isDailyNote(file) {
     const config = this.getConfig();
@@ -18705,7 +24219,7 @@ var DailyNotesConfigProvider = class {
   }
   normalizeConfiguredPath(path) {
     const trimmed = (path || "").trim().replace(/^\/+|\/+$/g, "");
-    return trimmed ? (0, import_obsidian16.normalizePath)(trimmed) : "";
+    return trimmed ? (0, import_obsidian19.normalizePath)(trimmed) : "";
   }
   isInFolder(file, folder) {
     var _a;
@@ -18715,37 +24229,37 @@ var DailyNotesConfigProvider = class {
     return parentPath === folder || parentPath.startsWith(`${folder}/`);
   }
   async ensureFolder(folder) {
-    const segments = (0, import_obsidian16.normalizePath)(folder).split("/").filter(Boolean);
+    const segments = (0, import_obsidian19.normalizePath)(folder).split("/").filter(Boolean);
     let current = "";
     for (const segment of segments) {
-      current = (0, import_obsidian16.normalizePath)(current ? `${current}/${segment}` : segment);
+      current = (0, import_obsidian19.normalizePath)(current ? `${current}/${segment}` : segment);
       if (!this.app.vault.getAbstractFileByPath(current)) {
         await this.app.vault.createFolder(current);
       }
     }
   }
-  async getTemplateContent(templatePath, format, date = (0, import_obsidian16.moment)()) {
+  async getTemplateContent(templatePath, format, date = (0, import_obsidian19.moment)()) {
     if (!templatePath)
       return "";
     const template = this.resolveTemplate(templatePath);
     if (!template)
       return "";
-    const title = (0, import_obsidian16.moment)(date).format(format);
+    const title = (0, import_obsidian19.moment)(date).format(format);
     const content = await this.app.vault.read(template);
-    return content.replace(/{{date}}/g, title).replace(/{{title}}/g, title).replace(/{{time}}/g, (0, import_obsidian16.moment)(date).format("HH:mm"));
+    return content.replace(/{{date}}/g, title).replace(/{{title}}/g, title).replace(/{{time}}/g, (0, import_obsidian19.moment)(date).format("HH:mm"));
   }
   resolveTemplate(templatePath) {
     const exact = this.app.vault.getAbstractFileByPath(templatePath);
-    if (exact instanceof import_obsidian16.TFile)
+    if (exact instanceof import_obsidian19.TFile)
       return exact;
     const markdown = this.app.vault.getAbstractFileByPath(`${templatePath}.md`);
-    return markdown instanceof import_obsidian16.TFile ? markdown : null;
+    return markdown instanceof import_obsidian19.TFile ? markdown : null;
   }
 };
 
 // src/daily-notes/daily-notes-modals.ts
-var import_obsidian17 = require("obsidian");
-var DailyNotesTargetModal = class extends import_obsidian17.Modal {
+var import_obsidian20 = require("obsidian");
+var DailyNotesTargetModal = class extends import_obsidian20.Modal {
   constructor(app, mode, initialValue, onSubmit) {
     super(app);
     this.mode = mode;
@@ -18754,8 +24268,8 @@ var DailyNotesTargetModal = class extends import_obsidian17.Modal {
   }
   onOpen() {
     this.titleEl.setText(this.mode === "folder" ? t("dailyNotes.modal.selectFolder") : t("dailyNotes.modal.selectTag"));
-    new import_obsidian17.Setting(this.contentEl).setName(this.mode === "folder" ? t("dailyNotes.modal.folderPath") : t("dailyNotes.modal.tag")).addText((text) => text.setPlaceholder(this.mode === "folder" ? t("dailyNotes.modal.folderPlaceholder") : t("dailyNotes.modal.tagPlaceholder")).setValue(this.value).onChange((value) => this.value = value));
-    new import_obsidian17.Setting(this.contentEl).addButton((button) => button.setButtonText(t("common.button.apply")).setCta().onClick(() => {
+    new import_obsidian20.Setting(this.contentEl).setName(this.mode === "folder" ? t("dailyNotes.modal.folderPath") : t("dailyNotes.modal.tag")).addText((text) => text.setPlaceholder(this.mode === "folder" ? t("dailyNotes.modal.folderPlaceholder") : t("dailyNotes.modal.tagPlaceholder")).setValue(this.value).onChange((value) => this.value = value));
+    new import_obsidian20.Setting(this.contentEl).addButton((button) => button.setButtonText(t("common.button.apply")).setCta().onClick(() => {
       this.close();
       this.onSubmit(this.value.trim());
     }));
@@ -18764,7 +24278,7 @@ var DailyNotesTargetModal = class extends import_obsidian17.Modal {
     this.contentEl.empty();
   }
 };
-var DailyNotesCustomRangeModal = class extends import_obsidian17.Modal {
+var DailyNotesCustomRangeModal = class extends import_obsidian20.Modal {
   constructor(app, initialValue, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;
@@ -18773,9 +24287,9 @@ var DailyNotesCustomRangeModal = class extends import_obsidian17.Modal {
   }
   onOpen() {
     this.titleEl.setText(t("dailyNotes.modal.customRange"));
-    new import_obsidian17.Setting(this.contentEl).setName(t("dailyNotes.modal.startDate")).addText((text) => text.setPlaceholder("YYYY-MM-DD").setValue(this.start).onChange((value) => this.start = value));
-    new import_obsidian17.Setting(this.contentEl).setName(t("dailyNotes.modal.endDate")).addText((text) => text.setPlaceholder("YYYY-MM-DD").setValue(this.end).onChange((value) => this.end = value));
-    new import_obsidian17.Setting(this.contentEl).addButton((button) => button.setButtonText(t("common.button.apply")).setCta().onClick(() => {
+    new import_obsidian20.Setting(this.contentEl).setName(t("dailyNotes.modal.startDate")).addText((text) => text.setPlaceholder("YYYY-MM-DD").setValue(this.start).onChange((value) => this.start = value));
+    new import_obsidian20.Setting(this.contentEl).setName(t("dailyNotes.modal.endDate")).addText((text) => text.setPlaceholder("YYYY-MM-DD").setValue(this.end).onChange((value) => this.end = value));
+    new import_obsidian20.Setting(this.contentEl).addButton((button) => button.setButtonText(t("common.button.apply")).setCta().onClick(() => {
       if (!this.start || !this.end)
         return;
       this.close();
@@ -18786,20 +24300,20 @@ var DailyNotesCustomRangeModal = class extends import_obsidian17.Modal {
     this.contentEl.empty();
   }
 };
-var DailyNotesDatePickerModal = class extends import_obsidian17.Modal {
+var DailyNotesDatePickerModal = class extends import_obsidian20.Modal {
   constructor(app, initialValue, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;
-    this.value = initialValue || (0, import_obsidian17.moment)().format("YYYY-MM-DD");
+    this.value = initialValue || (0, import_obsidian20.moment)().format("YYYY-MM-DD");
   }
   onOpen() {
     this.titleEl.setText(t("dailyNotes.modal.pickDailyNoteDate"));
-    new import_obsidian17.Setting(this.contentEl).setName(t("dailyNotes.modal.date")).addText((text) => {
+    new import_obsidian20.Setting(this.contentEl).setName(t("dailyNotes.modal.date")).addText((text) => {
       text.inputEl.type = "date";
       text.setValue(this.value).onChange((value) => this.value = value);
     });
-    new import_obsidian17.Setting(this.contentEl).addButton((button) => button.setButtonText(t("common.button.jump")).setCta().onClick(() => {
-      const date = (0, import_obsidian17.moment)(this.value, "YYYY-MM-DD", true);
+    new import_obsidian20.Setting(this.contentEl).addButton((button) => button.setButtonText(t("common.button.jump")).setCta().onClick(() => {
+      const date = (0, import_obsidian20.moment)(this.value, "YYYY-MM-DD", true);
       if (!date.isValid())
         return;
       this.close();
@@ -18859,7 +24373,7 @@ var RANGE_LABEL_KEYS = {
 function getRangeLabel(range) {
   return t(`dailyNotes.range.${RANGE_LABEL_KEYS[range]}`);
 }
-var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
+var WorkflowyDailyNotesView = class extends import_obsidian21.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -18880,6 +24394,9 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
   }
   getViewType() {
     return WORKFLOWY_DAILY_NOTES_VIEW_TYPE;
+  }
+  getMode() {
+    return "source";
   }
   getDisplayText() {
     switch (this.state.selectionMode) {
@@ -18952,6 +24469,7 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
     this.contentEl.empty();
     this.contentEl.addClass("workflowy-daily-notes-container");
     this.applyTheme();
+    this.syncReadableLineWidth();
     this.addAction("palette", t("dailyNotes.action.switchTheme"), (event) => void this.openThemeMenu(event));
     this.addAction("calendar-plus", t("dailyNotes.action.createTodayNote"), () => void this.createTodayNoteFromToolbar());
     this.addAction("calendar-days", t("dailyNotes.action.pickDate"), () => this.openDatePickerModal());
@@ -18961,6 +24479,7 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
     this.addAction("refresh-cw", t("dailyNotes.action.refresh"), () => this.refresh());
     this.renderShell();
     this.scheduleLeafHeaderTitleSync();
+    this.registerReadableLineWidthEvents();
     this.registerSubpathNavigationEvents();
     this.refresh();
     void this.processPendingNavigation();
@@ -19072,17 +24591,17 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
     });
   }
   async createTodayNoteFromToolbar() {
-    await this.createOrRevealDailyNote((0, import_obsidian18.moment)(), {
+    await this.createOrRevealDailyNote((0, import_obsidian21.moment)(), {
       createFailure: t("dailyNotes.notice.createTodayFailure"),
       operationFailure: t("dailyNotes.notice.operateTodayFailure"),
       outsideScope: t("dailyNotes.notice.todayOutsideScope")
     });
   }
   openDatePickerModal() {
-    new DailyNotesDatePickerModal(this.app, (0, import_obsidian18.moment)().format("YYYY-MM-DD"), (value) => {
-      const date = (0, import_obsidian18.moment)(value, "YYYY-MM-DD", true);
+    new DailyNotesDatePickerModal(this.app, (0, import_obsidian21.moment)().format("YYYY-MM-DD"), (value) => {
+      const date = (0, import_obsidian21.moment)(value, "YYYY-MM-DD", true);
       if (!date.isValid()) {
-        new import_obsidian18.Notice(t("dailyNotes.notice.invalidDate"));
+        new import_obsidian21.Notice(t("dailyNotes.notice.invalidDate"));
         return;
       }
       void this.createOrRevealDailyNote(date, {
@@ -19094,26 +24613,26 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
   }
   async createOrRevealDailyNote(date, messages) {
     try {
-      const targetDate = (0, import_obsidian18.moment)(date).startOf("day");
+      const targetDate = (0, import_obsidian21.moment)(date).startOf("day");
       if (!targetDate.isValid()) {
-        new import_obsidian18.Notice(t("dailyNotes.notice.invalidDate"));
+        new import_obsidian21.Notice(t("dailyNotes.notice.invalidDate"));
         return;
       }
       this.ensureDailyNotesSourceMode();
       const file = await this.fileService.createDailyNoteForDate(targetDate);
       if (!file) {
-        new import_obsidian18.Notice(messages.createFailure);
+        new import_obsidian21.Notice(messages.createFailure);
         return;
       }
       this.ensureFileVisibleInAggregation(file.path);
       this.refreshWithFullRender(this.fileService.getFilesIncluding(file));
       const handled = await this.revealFileSection(file.path);
       if (!handled) {
-        new import_obsidian18.Notice(messages.outsideScope);
+        new import_obsidian21.Notice(messages.outsideScope);
       }
     } catch (error) {
       console.error("[WorkflowyDailyNotesView] Failed to create or reveal daily note:", error);
-      new import_obsidian18.Notice(messages.operationFailure);
+      new import_obsidian21.Notice(messages.operationFailure);
     }
   }
   ensureDailyNotesSourceMode() {
@@ -19370,7 +24889,7 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
     return await command(section);
   }
   openSortMenu(event) {
-    const menu = new import_obsidian18.Menu();
+    const menu = new import_obsidian21.Menu();
     TIME_FIELD_KEYS.forEach((field) => {
       menu.addItem((item) => item.setTitle(getTimeFieldLabel(field)).setChecked(this.state.timeField === field).onClick(() => this.updateState({ timeField: field })));
     });
@@ -19378,7 +24897,7 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
   }
   openThemeMenu(event) {
     const currentTheme = this.plugin.settings.dailyNotes.theme || "default";
-    const menu = new import_obsidian18.Menu();
+    const menu = new import_obsidian21.Menu();
     getThemes().forEach((theme) => {
       menu.addItem((item) => item.setTitle(theme.name).setChecked(theme.id === currentTheme).onClick(() => void this.selectTheme(theme.id)));
     });
@@ -19391,7 +24910,7 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
     this.sections.forEach((section) => section.refreshTheme());
   }
   openSourceMenu(event) {
-    const menu = new import_obsidian18.Menu();
+    const menu = new import_obsidian21.Menu();
     menu.addItem((item) => item.setTitle("Daily Notes").setChecked(this.state.selectionMode === "daily").onClick(() => this.updateState({ selectionMode: "daily", target: "" })));
     menu.addItem((item) => item.setTitle(t("dailyNotes.source.folderMenu")).onClick(() => this.openTargetModal("folder")));
     menu.addItem((item) => item.setTitle(t("dailyNotes.source.tagMenu")).onClick(() => this.openTargetModal("tag")));
@@ -19408,7 +24927,7 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
     menu.showAtMouseEvent(event);
   }
   openRangeMenu(event) {
-    const menu = new import_obsidian18.Menu();
+    const menu = new import_obsidian21.Menu();
     RANGE_KEYS.forEach((range) => {
       menu.addItem((item) => item.setTitle(getRangeLabel(range)).setChecked(this.state.selectedRange === range).onClick(() => range === "custom" ? this.openCustomRangeModal() : this.updateState({ selectedRange: range })));
     });
@@ -19455,6 +24974,29 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
       getThemes().forEach((theme) => container.removeClass(`workflowy-theme-${theme.id}`));
     });
   }
+  registerReadableLineWidthEvents() {
+    const vaultEvents = this.app.vault;
+    if (typeof (vaultEvents == null ? void 0 : vaultEvents.on) === "function") {
+      this.registerEvent(
+        vaultEvents.on("config-changed", (key) => {
+          if (shouldSyncReadableLineWidth(key))
+            this.syncReadableLineWidth();
+        })
+      );
+    }
+    this.registerEvent(
+      this.app.workspace.on("css-change", () => this.syncReadableLineWidth())
+    );
+  }
+  syncReadableLineWidth() {
+    syncReadableLineWidthClass(this.contentEl, this.app);
+    this.contentEl.querySelectorAll(".workflowy-daily-note-section").forEach((section) => {
+      syncReadableLineWidthClass(section, this.app);
+    });
+    this.contentEl.querySelectorAll(".workflowy-container").forEach((container) => {
+      syncReadableLineWidthClass(container, this.app);
+    });
+  }
   getThemeContainers() {
     const containers = [
       this.contentEl,
@@ -19471,7 +25013,7 @@ var WorkflowyDailyNotesView = class extends import_obsidian18.ItemView {
 };
 
 // src/main.ts
-var WorkflowyPlugin = class extends import_obsidian19.Plugin {
+var WorkflowyPlugin = class extends import_obsidian22.Plugin {
   constructor() {
     super(...arguments);
     // 平台信息
@@ -19517,8 +25059,8 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
    * 检测平台
    */
   detectPlatform() {
-    this.isMobile = import_obsidian19.Platform.isMobile;
-    this.isDesktop = import_obsidian19.Platform.isDesktop;
+    this.isMobile = import_obsidian22.Platform.isMobile;
+    this.isDesktop = import_obsidian22.Platform.isDesktop;
   }
   /**
    * 初始化隔离系统
@@ -19761,7 +25303,7 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
     this.settings.thino.autoTimestamp = !this.settings.thino.autoTimestamp;
     this.saveSettings();
     const status = this.settings.thino.autoTimestamp ? t("commands.notice.timestampStatusOn") : t("commands.notice.timestampStatusOff");
-    new import_obsidian19.Notice(t("commands.notice.timestampToggled", { status }));
+    new import_obsidian22.Notice(t("commands.notice.timestampToggled", { status }));
   }
   /**
    * 切换渲染模式（源码模式 ↔ Live Preview 模式）
@@ -19798,26 +25340,26 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
     );
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (file instanceof import_obsidian19.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian22.TFile && file.extension === "md") {
           this.notifyWorkflowyViewsOfFileChange(file);
         }
       })
     );
     this.registerEvent(this.app.vault.on("create", (file) => {
-      if (file instanceof import_obsidian19.TFile)
+      if (file instanceof import_obsidian22.TFile)
         this.refreshDailyNotesViews();
     }));
     this.registerEvent(this.app.vault.on("delete", (file) => {
-      if (file instanceof import_obsidian19.TFile)
+      if (file instanceof import_obsidian22.TFile)
         this.refreshDailyNotesViews();
     }));
     this.registerEvent(this.app.vault.on("rename", (file) => {
-      if (file instanceof import_obsidian19.TFile)
+      if (file instanceof import_obsidian22.TFile)
         this.refreshDailyNotesViews();
     }));
-    const debouncedTagRefresh = (0, import_obsidian19.debounce)(() => this.refreshDailyNotesViews("tag"), 500, true);
+    const debouncedTagRefresh = (0, import_obsidian22.debounce)(() => this.refreshDailyNotesViews("tag"), 500, true);
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
-      if (file instanceof import_obsidian19.TFile)
+      if (file instanceof import_obsidian22.TFile)
         debouncedTagRefresh();
     }));
   }
@@ -19839,11 +25381,11 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
    * 添加文件菜单项（带隔离检查）
    */
   addFileMenuItems(menu, file) {
-    if (file instanceof import_obsidian19.TFolder) {
+    if (file instanceof import_obsidian22.TFolder) {
       this.addFolderMenuItems(menu, file);
       return;
     }
-    if (!(file instanceof import_obsidian19.TFile))
+    if (!(file instanceof import_obsidian22.TFile))
       return;
     if (file.extension !== "md")
       return;
@@ -19903,7 +25445,7 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
       console.warn("[WorkflowyPlugin] Can only open as Workflowy from Markdown view");
       return;
     }
-    const markdownView = leaf.view instanceof import_obsidian19.MarkdownView ? leaf.view : null;
+    const markdownView = leaf.view instanceof import_obsidian22.MarkdownView ? leaf.view : null;
     const cursor = markdownView == null ? void 0 : markdownView.editor.getCursor();
     await leaf.setViewState({
       type: WORKFLOWY_VIEW_TYPE,
@@ -19924,7 +25466,7 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
     this.app.workspace.revealLeaf(leaf);
     await new Promise((resolve2) => window.requestAnimationFrame(() => resolve2()));
     await new Promise((resolve2) => window.setTimeout(resolve2, 0));
-    if (!(leaf.view instanceof import_obsidian19.MarkdownView))
+    if (!(leaf.view instanceof import_obsidian22.MarkdownView))
       return;
     if (sourceCursor) {
       const position = { line: sourceCursor.line, ch: sourceCursor.ch };
@@ -19992,7 +25534,7 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
       return false;
     }
     if (!licenseInfo.isPlusUser && licenseInfo.trialDaysLeft > 0) {
-      new import_obsidian19.Notice(t("commands.notice.trialRemaining", { days: licenseInfo.trialDaysLeft }), 5e3);
+      new import_obsidian22.Notice(t("commands.notice.trialRemaining", { days: licenseInfo.trialDaysLeft }), 5e3);
     }
     return true;
   }
@@ -20008,7 +25550,7 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
       this.app.workspace.revealLeaf(leaf);
     } catch (error) {
       console.error("[WorkflowyPlugin] Failed to open Daily Notes view:", error);
-      new import_obsidian19.Notice(t("commands.notice.openDailyNotesFailed"));
+      new import_obsidian22.Notice(t("commands.notice.openDailyNotesFailed"));
     }
   }
   /**
@@ -20032,7 +25574,7 @@ var WorkflowyPlugin = class extends import_obsidian19.Plugin {
       this.app.workspace.revealLeaf(leaf);
     } catch (error) {
       console.error("[WorkflowyPlugin] Failed to open folder outline view:", error);
-      new import_obsidian19.Notice(t("commands.notice.openFolderOutlineFailed"));
+      new import_obsidian22.Notice(t("commands.notice.openFolderOutlineFailed"));
     }
   }
   /**
