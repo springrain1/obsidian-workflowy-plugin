@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## v3.1
+
+### ✨ New Features
+
+#### Extreme Performance & Architecture (Performance & Architecture)
+- **Global Virtual Scrolling Engine**: Completely rebuilt the rendering foundation for ultra-large documents. Introduced the new `Virtual Outline Window` to handle on-demand mounting and unmounting of DOM nodes. Say goodbye to stuttering in notes with thousands of blocks—experience true buttery-smooth scrolling.
+- **Global Render Scheduler**: Introduced a brand new `Render Scheduler` to unify scattered reflows and DOM updates into coordinated animation frames. This completely eliminates read-write conflicts and dropped frames during high-frequency editing and fast scrolling.
+- **DOM Pooling Technology**: Vertical indentation lines are now intelligently pooled and reused. We only keep a minimal set of DOM elements to support infinitely long lists, drastically reducing memory consumption.
+
+#### Native Live Preview Evolution (Live Preview Evolution)
+- **Embracing CodeMirror 6**: Dropped the old hijack-based approach and completely rewrote the Live Preview engine. Every block is now powered by a native CodeMirror Widget, parsing Markdown syntax and applying text decorations just like Obsidian's core editor, delivering a perfectly native rendering experience.
+- **Precision Floating Menus**: All popup menus—including `/` slash commands, `#` tag suggestions, and link suggestions—now utilize a newly rebuilt floating position system. They perfectly adapt to virtual list offsets, ensuring pixel-perfect tracking with your cursor during rapid typing or scrolling, without any flickering or jittering.
+- **Seamless Link Interactions**: Massively upgraded the link operation experience in Live Preview. Introduced debounce protection for `[[` link suggestions, which not only boosts popup responsiveness but also permanently fixes the bug where suggestions couldn't be reliably clicked with a mouse.
+
+#### Mobile & Interaction Refinements (Mobile & Interaction)
+- **Virtual Cross-Screen Drag Multi-Select**: Broke the natural barrier between virtualized lists and mouse dragging! Now, even if you drag across hundreds of unmounted blocks off-screen, the system accurately calculates the virtual range for multi-selection, seamlessly clearing the selection state upon successful drag-and-drop.
+- **Enhanced Mobile Incremental Updates**: Greatly strengthened the `MobileDOMPatcher` mechanism to gracefully handle cross-level block insertions, deletions, and state synchronization, eliminating virtual list mismatch issues on mobile from the root.
+
+### 🐛 Bug Fixes
+- **Accurate View Height Measurement**: Fixed an issue in the Daily Notes aggregated view where inaccurate virtual height calculations caused unexpected layout jumping. Also fixed the failure to correctly reload state upon external file modifications.
+- **Eliminated Zero-Change Rendering**: Intercepted invalid state updates that were triggered even when text content hadn't actually changed, squeezing out every last drop of performance.
+
+---
+
+## v3.0
+
+### ✨ New Features
+
+#### UI & Experience
+- **Native Readable Line Width**: Fully supports Obsidian's core "Readable Line Length" setting. In both the Outline and Daily Notes views, editor content automatically centers and limits its width while keeping backgrounds full-width, providing optimal reading comfort.
+- **Breadcrumb Markdown Tooltips**: Hovering over breadcrumb navigation paths now displays a fully rendered Markdown tooltip of that node's complete content.
+- **Context Menu "Insert Double Link"**: Added a quick "Insert double link" action in Live Preview. Wraps selected text in `[[]]` with the cursor at the end, or inserts `[[]]` with the cursor inside if no text is selected.
+
+#### Interaction Enhancements
+- **Precision Cursor Restoration for Keyboard Zoom**: Introduced a cursor history stack for keyboard zooming. When zooming out of a child node, your cursor will **restore precisely to its previous character position** instead of falling back to the end of the node.
+- **Live Preview Multi-Select Revolution**: Completely resolved the conflict between text selection and block selection. You can now normally select text inside a block; only when dragging **outside the block's boundaries**, or while holding `Alt`, does it seamlessly upgrade to block multi-selection. Added an invisible "selection rail" for easier bulk selection.
+- **Smart Arrow Key Navigation**: Refactored Up/Down arrow key navigation to rely on the actual rendered DOM tree. It now perfectly skips filtered, hidden, or collapsed nodes, eliminating unexpected cursor jumps.
+
+### 🐛 Bug Fixes
+- **Live Preview Memory Leak Fix**: Refactored the event lifecycle management of the editor component, fixing a memory leak and performance degradation caused by stacking event listeners during frequent focus or view switches.
+
+---
+
 ## v2.9
 
 ### ✨ New Features

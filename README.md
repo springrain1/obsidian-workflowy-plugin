@@ -13,6 +13,11 @@ A powerful Obsidian plugin that transforms your Markdown notes into a Workflowy-
 - **Zero Interference**: 5-layer isolation architecture ensures no impact on native Obsidian Markdown experience
 - **Daily Notes Plus** ⭐: Brand new Daily Notes aggregated outline view (license required, 7-day trial)
 
+### 🚀 v3.1 Major Upgrades (New)
+- **Virtual Scrolling Architecture**: A completely rebuilt foundation featuring a global `Virtual Outline Window` and `Render Scheduler`, delivering buttery-smooth scrolling and zero layout thrashing even in ultra-long notes with thousands of blocks.
+- **Native CodeMirror 6 Engine**: The Live Preview engine was entirely rewritten to fully integrate with the CodeMirror 6 ecosystem, parsing Markdown syntax internally just like Obsidian's core editor for unprecedented precision and native feel.
+- **Ultimate Interaction Polish**: Break the limits of virtualization with cross-screen drag multi-select! Alongside precision-positioned floating menus (`/`, `#`, `[[`) and deeply enhanced mobile incremental updates, the editing experience is smoother than ever.
+
 ### 📅 Daily Notes Plus Features (New)
 - **Aggregated Outline View**: Display and edit multiple Daily Notes in a single unified view
 - **Flexible Filtering**:
@@ -57,11 +62,13 @@ A powerful Obsidian plugin that transforms your Markdown notes into a Workflowy-
 
 ### 🎨 UI Features
 - **Workflowy-Style Interface**: Clean bullet points with hierarchical indentation lines
+- **Native Readable Line Width**: Fully supports Obsidian's core readable line length setting for optimal reading comfort (New)
+- **Breadcrumb Markdown Tooltips**: Hover over zoom paths to preview fully rendered Markdown content (New)
 - **Collapse/Expand**: Hide/show child blocks (click triangle, vertical line, or press `Alt+Enter`)
-- **Zoom Focus**: Click bullet to zoom into a specific block for focused editing
+- **Zoom Focus**: Click bullet to zoom into a specific block for focused editing (with precise cursor restoration)
 - **Real-Time Search**: Quick search with highlighting (highlight or filter mode)
 - **Drag & Drop**: Intuitive block reordering via drag and drop
-- **Multi-Selection**: Select multiple blocks for batch operations (via left-click drag or Ctrl+click)
+- **Multi-Selection**: Select multiple blocks for batch operations (perfectly isolates text selection, supports cross-boundary drag multi-select)
 - **Theme Support**: Multiple built-in themes with light/dark mode support
 - **Responsive Design**: Works perfectly on desktop and mobile devices
 
@@ -141,7 +148,7 @@ Markdown shortcuts in Live Preview mode:
 | `Ctrl+I` | Italic |
 | `Ctrl+K` | Insert link |
 | `Ctrl+Shift+H` | Highlight |
-| Right-click | More formatting options |
+| Right-click | More formatting options, insert double link |
 
 ### 📱 Mobile Toolbar
 Fixed bottom toolbar on mobile with quick actions:
